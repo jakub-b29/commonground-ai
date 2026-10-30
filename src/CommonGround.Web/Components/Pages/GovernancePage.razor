@@ -1,0 +1,23 @@
+@page "/governance"
+@using CommonGround.Web.Components.Shared.Governance
+@inject WorkspaceUiState UiState
+@inject CommonGroundWorkspaceService Workspace
+@implements IDisposable
+<PageTitle>Governance and Voting - CommonGround</PageTitle>
+<h1>Governance and voting</h1>
+@if (_snapshot is null) { <p role="status" aria-live="polite">Loading governance workspace.</p> }
+else {
+<MeetingPackageAndCompliancePanel Snapshot="_snapshot" OnChanged="ReloadAsync" />
+<LiveShareVotingAndBallotOcrPanel Resolutions="_snapshot.Community.Resolutions" Units="_snapshot.Community.Units" CommunityId="_snapshot.Community.Id" OnChanged="ReloadAsync" />
+<BallotVisualizerAndMinutesPanel Resolutions="_snapshot.Community.Resolutions" CommunityId="_snapshot.Community.Id" OnChanged="ReloadAsync" />
+<RegulationsAndMediationPanel Documents="_snapshot.Community.LegalDocuments" CommunityId="_snapshot.Community.Id" OnChanged="ReloadAsync" />
+}
+@code {
+private Action? _stateHandler;
+private CommunityWorkspaceSnapshot? _snapshot;
+protected override async Task OnInitializedAsync() { _stateHandler = () => InvokeAsync(ReloadAsync); UiState.OnChange += _stateHandler; await ReloadAsync(); }
+private async Task ReloadAsync() {
+if (UiState.SelectedCommunityId is null) { var all = await Workspace.GetCommunitiesAsync(); var first = all.FirstOrDefault(); if (first is null) return; UiState.SelectCommunity(first.Id, first.OperatingMode == SystemOperatingMode.UsHoa ? "US HOA & Condo Mode" : "Housing Association Mode"); }
+_snapshot = await Workspace.GetSnapshotAsync(UiState.SelectedCommunityId!.Value); StateHasChanged(); }
+public void Dispose() { if (_stateHandler is not null) UiState.OnChange -= _stateHandler; }
+}

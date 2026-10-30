@@ -1,0 +1,24 @@
+@page "/financials"
+@using CommonGround.Web.Components.Shared.Financials
+@inject WorkspaceUiState UiState
+@inject CommonGroundWorkspaceService Workspace
+@implements IDisposable
+<PageTitle>Accounting and Utilities - CommonGround</PageTitle>
+<h1>Accounting and utilities</h1>
+@if (_snapshot is null) { <p role="status" aria-live="polite">Loading accounting workspace.</p> }
+else {
+<FundLedgerAndAncillaryPanel Snapshot="_snapshot" />
+<TariffInflationSimulatorPanel CommunityId="_snapshot.Community.Id" />
+<UtilityReconciliationAndPowerPanel CommunityId="_snapshot.Community.Id" />
+<ReserveStudyAndGrantsPanel Snapshot="_snapshot" />
+<ArrearsAndLegalDossierTable Snapshot="_snapshot" />
+}
+@code {
+private Action? _stateHandler;
+private CommunityWorkspaceSnapshot? _snapshot;
+protected override async Task OnInitializedAsync() { _stateHandler = () => InvokeAsync(ReloadAsync); UiState.OnChange += _stateHandler; await ReloadAsync(); }
+private async Task ReloadAsync() {
+if (UiState.SelectedCommunityId is null) { var all = await Workspace.GetCommunitiesAsync(); var first = all.FirstOrDefault(); if (first is null) return; UiState.SelectCommunity(first.Id, first.OperatingMode == SystemOperatingMode.UsHoa ? "US HOA & Condo Mode" : "Housing Association Mode"); }
+_snapshot = await Workspace.GetSnapshotAsync(UiState.SelectedCommunityId!.Value); StateHasChanged(); }
+public void Dispose() { if (_stateHandler is not null) UiState.OnChange -= _stateHandler; }
+}

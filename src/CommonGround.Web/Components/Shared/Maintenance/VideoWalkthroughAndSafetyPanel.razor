@@ -1,0 +1,17 @@
+@inject CommonGroundWorkspaceService Workspace
+<div class="cg-card" style="margin-top:0.875rem;">
+<h2>Walkthrough video and site safety</h2>
+<div style="display:flex;gap:0.375rem;flex-wrap:wrap;">
+<button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="OnSplit">Segment walkthrough inspection video</button>
+<button type="button" class="cg-btn" disabled="@_isBusy" @onclick="OnScan">Scan site safety and fire lanes</button>
+</div>
+@if (!string.IsNullOrWhiteSpace(_message)) { <div role="status" aria-live="polite" style="margin-top:0.375rem;">@_message</div> }
+</div>
+@code {
+[Parameter, EditorRequired] public Guid CommunityId { get; set; }
+[Parameter] public EventCallback OnChanged { get; set; }
+private bool _isBusy;
+private string _message = string.Empty;
+private async Task OnSplit() { _isBusy = true; try { var list = await Workspace.RunWalkthroughVideoSplitAsync(CommunityId); _message = $"Split walkthrough into {list.Count} work orders."; await OnChanged.InvokeAsync(); } catch (Exception ex) { _message = ex.Message; } finally { _isBusy = false; } }
+private async Task OnScan() { _isBusy = true; try { var wo = await Workspace.RunSiteSafetyVisionMonitorAsync(CommunityId); _message = $"Safety scan created {wo.Title}."; await OnChanged.InvokeAsync(); } catch (Exception ex) { _message = ex.Message; } finally { _isBusy = false; } }
+}

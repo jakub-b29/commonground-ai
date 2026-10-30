@@ -1,0 +1,36 @@
+@using CommonGround.Domain.Entities
+@inject CommonGroundWorkspaceService Workspace
+<div class="cg-card" style="margin-top:0.875rem;">
+<h2>Ballot visualizer and minutes</h2>
+<label for="visRes">Resolution</label>
+<select id="visRes" value="@_selectedId" @onchange="OnSelect" style="width:100%;">
+@foreach (var r in Resolutions) { <option value="@r.Id" selected="@(_selectedId == r.Id)">@r.Number - @r.Title</option> }
+</select>
+<div style="display:flex;gap:0.375rem;flex-wrap:wrap;margin-top:0.375rem;">
+<button type="button" class="cg-btn" disabled="@(_isBusy || _selectedId == Guid.Empty)" @onclick="OnVisuals">Generate Option A and B previews</button>
+<button type="button" class="cg-btn" disabled="@_isBusy" @onclick="OnMinutes">Transcribe meeting audio with diarization</button>
+<a class="cg-btn" href="/api/export/minutes-pdf/@CommunityId">Export minutes PDF</a>
+<a class="cg-btn" href="/api/export/minutes-docx/@CommunityId">Export minutes DOCX</a>
+</div>
+@if (_selected is not null) {
+<div class="cg-grid-2" style="margin-top:0.375rem;">
+<div><div>@(_selected.OptionALabel ?? "Option A")</div>@if (!string.IsNullOrWhiteSpace(_selected.OptionAPreviewDataUrl)) { <img class="cg-photo-frame" src="@_selected.OptionAPreviewDataUrl" alt="Option A" /> }</div>
+<div><div>@(_selected.OptionBLabel ?? "Option B")</div>@if (!string.IsNullOrWhiteSpace(_selected.OptionBPreviewDataUrl)) { <img class="cg-photo-frame" src="@_selected.OptionBPreviewDataUrl" alt="Option B" /> }</div>
+</div>
+@if (!string.IsNullOrWhiteSpace(_selected.QrPosterDataUrl)) { <img class="cg-photo-frame" src="@_selected.QrPosterDataUrl" alt="QR poster" style="max-width:220px;margin-top:0.375rem;" /> }
+}
+@if (!string.IsNullOrWhiteSpace(_message)) { <div role="status" aria-live="polite">@_message</div> }
+</div>
+@code {
+[Parameter, EditorRequired] public IReadOnlyList<Resolution> Resolutions { get; set; } = [];
+[Parameter, EditorRequired] public Guid CommunityId { get; set; }
+[Parameter] public EventCallback OnChanged { get; set; }
+private Guid _selectedId;
+private Resolution? _selected;
+private bool _isBusy;
+private string _message = string.Empty;
+protected override void OnParametersSet() { if (_selectedId == Guid.Empty && Resolutions.Count > 0) _selectedId = Resolutions[0].Id; _selected = Resolutions.FirstOrDefault(r => r.Id == _selectedId); }
+private Task OnSelect(ChangeEventArgs e) { if (Guid.TryParse(e.Value?.ToString(), out var id)) { _selectedId = id; _selected = Resolutions.FirstOrDefault(r => r.Id == id); } return Task.CompletedTask; }
+private async Task OnVisuals() { if (_selected is null) return; _isBusy = true; try { _selected = await Workspace.GenerateRenovationVisualsAndQrPosterAsync(CommunityId, _selected.Id); _message = "Previews and QR poster generated."; await OnChanged.InvokeAsync(); } catch (Exception ex) { _message = ex.Message; } finally { _isBusy = false; } }
+private async Task OnMinutes() { _isBusy = true; try { var m = await Workspace.TranscribeMeetingRecordingToMinutesAsync(CommunityId); _message = $"Minutes transcribed. Actions: {m.ExtractedActionItemsSummary}"; await OnChanged.InvokeAsync(); } catch (Exception ex) { _message = ex.Message; } finally { _isBusy = false; } }
+}

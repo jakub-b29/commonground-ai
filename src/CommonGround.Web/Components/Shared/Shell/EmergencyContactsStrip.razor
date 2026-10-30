@@ -1,0 +1,58 @@
+@inject WorkspaceUiState UiState
+@inject CommonGroundWorkspaceService Workspace
+@implements IDisposable
+
+<div class="cg-card" style="margin-bottom: 0.875rem;" role="region" aria-label="Emergency contacts">
+    <strong>Emergency contacts</strong>
+    <span style="margin-left: 0.5rem; color: var(--color-text-secondary);">@_summary</span>
+    <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.375rem;">
+        @foreach (var contact in _contacts)
+        {
+            <span class="cg-badge" @key="contact.Id">@contact.Name: <span class="mono">@contact.PhoneNumber</span></span>
+        }
+    </div>
+</div>
+
+@code {
+    private Action? _stateHandler;
+    private List<EmergencyAndAuthorityContact> _contacts = new();
+    private string _summary = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _stateHandler = () => InvokeAsync(StateHasChanged);
+        UiState.OnChange += _stateHandler;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (UiState.SelectedCommunityId is null)
+        {
+            var communities = await Workspace.GetCommunitiesAsync();
+            var first = communities.FirstOrDefault();
+            if (first is null)
+            {
+                return;
+            }
+            UiState.SelectCommunity(first.Id, first.OperatingMode == SystemOperatingMode.UsHoa ? "US HOA & Condo Mode" : "Housing Association Mode");
+        }
+        var snapshot = await Workspace.GetSnapshotAsync(UiState.SelectedCommunityId!.Value);
+        if (snapshot is null)
+        {
+            return;
+        }
+        _contacts = snapshot.Community.EmergencyContacts.OrderBy(c => c.SortOrder).ToList();
+        _summary = snapshot.Profile.Mode == SystemOperatingMode.UsHoa
+            ? "US HOA mode: 911 emergency, 311 city services, 811 dig safe."
+            : "Housing Association mode: 112 general, 998 fire, 999 ambulance, 997 police, 992 gas, 991 power, 993 heating, 994 water.";
+    }
+
+    public void Dispose()
+    {
+        if (_stateHandler is not null)
+        {
+            UiState.OnChange -= _stateHandler;
+        }
+    }
+}

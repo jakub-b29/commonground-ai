@@ -1,0 +1,73 @@
+@using CommonGround.Application.Services
+@inject CommonGroundWorkspaceService Workspace
+<div class="cg-card" style="margin-top: 0.875rem;">
+    <h2>Outages, weather, and waste</h2>
+    @if (Snapshot is null)
+    {
+        <p>Loading outage and waste status.</p>
+    }
+    else
+    {
+        <h3>Active municipal outages</h3>
+        @if (Snapshot.ActiveOutages.Count == 0)
+        {
+            <p><span class="cg-badge cg-badge-ok">No active outage</span> Contractor dispatch is operating normally.</p>
+        }
+        else
+        {
+            @foreach (var outage in Snapshot.ActiveOutages)
+            {
+                <p @key="outage.Id"><span class="cg-badge cg-badge-err">Active outage</span> @outage.UtilityKind - @outage.ProviderName, @outage.AffectedStreets. Restoration ETA @outage.EstimatedEndAt.ToString("HH:mm"). Contractor dispatch suppressed.</p>
+            }
+        }
+        <h3>Waste collection schedule</h3>
+        <div class="cg-table-wrap">
+            <table class="cg-table">
+                <thead><tr><th>Fraction</th><th>Schedule</th><th>Next pickup</th><th>Status</th></tr></thead>
+                <tbody>
+                    @foreach (var w in Snapshot.Community.WasteSchedules)
+                    {
+                        <tr @key="w.Id">
+                            <td>@w.WasteFraction</td>
+                            <td>@w.CollectionDaysSummary</td>
+                            <td class="num">@w.NextPickupDate.ToString("yyyy-MM-dd")</td>
+                            <td>@(w.ContaminationWarningActive ? "Contamination warning" : "Normal")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="OnGeneratePoster">Generate waste segregation poster</button>
+        @if (!string.IsNullOrWhiteSpace(_message))
+        {
+            <div role="status" aria-live="polite">@_message</div>
+        }
+        @if (!string.IsNullOrWhiteSpace(_posterUrl))
+        {
+            <img class="cg-photo-frame" src="@_posterUrl" alt="Waste segregation poster" style="margin-top: 0.5rem;" />
+        }
+    }
+</div>
+@code {
+    [Parameter, EditorRequired] public CommunityWorkspaceSnapshot Snapshot { get; set; } = default!;
+    private bool _isBusy;
+    private string _message = string.Empty;
+    private string _posterUrl = string.Empty;
+    private async Task OnGeneratePoster()
+    {
+        _isBusy = true;
+        try
+        {
+            _posterUrl = await Workspace.GenerateWasteSegregationPosterAsync(Snapshot.Community.Id);
+            _message = "Waste segregation poster generated.";
+        }
+        catch (Exception ex)
+        {
+            _message = $"Poster generation failed: {ex.Message}";
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+}

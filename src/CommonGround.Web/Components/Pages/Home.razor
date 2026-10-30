@@ -1,0 +1,84 @@
+﻿@page "/"
+@using CommonGround.Web.Components.Shared.Overview
+@inject WorkspaceUiState UiState
+@inject CommonGroundWorkspaceService Workspace
+@implements IDisposable
+
+<PageTitle>Portfolio Overview - CommonGround</PageTitle>
+
+<h1>Portfolio overview</h1>
+<p style="color: var(--color-text-secondary);">Operating cash, delinquency, work orders, utility sources, pending approvals, and the SHA-256 audit trail for the active community.</p>
+
+@if (_snapshot is null)
+{
+    <p role="status" aria-live="polite">Loading portfolio snapshot.</p>
+}
+else
+{
+    <ExecutiveKpiRow Snapshot="_snapshot" />
+    <UtilitySourcesTable Sources="_snapshot.UtilitySources" OnRefreshSources="OnRefreshSources" OnScanNow="OnScanNow" />
+    <OutageWeatherAndWastePanel Snapshot="_snapshot" />
+    <PendingApprovalsAndAuditPanel Snapshot="_snapshot" OnChanged="ReloadAsync" />
+    @if (!string.IsNullOrWhiteSpace(_message))
+    {
+        <div class="cg-card" role="status" aria-live="polite" style="margin-top: 0.875rem;">@_message</div>
+    }
+}
+
+@code {
+    private Action? _stateHandler;
+    private CommunityWorkspaceSnapshot? _snapshot;
+    private string _message = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _stateHandler = () => InvokeAsync(ReloadAsync);
+        UiState.OnChange += _stateHandler;
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        if (UiState.SelectedCommunityId is null)
+        {
+            var communities = await Workspace.GetCommunitiesAsync();
+            var first = communities.FirstOrDefault();
+            if (first is null)
+            {
+                return;
+            }
+            UiState.SelectCommunity(first.Id, first.OperatingMode == SystemOperatingMode.UsHoa ? "US HOA & Condo Mode" : "Housing Association Mode");
+        }
+        _snapshot = await Workspace.GetSnapshotAsync(UiState.SelectedCommunityId!.Value);
+        StateHasChanged();
+    }
+
+    private async Task OnRefreshSources()
+    {
+        if (UiState.SelectedCommunityId is null || _snapshot is null)
+        {
+            return;
+        }
+        var result = await Workspace.TriggerWebAutoEnrichmentAsync(UiState.SelectedCommunityId.Value, _snapshot.Community.StreetAddress);
+        _message = result.SummaryReport;
+        await ReloadAsync();
+    }
+
+    private async Task OnScanNow()
+    {
+        if (UiState.SelectedCommunityId is null)
+        {
+            return;
+        }
+        _message = await Workspace.ScanUtilitySourcesAndWeatherAsync(UiState.SelectedCommunityId.Value);
+        await ReloadAsync();
+    }
+
+    public void Dispose()
+    {
+        if (_stateHandler is not null)
+        {
+            UiState.OnChange -= _stateHandler;
+        }
+    }
+}

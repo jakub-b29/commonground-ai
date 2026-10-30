@@ -1,0 +1,73 @@
+@using CommonGround.Domain.Calculators
+@using CommonGround.Domain.Entities
+@inject CommonGroundWorkspaceService Workspace
+@inject WorkspaceUiState UiState
+@if (Unit is null)
+{
+    <div class="cg-card" style="margin-top: 0.875rem;"><p>Select a unit in the riser grid to view its dossier.</p></div>
+}
+else
+{
+    <div class="cg-card" style="margin-top: 0.875rem;">
+        <h2>Unit dossier - @Unit.UnitNumber</h2>
+        <div class="cg-table-wrap"><table class="cg-table"><tbody>
+            <tr><td>Floor / storage area</td><td class="num">@Unit.FloorAreaM2.ToString("N2") m2 / @Unit.StorageAreaM2.ToString("N2") m2</td></tr>
+            <tr><td>Ownership share</td><td class="num">@Unit.ShareNumerator / @Unit.ShareDenominator = @Unit.OwnershipShare.ToString("P2")</td></tr>
+            <tr><td>Occupants / short-term rental</td><td>@Unit.DeclaredOccupants / @(Unit.IsShortTermRental ? "Yes (1.5x waste surcharge)" : "No")</td></tr>
+            <tr><td>Virtual IBAN / lockbox</td><td class="mono">@DataSecurityAndPrivacyGuard.MaskIban(Unit.VirtualIbanOrLockboxCode, UiState.ActiveSecurityRole, false)</td></tr>
+            <tr><td>Owner contact</td><td>@DataSecurityAndPrivacyGuard.MaskContactPii(Unit.PrimaryOwnerEmail, UiState.ActiveSecurityRole) · @DataSecurityAndPrivacyGuard.MaskContactPii(Unit.PrimaryOwnerPhone, UiState.ActiveSecurityRole)</td></tr>
+            <tr><td>Parking / fob / proxy</td><td>@(Unit.ParkingBayNumber ?? "-") / @(Unit.AccessFobCode ?? "-") / @(Unit.VotingProxyName ?? Unit.CoOwnerName ?? "-")</td></tr>
+            <tr><td>Balance / arrears</td><td class="num">@Unit.CurrentBalance.ToString("N2") (@Unit.ArrearsStage, @Unit.DaysPastDue days)</td></tr>
+        </tbody></table></div>
+        <h3>Monthly assessment breakdown</h3>
+        <div class="cg-table-wrap"><table class="cg-table"><thead><tr><th>Component</th><th class="num">Amount</th></tr></thead><tbody>
+            <tr><td>Operating fee</td><td class="num">@_assessment?.OperatingFee.ToString("N2")</td></tr>
+            <tr><td>Repair fund fee</td><td class="num">@_assessment?.RepairFundFee.ToString("N2")</td></tr>
+            <tr><td>Waste fee</td><td class="num">@_assessment?.WasteFee.ToString("N2")</td></tr>
+            <tr><td>Cold water advance</td><td class="num">@_assessment?.ColdWaterAdvance.ToString("N2")</td></tr>
+            <tr><td>Hot water advance</td><td class="num">@_assessment?.HotWaterAdvance.ToString("N2")</td></tr>
+            <tr><td>Heating advance</td><td class="num">@_assessment?.HeatingAdvance.ToString("N2")</td></tr>
+            <tr><td>Total assessment</td><td class="num">@_assessment?.TotalAssessment.ToString("N2")</td></tr>
+        </tbody></table></div>
+        <h3>Sub-meters</h3>
+        <div class="cg-table-wrap"><table class="cg-table"><thead><tr><th>Kind</th><th>Serial</th><th class="num">Last reading</th><th>Calibration</th><th>Status</th></tr></thead><tbody>
+            @foreach (var m in Unit.Meters)
+            {
+                <tr @key="m.Id"><td>@m.Kind</td><td class="mono">@m.SerialNumber</td><td class="num">@m.LastReadingValue.ToString("N3")</td><td class="num">@m.CalibrationExpiryDate.ToString("yyyy-MM-dd")</td><td>@(m.HasSilentLeakAnomaly ? m.AnomalyNote : "Normal")</td></tr>
+            }
+        </tbody></table></div>
+        <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="OnReadMeter">Read meter from resident photo</button>
+        @if (!string.IsNullOrWhiteSpace(_message)) { <div role="status" aria-live="polite">@_message</div> }
+    </div>
+}
+@code {
+    [Parameter] public Unit? Unit { get; set; }
+    [Parameter] public Community? Community { get; set; }
+    [Parameter] public EventCallback OnChanged { get; set; }
+    private MonthlyAssessment? _assessment;
+    private bool _isBusy;
+    private string _message = string.Empty;
+    protected override void OnParametersSet()
+    {
+        if (Unit is not null && Community is not null)
+        {
+            var credit = AncillaryRevenueEngine.CreditForUnit(Community.CommercialContracts, Unit);
+            _assessment = AssessmentCalculator.Compute(Community, Unit, "2026-11", credit);
+        }
+    }
+    private async Task OnReadMeter()
+    {
+        if (Unit is null || Community is null) return;
+        var meter = Unit.Meters.FirstOrDefault();
+        if (meter is null) return;
+        _isBusy = true;
+        try
+        {
+            var reading = await Workspace.SubmitPhotoOrVoiceMeterReadingAsync(Community.Id, meter.Id, meter.LastReadingValue + meter.RollingMonthlyAverage);
+            _message = reading.IsAnomaly ? $"Silent leak suspected: {reading.AnomalyReason}" : $"Reading {reading.ReadingValue:N3} recorded. Consumption normal.";
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex) { _message = $"Meter read failed: {ex.Message}"; }
+        finally { _isBusy = false; }
+    }
+}

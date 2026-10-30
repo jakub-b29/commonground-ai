@@ -1,0 +1,46 @@
+@using CommonGround.Domain.Entities
+<div class="cg-card">
+    <h2>Riser stack cross-section</h2>
+    <p style="color: var(--color-text-secondary);">Floors 4 to 1 plus basement manifold across STACK-A1, STACK-A2, STACK-B1.</p>
+    <div class="cg-table-wrap">
+        <table class="cg-table">
+            <thead><tr><th>Floor</th><th>STACK-A1</th><th>STACK-A2</th><th>STACK-B1</th></tr></thead>
+            <tbody>
+                @for (var floor = 4; floor >= 1; floor--)
+                {
+                    var f = floor;
+                    <tr>
+                        <td>Floor @f</td>
+                        @foreach (var stack in new[] { "STACK-A1", "STACK-A2", "STACK-B1" })
+                        {
+                            var s = stack;
+                            var unit = Units.FirstOrDefault(u => u.FloorNumber == f && u.VerticalStackCode == s);
+                            <td @key="@(f + s)">
+                                @if (unit is not null)
+                                {
+                                    <button type="button" class="cg-btn" style="@(SelectedUnitId == unit.Id ? "border-color: var(--color-accent-solid);" : string.Empty)" @onclick="() => OnSelectUnit.InvokeAsync(unit.Id)">@unit.UnitNumber</button>
+                                }
+                                else
+                                {
+                                    <span style="color: var(--color-text-muted);">-</span>
+                                }
+                            </td>
+                        }
+                    </tr>
+                }
+                <tr><td>Basement</td><td colspan="3">Shutoff manifold - blue valve (STACK-A1/A2), red valve (STACK-B1)</td></tr>
+            </tbody>
+        </table>
+    </div>
+    @if (SelectedUnitId != Guid.Empty)
+    {
+        <button type="button" class="cg-btn" @onclick="() => OnBroadcastStackAlert.InvokeAsync(_selectedStack)">Broadcast riser shutoff alert</button>
+    }
+</div>
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<Unit> Units { get; set; } = [];
+    [Parameter] public Guid SelectedUnitId { get; set; }
+    [Parameter] public EventCallback<Guid> OnSelectUnit { get; set; }
+    [Parameter] public EventCallback<string> OnBroadcastStackAlert { get; set; }
+    private string _selectedStack => Units.FirstOrDefault(u => u.Id == SelectedUnitId)?.VerticalStackCode ?? "STACK-A1";
+}

@@ -1,0 +1,12 @@
+@using CommonGround.Application.Services
+<div class="cg-card">
+<h2>Fund ledger and ancillary revenue</h2>
+<div class="cg-table-wrap"><table class="cg-table"><thead><tr><th>Account</th><th>Fund</th><th class="num">Balance</th></tr></thead><tbody>
+@foreach (var a in Snapshot.Community.LedgerAccounts) { <tr @key="a.Id"><td>@a.Code - @a.Name</td><td>@a.Fund</td><td class="num">@a.Balance.ToString("N2")</td></tr> }
+</tbody></table></div>
+<h3>Journal entries</h3>
+@foreach (var j in Snapshot.Community.JournalEntries) { <div @key="j.Id" style="font-size:0.8rem;">@j.ReferenceNumber - @j.Description - Balanced: @j.IsBalanced()</div> }
+<h3>Commercial contracts</h3>
+@foreach (var c in Snapshot.Community.CommercialContracts) { <div @key="c.Id" style="font-size:0.8rem;">@c.TenantOrAdvertiserName (@c.AssetType): <span class="num">@c.MonthlyGrossRevenue.ToString("N2")</span> per month</div> }
+</div>
+@code { [Parameter, EditorRequired] public CommunityWorkspaceSnapshot Snapshot { get; set; } = default!; }

@@ -1,0 +1,52 @@
+﻿@inherits LayoutComponentBase
+@inject WorkspaceUiState UiState
+@implements IDisposable
+
+<a class="skip-link" href="#main-content">Skip to main content</a>
+<RadzenComponents @rendermode="new InteractiveServerRenderMode(prerender: false)" />
+
+<div class="page">
+    <div class="sidebar">
+        <NavMenu />
+    </div>
+
+    <main>
+        <div class="top-row px-4">
+            <span>CommonGround workspace</span>
+        </div>
+
+        <article class="content px-4">
+            <TopCommandHeader />
+            <EmergencyContactsStrip />
+            <div role="status" aria-live="polite">@UiState.StatusBannerMessage</div>
+            <main id="main-content">
+                @Body
+            </main>
+            <PortfolioQueryDrawer />
+        </article>
+    </main>
+</div>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">x</span>
+</div>
+
+@code {
+    private Action? _stateHandler;
+
+    protected override void OnInitialized()
+    {
+        _stateHandler = () => InvokeAsync(StateHasChanged);
+        UiState.OnChange += _stateHandler;
+    }
+
+    public void Dispose()
+    {
+        if (_stateHandler is not null)
+        {
+            UiState.OnChange -= _stateHandler;
+        }
+    }
+}

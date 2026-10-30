@@ -64,6 +64,14 @@ All financial, utility, reserve, cost-estimation, and voting calculations run in
 - **Tamper-Evident SHA-256 Security Audit Log**: Secret reveals, approval queue decisions, legal dossier exports, and blocked injection attempts are recorded in a hash-chained `SecurityAuditEvent` log (`PreviousChainHash` -> `EntrySha256Hash`) verifiable at runtime.
 - **Multi-Community Tenant Isolation & Transport Hardening**: Every community-scoped entity enforces `ICommunityScoped` tenant boundaries, ASP.NET Core Data Protection (`IDataProtectionProvider`), antiforgery validation, and strict HTTP security headers (`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`).
 
+## Data Security & Privacy
+
+- **Outbound PII Redaction**: Before any text or structured context is sent to external model endpoints (`https://api.meta.ai/v1`), `DataSecurityAndPrivacyGuard` strips and tokenizes owner emails, phone numbers, bank account numbers (IBAN / ACH), tax identifiers, and physical building PINs into pseudonymous session tokens (`[OWNER_REF_A301]`, `[IBAN_MASKED]`, `[ACCESS_PIN_VAULTED]`).
+- **Prompt-Injection & Untrusted Input Isolation**: External inputs (resident messages, voice transcripts, OCR text from invoices and paper ballots, bank transfer descriptions, and web bulletins) are sanitized and isolated inside non-executable data delimiters, blocking instructions attempting to alter ledger accounts, approve payouts, or exfiltrate access codes.
+- **Role-Scoped Secret Vault & Least-Privilege Dispatch**: Stairwell intercom codes, boiler-room key-safe PINs, and owner contact details are masked by default according to the active workspace role (`PropertyManagerAdmin`, `AccountingAuditor`, `MaintenanceDispatcher`, `BoardMemberReadOnly`, `ExternalContractorView`). Contractor work orders receive only time-bounded contractor access codes rather than permanent resident codes.
+- **Tamper-Evident SHA-256 Security Audit Log**: Secret reveals, approval queue decisions, legal dossier exports, and blocked injection attempts are recorded in a hash-chained `SecurityAuditEvent` log (`PreviousChainHash` -> `EntrySha256Hash`) verifiable at runtime.
+- **Multi-Community Tenant Isolation & Transport Hardening**: Every community-scoped entity enforces `ICommunityScoped` tenant boundaries, ASP.NET Core Data Protection (`IDataProtectionProvider`), antiforgery validation, and strict HTTP security headers (`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`).
+
 ## Building and Running
 
 ```powershell

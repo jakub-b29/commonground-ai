@@ -1,0 +1,70 @@
+@page "/apartments"
+@using CommonGround.Web.Components.Shared.Units
+@inject WorkspaceUiState UiState
+@inject CommonGroundWorkspaceService Workspace
+@implements IDisposable
+
+<PageTitle>Units and Infrastructure - CommonGround</PageTitle>
+<h1>Units and infrastructure</h1>
+@if (_snapshot is null)
+{
+    <p role="status" aria-live="polite">Loading units and infrastructure.</p>
+}
+else
+{
+    <RiserStackCrossSectionGrid Units="_snapshot.Community.Units" SelectedUnitId="_selectedUnitId" OnSelectUnit="OnSelectUnit" OnBroadcastStackAlert="OnBroadcastStackAlert" />
+    <UnitDossierPanel Unit="_selectedUnit" Community="_snapshot.Community" OnChanged="ReloadAsync" />
+    <InfrastructureAtlasGrid Photos="_snapshot.Community.InfrastructurePhotos" AccessCodes="_snapshot.Community.AccessCodes" CommunityId="_snapshot.Community.Id" />
+    <InspectionsAndPermitsPanel Inspections="_snapshot.Community.Inspections" Requests="_snapshot.Community.ModificationRequests" CommunityId="_snapshot.Community.Id" OnChanged="ReloadAsync" />
+    @if (!string.IsNullOrWhiteSpace(_message)) { <div class="cg-card" role="status" aria-live="polite" style="margin-top: 0.875rem;">@_message</div> }
+}
+@code {
+    private Action? _stateHandler;
+    private CommunityWorkspaceSnapshot? _snapshot;
+    private Guid _selectedUnitId;
+    private Unit? _selectedUnit;
+    private string _message = string.Empty;
+    protected override async Task OnInitializedAsync()
+    {
+        _stateHandler = () => InvokeAsync(ReloadAsync);
+        UiState.OnChange += _stateHandler;
+        await ReloadAsync();
+    }
+    private async Task ReloadAsync()
+    {
+        if (UiState.SelectedCommunityId is null)
+        {
+            var communities = await Workspace.GetCommunitiesAsync();
+            var first = communities.FirstOrDefault();
+            if (first is null) return;
+            UiState.SelectCommunity(first.Id, first.OperatingMode == SystemOperatingMode.UsHoa ? "US HOA & Condo Mode" : "Housing Association Mode");
+        }
+        _snapshot = await Workspace.GetSnapshotAsync(UiState.SelectedCommunityId!.Value);
+        if (_selectedUnitId == Guid.Empty && _snapshot is not null)
+        {
+            var first = _snapshot.Community.Units.FirstOrDefault();
+            if (first is not null) { _selectedUnitId = first.Id; _selectedUnit = first; }
+        }
+        else if (_snapshot is not null)
+        {
+            _selectedUnit = _snapshot.Community.Units.FirstOrDefault(u => u.Id == _selectedUnitId);
+        }
+        StateHasChanged();
+    }
+    private Task OnSelectUnit(Guid id)
+    {
+        _selectedUnitId = id;
+        _selectedUnit = _snapshot?.Community.Units.FirstOrDefault(u => u.Id == id);
+        return Task.CompletedTask;
+    }
+    private async Task OnBroadcastStackAlert(string stack)
+    {
+        if (UiState.SelectedCommunityId is null) return;
+        var action = await Workspace.TriggerOneClickSosBroadcastAsync(UiState.SelectedCommunityId.Value, stack);
+        _message = $"{action.Title}. {action.Rationale}";
+    }
+    public void Dispose()
+    {
+        if (_stateHandler is not null) UiState.OnChange -= _stateHandler;
+    }
+}

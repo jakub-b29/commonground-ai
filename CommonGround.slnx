@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/CommonGround.Application/CommonGround.Application.csproj" />
+    <Project Path="src/CommonGround.Domain/CommonGround.Domain.csproj" />
+    <Project Path="src/CommonGround.Infrastructure/CommonGround.Infrastructure.csproj" />
+    <Project Path="src/CommonGround.Web/CommonGround.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CommonGround.UnitTests/CommonGround.UnitTests.csproj" />
+  </Folder>
+</Solution>

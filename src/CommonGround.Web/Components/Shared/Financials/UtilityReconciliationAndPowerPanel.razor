@@ -1,0 +1,31 @@
+@using CommonGround.Domain.Enums
+@using CommonGround.Application.Services
+@inject CommonGroundWorkspaceService Workspace
+<div class="cg-card" style="margin-top:0.875rem;">
+<h2>Utility reconciliation and power audit</h2>
+<label for="rubspolicy">Allocation policy</label>
+<select id="rubspolicy" @bind="_policy" style="width:100%;">
+@foreach (var p in Enum.GetValues<UtilityAllocationPolicy>()) { <option value="@p">@p</option> }
+</select>
+<div style="display:flex;gap:0.375rem;margin-top:0.375rem;flex-wrap:wrap;">
+<button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="OnSettle">Run bulk utility reconciliation</button>
+<button type="button" class="cg-btn" disabled="@_isBusy" @onclick="OnMatch">Match unstructured bank transfers</button>
+<button type="button" class="cg-btn" disabled="@_isBusy" @onclick="OnAudit">Run contracted power audit</button>
+</div>
+@if (!string.IsNullOrWhiteSpace(_message)) { <div role="status" aria-live="polite" style="margin-top:0.375rem;">@_message</div> }
+@if (_period is not null) {
+<div class="cg-table-wrap" style="margin-top:0.375rem;"><table class="cg-table"><thead><tr><th>Unit</th><th class="num">Meter</th><th class="num">Actual</th><th class="num">Advances</th><th class="num">Delta</th></tr></thead><tbody>
+@foreach (var r in _period.UnitResults) { <tr @key="r.Id"><td>@r.UnitNumber</td><td class="num">@r.SubMeterConsumption.ToString("N3")</td><td class="num">@r.TotalActualCost.ToString("N2")</td><td class="num">@r.AdvancesPaid.ToString("N2")</td><td class="num">@r.NetBalanceDelta.ToString("N2")</td></tr> }
+</tbody></table></div>
+}
+</div>
+@code {
+[Parameter, EditorRequired] public Guid CommunityId { get; set; }
+private UtilityAllocationPolicy _policy = UtilityAllocationPolicy.SubMeterPlusShareLoss;
+private bool _isBusy;
+private string _message = string.Empty;
+private UtilitySettlementPeriod? _period;
+private async Task OnSettle() { _isBusy = true; try { _period = await Workspace.RunBulkUtilitySettlementAsync(CommunityId, _policy); _message = $"Settled {_period.UnitResults.Count} units. Loss {_period.UnallocatedCommonLossConsumption:N3} m3."; } catch (Exception ex) { _message = ex.Message; } finally { _isBusy = false; } }
+private async Task OnMatch() { _isBusy = true; try { var tx = await Workspace.AutoMatchBankTransfersAsync(CommunityId); _message = $"Reviewed {tx.Count} transfers. Applied: {tx.Count(t => t.IsAppliedToLedger)}."; } catch (Exception ex) { _message = ex.Message; } finally { _isBusy = false; } }
+private async Task OnAudit() { _isBusy = true; try { var r = await Workspace.RunContractedPowerAuditAsync(CommunityId); _message = r.Summary; } catch (Exception ex) { _message = ex.Message; } finally { _isBusy = false; } }
+}

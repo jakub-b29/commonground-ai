@@ -1,0 +1,44 @@
+@using CommonGround.Domain.Entities
+@inject CommonGroundWorkspaceService Workspace
+<div class="cg-card" style="margin-top: 0.875rem;">
+    <h2>Inspections and permits</h2>
+    <h3>Statutory inspections</h3>
+    <div class="cg-table-wrap"><table class="cg-table"><thead><tr><th>Kind</th><th>Last</th><th>Next due</th><th>Status</th><th>Defects</th></tr></thead><tbody>
+        @foreach (var i in Inspections)
+        {
+            <tr @key="i.Id"><td>@i.Kind</td><td class="num">@i.LastPerformedDate.ToString("yyyy-MM-dd")</td><td class="num">@i.NextDueDate.ToString("yyyy-MM-dd")</td><td>@i.Status</td><td>@i.SummaryOfDefects</td></tr>
+        }
+    </tbody></table></div>
+    <h3 style="margin-top: 0.5rem;">Renovation and ARC requests</h3>
+    @foreach (var r in Requests)
+    {
+        <div @key="r.Id" style="border-top: 1px solid var(--color-border-subtle); padding: 0.5rem 0;">
+            <div><strong>@r.UnitNumber - @r.Kind</strong> <span class="cg-badge">@r.Status</span></div>
+            <div style="font-size: 0.8rem;">@r.Description</div>
+            <div style="font-size: 0.75rem; color: var(--color-text-secondary);">Cited: @r.CitedLegalDocumentCode. @r.CitedVerbatimLegalExcerpt</div>
+            <div style="font-size: 0.8rem;">Decision: @r.TechnicalConditionsOrDecisionText</div>
+            <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => OnVerifyAsync(r.Id)">Verify compliance against statute</button>
+        </div>
+    }
+    @if (!string.IsNullOrWhiteSpace(_message)) { <div role="status" aria-live="polite">@_message</div> }
+</div>
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<StatutoryInspection> Inspections { get; set; } = [];
+    [Parameter, EditorRequired] public IReadOnlyList<ModificationOrArcRequest> Requests { get; set; } = [];
+    [Parameter, EditorRequired] public Guid CommunityId { get; set; }
+    [Parameter] public EventCallback OnChanged { get; set; }
+    private bool _isBusy;
+    private string _message = string.Empty;
+    private async Task OnVerifyAsync(Guid id)
+    {
+        _isBusy = true;
+        try
+        {
+            var r = await Workspace.EvaluateModificationOrArcRequestAsync(CommunityId, id);
+            _message = $"Verified: {r.CitedLegalDocumentCode}. {r.TechnicalConditionsOrDecisionText}";
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex) { _message = $"Verification failed: {ex.Message}"; }
+        finally { _isBusy = false; }
+    }
+}

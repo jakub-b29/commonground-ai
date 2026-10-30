@@ -1,0 +1,23 @@
+@using CommonGround.Application.Services
+
+<div class="cg-grid-3">
+    <div class="cg-card">
+        <div style="font-size: 0.72rem; color: var(--color-text-secondary);">Operating cash</div>
+        <div class="kpi-value num">@Snapshot.OperatingCash.ToString("N2") @Snapshot.Community.CurrencyCode</div>
+        <div style="font-size: 0.72rem; color: var(--color-text-secondary);">Reserve cash: <span class="num">@Snapshot.ReserveCash.ToString("N2")</span></div>
+    </div>
+    <div class="cg-card">
+        <div style="font-size: 0.72rem; color: var(--color-text-secondary);">Delinquency rate</div>
+        <div class="kpi-value num">@Snapshot.DelinquencyRate.ToString("N2") %</div>
+        <div style="font-size: 0.72rem; color: var(--color-text-secondary);">Arrears units: <span class="num">@Snapshot.ArrearsUnits</span></div>
+    </div>
+    <div class="cg-card">
+        <div style="font-size: 0.72rem; color: var(--color-text-secondary);">Open work orders</div>
+        <div class="kpi-value num">@Snapshot.OpenWorkOrders</div>
+        <div style="font-size: 0.72rem; color: var(--color-text-secondary);">Pending approvals: <span class="num">@Snapshot.PendingApprovals</span></div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public CommunityWorkspaceSnapshot Snapshot { get; set; } = default!;
+}

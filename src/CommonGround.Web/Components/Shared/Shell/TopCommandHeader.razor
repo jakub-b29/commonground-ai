@@ -1,0 +1,156 @@
+@using CommonGround.Domain.Enums
+@inject WorkspaceUiState UiState
+@inject CommonGroundWorkspaceService Workspace
+@inject NavigationManager Nav
+@implements IDisposable
+
+<header class="cg-card" style="margin-bottom: 0.875rem;">
+    <div class="cg-grid-3">
+        <div>
+            <label for="community-select">Active community</label>
+            <select id="community-select" value="@UiState.SelectedCommunityId" @onchange="OnCommunityChanged" style="width: 100%;">
+                @foreach (var c in _communities)
+                {
+                    <option value="@c.Id" selected="@(UiState.SelectedCommunityId == c.Id)">@c.Name (@c.OperatingMode)</option>
+                }
+            </select>
+            <div style="margin-top: 0.375rem; font-size: 0.75rem; color: var(--color-text-secondary);">@UiState.CurrentTerminology</div>
+        </div>
+        <div>
+            <label for="role-select">Active security role</label>
+            <select id="role-select" value="@UiState.ActiveSecurityRole" @onchange="OnRoleChanged" style="width: 100%;">
+                @foreach (var role in Enum.GetValues<WorkspaceSecurityRole>())
+                {
+                    <option value="@role" selected="@(UiState.ActiveSecurityRole == role)">@role</option>
+                }
+            </select>
+            <div style="margin-top: 0.375rem; font-size: 0.75rem;">
+                @if (UiState.CurrentUser is not null)
+                {
+                    <span>@UiState.CurrentUser.FullName (@UiState.CurrentUser.Provider)</span>
+                }
+                else
+                {
+                    <span>Anonymous workspace session</span>
+                }
+                <span> · </span><a href="/login">Sign in / Switch account</a>
+            </div>
+        </div>
+        <div>
+            <label for="registry-input">Street address or Tax ID / EIN</label>
+            <div style="display: flex; gap: 0.375rem;">
+                <input id="registry-input" @bind="_registryInput" placeholder="14 Parkowa Ave or Tax ID" style="flex: 1; min-width: 0;" />
+                <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="OnSyncRegistry">Sync public registry</button>
+            </div>
+            <div style="display: flex; gap: 0.375rem; margin-top: 0.375rem;">
+                <button type="button" class="cg-btn" disabled="@(_isBusy || UiState.SelectedCommunityId is null)" @onclick="OnSosBroadcast">Emergency shutoff broadcast</button>
+                <button type="button" class="cg-btn" @onclick="OnToggleQuery">Portfolio query</button>
+            </div>
+        </div>
+    </div>
+    @if (!string.IsNullOrWhiteSpace(_message))
+    {
+        <div role="status" aria-live="polite" style="margin-top: 0.5rem;">@_message</div>
+    }
+</header>
+
+@code {
+    private Action? _stateHandler;
+    private List<Community> _communities = new();
+    private string _registryInput = string.Empty;
+    private string _message = string.Empty;
+    private bool _isBusy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _stateHandler = () => InvokeAsync(StateHasChanged);
+        UiState.OnChange += _stateHandler;
+        _communities = (await Workspace.GetCommunitiesAsync()).ToList();
+        if (UiState.SelectedCommunityId is null && _communities.Count > 0)
+        {
+            var first = _communities[0];
+            UiState.SelectCommunity(first.Id, first.OperatingMode == SystemOperatingMode.UsHoa ? "US HOA & Condo Mode" : "Housing Association Mode");
+        }
+    }
+
+    private async Task OnCommunityChanged(ChangeEventArgs e)
+    {
+        if (Guid.TryParse(e.Value?.ToString(), out var id))
+        {
+            var selected = _communities.FirstOrDefault(c => c.Id == id);
+            if (selected is not null)
+            {
+                UiState.SelectCommunity(id, selected.OperatingMode == SystemOperatingMode.UsHoa ? "US HOA & Condo Mode" : "Housing Association Mode");
+            }
+        }
+        await Task.CompletedTask;
+    }
+
+    private Task OnRoleChanged(ChangeEventArgs e)
+    {
+        if (Enum.TryParse<WorkspaceSecurityRole>(e.Value?.ToString(), out var role))
+        {
+            UiState.SetRole(role);
+        }
+        return Task.CompletedTask;
+    }
+
+    private async Task OnSyncRegistry()
+    {
+        if (UiState.SelectedCommunityId is null || string.IsNullOrWhiteSpace(_registryInput))
+        {
+            return;
+        }
+        _isBusy = true;
+        try
+        {
+            var result = await Workspace.TriggerWebAutoEnrichmentAsync(UiState.SelectedCommunityId.Value, _registryInput);
+            _message = result.SummaryReport;
+            UiState.Announce(_message);
+        }
+        catch (Exception ex)
+        {
+            _message = $"Registry sync failed: {ex.Message}";
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task OnSosBroadcast()
+    {
+        if (UiState.SelectedCommunityId is null)
+        {
+            return;
+        }
+        _isBusy = true;
+        try
+        {
+            var action = await Workspace.TriggerOneClickSosBroadcastAsync(UiState.SelectedCommunityId.Value, "STACK-A1");
+            _message = $"{action.Title}. {action.Rationale}";
+            UiState.Announce(_message);
+        }
+        catch (Exception ex)
+        {
+            _message = $"Broadcast failed: {ex.Message}";
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private void OnToggleQuery()
+    {
+        UiState.TogglePortfolioQuery();
+    }
+
+    public void Dispose()
+    {
+        if (_stateHandler is not null)
+        {
+            UiState.OnChange -= _stateHandler;
+        }
+    }
+}

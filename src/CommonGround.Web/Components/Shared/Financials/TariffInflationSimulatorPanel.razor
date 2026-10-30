@@ -1,0 +1,25 @@
+@using CommonGround.Application.Services
+@inject CommonGroundWorkspaceService Workspace
+<div class="cg-card" style="margin-top:0.875rem;">
+<h2>Tariff and inflation simulator</h2>
+<div class="cg-grid-2">
+<div><label for="heatPct">Heating change (%)</label><input id="heatPct" type="number" step="0.5" @bind="_heat" style="width:100%;" /></div>
+<div><label for="elecPct">Electricity change (%)</label><input id="elecPct" type="number" step="0.5" @bind="_elec" style="width:100%;" /></div>
+<div><label for="wagePct">Cleaning and wage change (%)</label><input id="wagePct" type="number" step="0.5" @bind="_wage" style="width:100%;" /></div>
+<div><label for="repPct">Reserve rate change (%)</label><input id="repPct" type="number" step="0.5" @bind="_rep" style="width:100%;" /></div>
+</div>
+<button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="OnRun" style="margin-top:0.5rem;">Run inflation simulation</button>
+@if (_result is not null) {
+<div class="cg-table-wrap" style="margin-top:0.5rem;"><table class="cg-table"><thead><tr><th>Unit</th><th class="num">Before</th><th class="num">After</th><th class="num">Delta</th><th class="num">Pct</th></tr></thead><tbody>
+@foreach (var d in _result.UnitDeltas) { <tr @key="d.UnitId"><td>@d.UnitNumber</td><td class="num">@d.BeforeTotal.ToString("N2")</td><td class="num">@d.AfterTotal.ToString("N2")</td><td class="num">@d.DeltaAmount.ToString("N2")</td><td class="num">@d.DeltaPercent.ToString("N2")</td></tr> }
+</tbody></table></div>
+<div>Avg increase: <span class="num">@_result.AverageIncreasePct.ToString("N2") %</span> @( _result.ExceedsUsHoaStatutory20PercentCap ? " - exceeds US HOA 20 percent statutory cap." : " - within cap." )</div>
+}
+</div>
+@code {
+[Parameter, EditorRequired] public Guid CommunityId { get; set; }
+private decimal _heat = 10, _elec = 10, _wage = 5, _rep = 5;
+private bool _isBusy;
+private InflationSimulationResult? _result;
+private async Task OnRun() { _isBusy = true; try { _result = await Workspace.RunInflationSimulationAsync(CommunityId, _heat, _elec, _wage, _rep); } finally { _isBusy = false; } }
+}

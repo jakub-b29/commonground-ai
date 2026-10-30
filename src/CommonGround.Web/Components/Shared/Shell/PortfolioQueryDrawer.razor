@@ -1,0 +1,68 @@
+@inject WorkspaceUiState UiState
+@inject CommonGroundWorkspaceService Workspace
+@implements IDisposable
+
+@if (UiState.IsPortfolioQueryOpen)
+{
+    <aside class="cg-card cg-drawer" style="position: fixed; inset-inline-end: 0.75rem; inset-block-start: 4rem; width: min(26rem, 92vw); max-height: 80dvh; overflow-y: auto; z-index: 900;" role="dialog" aria-label="Portfolio query">
+        <h3>Portfolio query</h3>
+        <p style="color: var(--color-text-secondary);">Ask about units, ledgers, work orders, votes, outages, and waste schedules. State-changing proposals require approval in Pending Approvals.</p>
+        <label for="portfolio-question">Manager question</label>
+        <textarea id="portfolio-question" @bind="_question" rows="3" style="width: 100%;" placeholder="Example: Which units are over 60 days past due on STACK-A1?"></textarea>
+        <div style="display: flex; gap: 0.375rem; margin-top: 0.375rem;">
+            <button type="button" class="cg-btn cg-btn-primary" disabled="@(_isBusy || UiState.SelectedCommunityId is null)" @onclick="OnAsk">Run portfolio query</button>
+            <button type="button" class="cg-btn" @onclick="OnClose">Close panel</button>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(_answer))
+        {
+            <div role="status" aria-live="polite" style="margin-top: 0.5rem; white-space: pre-wrap;">@_answer</div>
+        }
+    </aside>
+}
+
+@code {
+    private Action? _stateHandler;
+    private string _question = string.Empty;
+    private string _answer = string.Empty;
+    private bool _isBusy;
+
+    protected override void OnInitialized()
+    {
+        _stateHandler = () => InvokeAsync(StateHasChanged);
+        UiState.OnChange += _stateHandler;
+    }
+
+    private async Task OnAsk()
+    {
+        if (UiState.SelectedCommunityId is null || string.IsNullOrWhiteSpace(_question))
+        {
+            return;
+        }
+        _isBusy = true;
+        try
+        {
+            _answer = await Workspace.AskPortfolioCopilotAsync(UiState.SelectedCommunityId.Value, _question);
+        }
+        catch (Exception ex)
+        {
+            _answer = $"Query failed: {ex.Message}";
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private void OnClose()
+    {
+        UiState.TogglePortfolioQuery();
+    }
+
+    public void Dispose()
+    {
+        if (_stateHandler is not null)
+        {
+            UiState.OnChange -= _stateHandler;
+        }
+    }
+}

@@ -1,0 +1,18 @@
+@using CommonGround.Application.Services
+@inject CommonGroundWorkspaceService Workspace
+<div class="cg-card" style="margin-top:0.875rem;">
+<h2>Arrears and legal dossier</h2>
+<div class="cg-table-wrap"><table class="cg-table"><thead><tr><th>Unit</th><th class="num">Balance</th><th class="num">Days</th><th>Stage</th><th>Action</th></tr></thead><tbody>
+@foreach (var u in Snapshot.Community.Units.Where(u => u.CurrentBalance > 0).OrderByDescending(u => u.DaysPastDue)) {
+<tr @key="u.Id"><td>@u.UnitNumber</td><td class="num">@u.CurrentBalance.ToString("N2")</td><td class="num">@u.DaysPastDue</td><td>@u.ArrearsStage</td>
+<td><div style="display:flex;gap:0.375rem;flex-wrap:wrap;"><button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => OnDraftAsync(u.Id)">Draft installment plan or notice</button><a class="cg-btn" href="/api/export/legal-package/@u.Id">Export legal package</a></div></td></tr>
+}
+</tbody></table></div>
+@if (!string.IsNullOrWhiteSpace(_message)) { <div role="status" aria-live="polite">@_message</div> }
+</div>
+@code {
+[Parameter, EditorRequired] public CommunityWorkspaceSnapshot Snapshot { get; set; } = default!;
+private bool _isBusy;
+private string _message = string.Empty;
+private async Task OnDraftAsync(Guid unitId) { _isBusy = true; try { var a = await Workspace.GenerateArrearsOrLienActionAsync(Snapshot.Community.Id, unitId); _message = $"{a.Title}. {a.Rationale}"; } catch (Exception ex) { _message = ex.Message; } finally { _isBusy = false; } }
+}
