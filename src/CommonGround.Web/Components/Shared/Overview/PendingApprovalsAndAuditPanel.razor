@@ -3,19 +3,21 @@
 @using CommonGround.Domain.Enums
 @inject CommonGroundWorkspaceService Workspace
 @inject WorkspaceUiState UiState
+@inject WorkspaceLocalization Loc
+@implements IDisposable
 
 <div class="cg-grid-2">
     <div class="cg-card">
         <div class="cg-section-header">
-            <h2>Pending approvals</h2>
+            <h2>@Loc.T("panel.pendingApprovals")</h2>
             @if (Snapshot.PendingActions.Count > 0)
             {
-                <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="ApproveAllAsync">Approve all pending (@Snapshot.PendingActions.Count)</button>
+                <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="ApproveAllAsync">@Loc.T("action.approveAll") (@Snapshot.PendingActions.Count)</button>
             }
         </div>
         @if (Snapshot.PendingActions.Count == 0)
         {
-            <p style="color: var(--color-text-secondary);">No proposed operational actions awaiting review.</p>
+            <p style="color: var(--color-text-secondary);">@Loc.T("msg.noPendingActions")</p>
         }
         else
         {
@@ -32,8 +34,8 @@
                         </div>
                         <div style="font-size: 0.78125rem; color: var(--color-text-primary);">@action.Rationale</div>
                         <div class="cg-toolbar" style="margin-block-start: 0.5rem;">
-                            <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => DecideAsync(action.Id, true)">Approve action</button>
-                            <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => DecideAsync(action.Id, false)">Reject</button>
+                            <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => DecideAsync(action.Id, true)">@Loc.T("action.approve")</button>
+                            <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => DecideAsync(action.Id, false)">@Loc.T("action.reject")</button>
                         </div>
                     </div>
                 }
@@ -47,10 +49,10 @@
 
     <div class="cg-card">
         <div class="cg-section-header">
-            <h2>Resident membership approvals & community feed</h2>
-            <a class="cg-btn" href="/residents">Open resident portal</a>
+            <h2>@Loc.T("panel.membershipQueue")</h2>
+            <a class="cg-btn" href="/residents">@Loc.T("action.openResidentPortal")</a>
         </div>
-        <h3 style="margin-block-start: 0 !important;">Pending housing association membership requests</h3>
+        <h3 style="margin-block-start: 0 !important;">@Loc.T("panel.membershipQueue")</h3>
         @{
             var pendingMembers = Snapshot.Community.ResidentMemberships
                 .Where(m => m.Status == ResidentMembershipStatus.PendingApproval)
@@ -60,8 +62,8 @@
         @if (pendingMembers.Count == 0)
         {
             <div class="cg-subcard">
-                <span class="cg-badge cg-badge-ok">All verified</span>
-                <span style="margin-inline-start: 0.375rem;">All unit owners and residents are verified for @Snapshot.Community.Name.</span>
+                <span class="cg-badge cg-badge-ok">@Loc.T("msg.allVerified")</span>
+                <span style="margin-inline-start: 0.375rem;">@Loc.T("msg.allVerifiedFor") @Snapshot.Community.Name.</span>
             </div>
         }
         else
@@ -73,34 +75,34 @@
                         <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap;">
                             <div>
                                 <strong>@app.ApplicantFullName</strong>
-                                <span class="cg-badge mono" style="margin-inline-start: 0.35rem;">Unit @app.UnitNumber</span>
+                                <span class="cg-badge mono" style="margin-inline-start: 0.35rem;">@Loc.T("form.unit") @app.UnitNumber</span>
                                 <span class="cg-badge" style="margin-inline-start: 0.25rem;">@app.Provider</span>
                             </div>
-                            <span class="cg-badge cg-badge-warn">Pending approval</span>
+                            <span class="cg-badge cg-badge-warn">@Loc.T("msg.pendingApproval")</span>
                         </div>
                         <div style="font-size: 0.75rem; color: var(--color-text-secondary); margin-block-start: 0.25rem;">
-                            Proof: @app.OwnershipOrLeaseProofSummary
+                            @Loc.T("form.proof"): @app.OwnershipOrLeaseProofSummary
                         </div>
                         <div style="font-size: 0.72rem; color: var(--color-text-secondary); margin-block-start: 0.15rem;">
-                            Groups: @app.AssignedGroupsSummary
+                            @Loc.T("table.groups"): @app.AssignedGroupsSummary
                         </div>
                         <div class="cg-toolbar" style="margin-block-start: 0.45rem;">
-                            <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => DecideResidentAsync(app.Id, true)">Approve resident for association</button>
-                            <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => DecideResidentAsync(app.Id, false)">Reject</button>
+                            <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => DecideResidentAsync(app.Id, true)">@Loc.T("action.approveResident")</button>
+                            <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => DecideResidentAsync(app.Id, false)">@Loc.T("action.reject")</button>
                         </div>
                     </div>
                 }
             </div>
         }
 
-        <h3>Recent resident group messages</h3>
+        <h3>@Loc.T("panel.groupMessages")</h3>
         <div class="cg-table-wrap">
             <table class="cg-table">
                 <thead>
                     <tr>
-                        <th>Group</th>
-                        <th>Sender</th>
-                        <th>Subject</th>
+                        <th>@Loc.T("table.group")</th>
+                        <th>@Loc.T("table.sender")</th>
+                        <th>@Loc.T("table.subject")</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -115,7 +117,7 @@
                             <td>
                                 @if (msg.IsPinnedAnnouncement)
                                 {
-                                    <span class="cg-badge cg-badge-ok" style="margin-inline-end: 0.25rem;">Pinned</span>
+                                    <span class="cg-badge cg-badge-ok" style="margin-inline-end: 0.25rem;">@Loc.T("msg.pinned")</span>
                                 }
                                 <span>@msg.Subject</span>
                             </td>
@@ -132,6 +134,14 @@
     [Parameter] public EventCallback OnChanged { get; set; }
     private bool _isBusy;
     private string _message = string.Empty;
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+    }
 
     private async Task DecideAsync(Guid id, bool approve)
     {
@@ -153,7 +163,7 @@
         try
         {
             var count = await Workspace.ApproveAllPendingActionsAsync(Snapshot.Community.Id);
-            _message = $"Approved {count} pending actions.";
+            _message = $"{count} {Loc.T("msg.approvedCount")}";
             await OnChanged.InvokeAsync();
         }
         finally
@@ -168,12 +178,20 @@
         try
         {
             var res = await Workspace.DecideResidentMembershipAsync(Snapshot.Community.Id, appId, approve, UiState.ActiveSecurityRole);
-            _message = res.DecisionNote ?? "Resident membership updated.";
+            _message = res.DecisionNote ?? Loc.T("msg.membershipUpdated");
             await OnChanged.InvokeAsync();
         }
         finally
         {
             _isBusy = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null)
+        {
+            Loc.OnChange -= _locHandler;
         }
     }
 }

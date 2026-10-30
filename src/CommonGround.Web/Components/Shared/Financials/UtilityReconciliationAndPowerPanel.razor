@@ -1,14 +1,16 @@
 @using CommonGround.Domain.Enums
 @using CommonGround.Application.Services
 @inject CommonGroundWorkspaceService Workspace
+@inject WorkspaceLocalization Loc
+@implements IDisposable
 
 <div class="cg-card">
     <div class="cg-section-header">
-        <h2>Utility reconciliation and power audit</h2>
-        <span class="cg-badge">Sub-meter & RUBS</span>
+        <h2>@Loc.T("panel.utilityRecon")</h2>
+        <span class="cg-badge">@Loc.T("utility.rubsBadge")</span>
     </div>
     <div>
-        <label for="rubspolicy">Allocation policy</label>
+        <label for="rubspolicy">@Loc.T("form.allocationPolicy")</label>
         <select id="rubspolicy" @bind="_policy">
             @foreach (var p in Enum.GetValues<UtilityAllocationPolicy>())
             {
@@ -17,9 +19,9 @@
         </select>
     </div>
     <div class="cg-toolbar">
-        <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="OnSettle">Run bulk utility reconciliation</button>
-        <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="OnMatch">Match unstructured bank transfers</button>
-        <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="OnAudit">Run contracted power audit</button>
+        <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="OnSettle">@Loc.T("action.settle")</button>
+        <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="OnMatch">@Loc.T("action.matchTransfers")</button>
+        <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="OnAudit">@Loc.T("action.auditPower")</button>
     </div>
     @if (!string.IsNullOrWhiteSpace(_message))
     {
@@ -31,11 +33,11 @@
             <table class="cg-table">
                 <thead>
                     <tr>
-                        <th>Unit</th>
-                        <th class="num">Meter (m³)</th>
-                        <th class="num">Actual</th>
-                        <th class="num">Advances</th>
-                        <th class="num">Net delta</th>
+                        <th>@Loc.T("table.unit")</th>
+                        <th class="num">@Loc.T("utility.meter")</th>
+                        <th class="num">@Loc.T("utility.actual")</th>
+                        <th class="num">@Loc.T("utility.advances")</th>
+                        <th class="num">@Loc.T("utility.netDelta")</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -61,6 +63,14 @@
     private bool _isBusy;
     private string _message = string.Empty;
     private UtilitySettlementPeriod? _period;
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+    }
 
     private async Task OnSettle()
     {
@@ -68,7 +78,7 @@
         try
         {
             _period = await Workspace.RunBulkUtilitySettlementAsync(CommunityId, _policy);
-            _message = $"Settled {_period.UnitResults.Count} units. Unallocated loss {_period.UnallocatedCommonLossConsumption:N3} m³.";
+            _message = $"{_period.UnitResults.Count} {Loc.T("msg.settled")} {_period.UnallocatedCommonLossConsumption:N3} m³.";
         }
         catch (Exception ex) { _message = ex.Message; }
         finally { _isBusy = false; }
@@ -80,7 +90,7 @@
         try
         {
             var tx = await Workspace.AutoMatchBankTransfersAsync(CommunityId);
-            _message = $"Reviewed {tx.Count} transfers. Applied: {tx.Count(t => t.IsAppliedToLedger)}.";
+            _message = $"{Loc.T("msg.matched")} {tx.Count(t => t.IsAppliedToLedger)}.";
         }
         catch (Exception ex) { _message = ex.Message; }
         finally { _isBusy = false; }
@@ -96,5 +106,13 @@
         }
         catch (Exception ex) { _message = ex.Message; }
         finally { _isBusy = false; }
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null)
+        {
+            Loc.OnChange -= _locHandler;
+        }
     }
 }

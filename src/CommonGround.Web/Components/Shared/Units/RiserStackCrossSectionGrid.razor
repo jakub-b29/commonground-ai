@@ -1,16 +1,18 @@
 @using CommonGround.Domain.Entities
+@inject WorkspaceLocalization Loc
+@implements IDisposable
 
 <div class="cg-card">
     <div class="cg-section-header">
-        <h2>Riser stack cross-section</h2>
+        <h2>@Loc.T("panel.riser")</h2>
         <span class="cg-badge mono">@_selectedStack</span>
     </div>
-    <p style="color: var(--color-text-secondary); font-size: 0.78125rem;">Floors 4 to 1 plus basement manifold across STACK-A1, STACK-A2, STACK-B1. Select any unit to inspect its dossier and riser column.</p>
+    <p style="color: var(--color-text-secondary); font-size: 0.78125rem;">@Loc.T("riser.hint")</p>
     <div class="cg-table-wrap">
         <table class="cg-table">
             <thead>
                 <tr>
-                    <th>Floor</th>
+                    <th>@Loc.T("riser.floor")</th>
                     <th>STACK-A1</th>
                     <th>STACK-A2</th>
                     <th>STACK-B1</th>
@@ -21,7 +23,7 @@
                 {
                     var f = floor;
                     <tr>
-                        <td><strong>Floor @f</strong></td>
+                        <td><strong>@Loc.T("riser.floor") @f</strong></td>
                         @foreach (var stack in new[] { "STACK-A1", "STACK-A2", "STACK-B1" })
                         {
                             var s = stack;
@@ -35,11 +37,11 @@
                                         <span class="mono">@unit.UnitNumber</span>
                                         @if (hasLeak)
                                         {
-                                            <span class="cg-badge cg-badge-err" style="font-size: 0.65rem; padding: 0.05rem 0.3rem;">Leak</span>
+                                            <span class="cg-badge cg-badge-err" style="font-size: 0.65rem; padding: 0.05rem 0.3rem;">@Loc.T("riser.leak")</span>
                                         }
                                         else if (unit.CurrentBalance > 0)
                                         {
-                                            <span class="cg-badge cg-badge-warn" style="font-size: 0.65rem; padding: 0.05rem 0.3rem;">Arrears</span>
+                                            <span class="cg-badge cg-badge-warn" style="font-size: 0.65rem; padding: 0.05rem 0.3rem;">@Loc.T("riser.arrears")</span>
                                         }
                                     </button>
                                 }
@@ -52,7 +54,7 @@
                     </tr>
                 }
                 <tr>
-                    <td><strong>Ground / 0</strong></td>
+                    <td><strong>@Loc.T("riser.ground")</strong></td>
                     <td colspan="3">
                         <div style="display: flex; gap: 0.375rem; flex-wrap: wrap;">
                             @foreach (var groundUnit in Units.Where(u => u.FloorNumber == 0))
@@ -66,8 +68,8 @@
                     </td>
                 </tr>
                 <tr>
-                    <td><strong>Basement</strong></td>
-                    <td colspan="3" style="font-size: 0.75rem; color: var(--color-text-secondary);">Shutoff manifold – blue valve (STACK-A1/A2), red valve (STACK-B1)</td>
+                    <td><strong>@Loc.T("riser.basement")</strong></td>
+                    <td colspan="3" style="font-size: 0.75rem; color: var(--color-text-secondary);">@Loc.T("riser.manifold")</td>
                 </tr>
             </tbody>
         </table>
@@ -75,7 +77,7 @@
     @if (SelectedUnitId != Guid.Empty)
     {
         <div class="cg-toolbar">
-            <button type="button" class="cg-btn" @onclick="() => OnBroadcastStackAlert.InvokeAsync(_selectedStack)">Broadcast riser shutoff alert (@_selectedStack)</button>
+            <button type="button" class="cg-btn" @onclick="() => OnBroadcastStackAlert.InvokeAsync(_selectedStack)">@Loc.T("action.broadcastAlert") (@_selectedStack)</button>
         </div>
     }
 </div>
@@ -86,4 +88,20 @@
     [Parameter] public EventCallback<Guid> OnSelectUnit { get; set; }
     [Parameter] public EventCallback<string> OnBroadcastStackAlert { get; set; }
     private string _selectedStack => Units.FirstOrDefault(u => u.Id == SelectedUnitId)?.VerticalStackCode ?? "STACK-A1";
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null)
+        {
+            Loc.OnChange -= _locHandler;
+        }
+    }
 }

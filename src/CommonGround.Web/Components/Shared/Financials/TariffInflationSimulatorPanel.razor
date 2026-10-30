@@ -1,50 +1,52 @@
 @using CommonGround.Application.Services
 @inject CommonGroundWorkspaceService Workspace
+@inject WorkspaceLocalization Loc
+@implements IDisposable
 
 <div class="cg-card">
     <div class="cg-section-header">
-        <h2>Tariff and inflation simulator</h2>
-        <span class="cg-badge">Assessment impact</span>
+        <h2>@Loc.T("panel.tariffSim")</h2>
+        <span class="cg-badge">@Loc.T("tariff.impactBadge")</span>
     </div>
     <div class="cg-grid-2">
         <div>
-            <label for="heatPct">Heating change (%)</label>
+            <label for="heatPct">@Loc.T("tariff.heating")</label>
             <input id="heatPct" type="number" step="0.5" @bind="_heat" />
         </div>
         <div>
-            <label for="elecPct">Electricity change (%)</label>
+            <label for="elecPct">@Loc.T("tariff.electricity")</label>
             <input id="elecPct" type="number" step="0.5" @bind="_elec" />
         </div>
         <div>
-            <label for="wagePct">Cleaning and wage change (%)</label>
+            <label for="wagePct">@Loc.T("tariff.wage")</label>
             <input id="wagePct" type="number" step="0.5" @bind="_wage" />
         </div>
         <div>
-            <label for="repPct">Reserve rate change (%)</label>
+            <label for="repPct">@Loc.T("tariff.reserve")</label>
             <input id="repPct" type="number" step="0.5" @bind="_rep" />
         </div>
     </div>
     <div class="cg-toolbar">
-        <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="OnRun">Run inflation simulation</button>
+        <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="OnRun">@Loc.T("action.runSimulation")</button>
     </div>
 
     @if (_result is not null)
     {
         <div class="cg-callout" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;">
-            <span>Average assessment increase: <strong class="num">@_result.AverageIncreasePct.ToString("N2") %</strong></span>
+            <span>@Loc.T("tariff.avgIncrease") <strong class="num">@_result.AverageIncreasePct.ToString("N2") %</strong></span>
             <span class="cg-badge @(_result.ExceedsUsHoaStatutory20PercentCap ? "cg-badge-warn" : "cg-badge-ok")">
-                @(_result.ExceedsUsHoaStatutory20PercentCap ? "Exceeds US HOA 20% cap" : "Within 20% statutory cap")
+                @(_result.ExceedsUsHoaStatutory20PercentCap ? Loc.T("tariff.exceedsCap") : Loc.T("tariff.withinCap"))
             </span>
         </div>
         <div class="cg-table-wrap" style="max-height: 220px; overflow-y: auto;">
             <table class="cg-table">
                 <thead>
                     <tr>
-                        <th>Unit</th>
-                        <th class="num">Before</th>
-                        <th class="num">After</th>
-                        <th class="num">Delta</th>
-                        <th class="num">%</th>
+                        <th>@Loc.T("table.unit")</th>
+                        <th class="num">@Loc.T("tariff.before")</th>
+                        <th class="num">@Loc.T("tariff.after")</th>
+                        <th class="num">@Loc.T("tariff.delta")</th>
+                        <th class="num">@Loc.T("tariff.pct")</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -69,6 +71,14 @@
     private decimal _heat = 10, _elec = 10, _wage = 5, _rep = 5;
     private bool _isBusy;
     private InflationSimulationResult? _result;
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+    }
 
     private async Task OnRun()
     {
@@ -80,6 +90,14 @@
         finally
         {
             _isBusy = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null)
+        {
+            Loc.OnChange -= _locHandler;
         }
     }
 }

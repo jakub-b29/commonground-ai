@@ -3,17 +3,19 @@
 @using CommonGround.Domain.Enums
 @inject CommonGroundWorkspaceService Workspace
 @inject WorkspaceUiState UiState
+@inject WorkspaceLocalization Loc
+@implements IDisposable
 
 <div class="cg-card">
     <div class="cg-section-header">
-        <h2>Resident self-service panel</h2>
+        <h2>@Loc.T("panel.selfService")</h2>
         @if (_unit is not null)
         {
-            <span class="cg-badge cg-badge-ok">Unit @_unit.UnitNumber · @_unit.VerticalStackCode</span>
+            <span class="cg-badge cg-badge-ok">@Loc.T("form.unit") @_unit.UnitNumber · @_unit.VerticalStackCode</span>
         }
     </div>
     <div style="margin-block-end: 0.75rem;">
-        <label for="resident-unit-select">Active resident unit view</label>
+        <label for="resident-unit-select">@Loc.T("self.activeView")</label>
         <select id="resident-unit-select" value="@_selectedUnitId" @onchange="OnSelectUnit">
             @foreach (var u in Community.Units)
             {
@@ -26,30 +28,30 @@
     {
         <div class="cg-grid-3" style="margin-block-end: 0.75rem;">
             <div class="cg-subcard">
-                <div class="kpi-label">Monthly assessment</div>
+                <div class="kpi-label">@Loc.T("self.monthly")</div>
                 <div class="kpi-value num" style="font-size: 1.15rem;">@_assessment?.TotalAssessment.ToString("N2") @Community.CurrencyCode</div>
-                <div class="kpi-sub">Share: <span class="num">@_unit.ShareNumerator / @_unit.ShareDenominator</span></div>
+                <div class="kpi-sub">@Loc.T("self.share") <span class="num">@_unit.ShareNumerator / @_unit.ShareDenominator</span></div>
             </div>
             <div class="cg-subcard">
-                <div class="kpi-label">Account balance</div>
+                <div class="kpi-label">@Loc.T("self.balance")</div>
                 <div class="kpi-value num" style="font-size: 1.15rem;">@_unit.CurrentBalance.ToString("N2") @Community.CurrencyCode</div>
-                <div class="kpi-sub">Status: <span class="cg-badge @(_unit.CurrentBalance > 0 ? "cg-badge-warn" : "cg-badge-ok")">@_unit.ArrearsStage</span></div>
+                <div class="kpi-sub">@Loc.T("self.status") <span class="cg-badge @(_unit.CurrentBalance > 0 ? "cg-badge-warn" : "cg-badge-ok")">@_unit.ArrearsStage</span></div>
             </div>
             <div class="cg-subcard">
-                <div class="kpi-label">Sub-meters</div>
+                <div class="kpi-label">@Loc.T("self.meters")</div>
                 <div class="kpi-value num" style="font-size: 1.15rem;">@_unit.Meters.Count</div>
-                <div class="kpi-sub">Riser stack: <span class="mono">@_unit.VerticalStackCode</span></div>
+                <div class="kpi-sub">@Loc.T("self.riser") <span class="mono">@_unit.VerticalStackCode</span></div>
             </div>
         </div>
 
-        <h3 style="margin-block-start: 0 !important;">Unit work orders & active ballots</h3>
+        <h3 style="margin-block-start: 0 !important;">@Loc.T("self.workOrdersTitle")</h3>
         <div class="cg-table-wrap">
             <table class="cg-table">
                 <thead>
                     <tr>
-                        <th>Item</th>
-                        <th>Category / Rule</th>
-                        <th>Status</th>
+                        <th>@Loc.T("self.item")</th>
+                        <th>@Loc.T("self.categoryRule")</th>
+                        <th>@Loc.T("table.status")</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -69,7 +71,7 @@
                             <td>@res.MajorityRule</td>
                             <td>
                                 <span class="cg-badge @(voted is not null ? "cg-badge-ok" : "cg-badge-warn")">
-                                    @(voted is not null ? $"Voted: {voted.Choice}" : "Ballot open")
+                                    @(voted is not null ? $"{Loc.T("self.voted")} {voted.Choice}" : Loc.T("self.ballotOpen"))
                                 </span>
                             </td>
                         </tr>
@@ -85,6 +87,14 @@
     private Guid _selectedUnitId;
     private Unit? _unit;
     private MonthlyAssessment? _assessment;
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+    }
 
     protected override void OnParametersSet()
     {
@@ -119,6 +129,14 @@
                 var credit = AncillaryRevenueEngine.CreditForUnit(Community.CommercialContracts, _unit);
                 _assessment = AssessmentCalculator.Compute(Community, _unit, "2026-11", credit);
             }
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null)
+        {
+            Loc.OnChange -= _locHandler;
         }
     }
 }

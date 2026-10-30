@@ -55,20 +55,24 @@ The application supports two statutory operating profiles selectable at the syst
 
 All financial, utility, reserve, cost-estimation, and voting calculations run in deterministic C# domain services covered by xUnit tests. All state-changing model proposals are placed in a review queue (`Pending Approvals`) for manager sign-off.
 
+## Workspace Roles (3 roles, manager-granted)
+
+- **Property Manager**: full access to every community, ledger, work order, vote, and vaulted access code. Only this role can approve or reject `AiAction` proposals, reveal vaulted permanent codes, and grant Resident or Contractor status. Denied attempts are logged as `ROLE_GRANT_DENIED` in the SHA-256 audit chain.
+- **Resident**: sees only their own unit dossier, balance, and contact details (`msg.residentOwnOnly`), plus building groups, share-weighted ballots, and request submission. Resident status is granted by the Property Manager through the membership approval queue.
+- **Contractor**: sees only assigned work orders, temporary contractor or courier codes, and contact phones for residents and managers (`msg.contractorLimited`). Contractor status is granted by the Property Manager with company or trade recorded on the membership application.
+
+## Interface Languages (file-based, on demand)
+
+- The full workspace UI is translated into English (`en`), Polish (`pl`), Spanish (`es`), French (`fr`), and German (`de`).
+- Dictionaries live in `src/CommonGround.Web/wwwroot/i18n/{language}.json` and are loaded on demand by [`WorkspaceLocalization`](src/CommonGround.Web/Services/WorkspaceLocalization.cs:1) via `EnsureLoadedAsync` and `SetLanguageAsync`.
+- Switch language from the header selector (`form.language`). Every page, shell drawer, table header, KPI card, panel, form label, status message, and error page resolves through `Loc.T(key)` with English fallback.
+
 ## Data Security & Privacy
 
-- **Multi-Provider Authentication (`Facebook`, `Google`, `Apple`, and `Email`)**: Supports sign-in via Facebook OAuth, Google OpenID Connect, Sign in with Apple, and Email/Password (PBKDF2-SHA256) with role-mapped claims (`PropertyManagerAdmin`, `AccountingAuditor`, `MaintenanceDispatcher`, `BoardMemberReadOnly`, `ExternalContractorView`) and unit-owner account linking.
+- **Multi-Provider Authentication (`Facebook`, `Google`, `Apple`, and `Email`)**: Supports sign-in via Facebook OAuth, Google OpenID Connect, Sign in with Apple, and Email/Password (PBKDF2-SHA256) with role-mapped claims (`PropertyManager`, `Resident`, `Contractor`) and unit-owner account linking.
 - **Outbound PII Redaction**: Before any text or structured context is sent to external model endpoints (`https://api.meta.ai/v1`), `DataSecurityAndPrivacyGuard` strips and tokenizes owner emails, phone numbers, bank account numbers (IBAN / ACH), tax identifiers, and physical building PINs into pseudonymous session tokens (`[OWNER_REF_A301]`, `[IBAN_MASKED]`, `[ACCESS_PIN_VAULTED]`).
 - **Prompt-Injection & Untrusted Input Isolation**: External inputs (resident messages, voice transcripts, OCR text from invoices and paper ballots, bank transfer descriptions, and web bulletins) are sanitized and isolated inside non-executable data delimiters, blocking instructions attempting to alter ledger accounts, approve payouts, or exfiltrate access codes.
-- **Role-Scoped Secret Vault & Least-Privilege Dispatch**: Stairwell intercom codes, boiler-room key-safe PINs, and owner contact details are masked by default according to the active workspace role (`PropertyManagerAdmin`, `AccountingAuditor`, `MaintenanceDispatcher`, `BoardMemberReadOnly`, `ExternalContractorView`). Contractor work orders receive only time-bounded contractor access codes rather than permanent resident codes.
-- **Tamper-Evident SHA-256 Security Audit Log**: Secret reveals, approval queue decisions, legal dossier exports, and blocked injection attempts are recorded in a hash-chained `SecurityAuditEvent` log (`PreviousChainHash` -> `EntrySha256Hash`) verifiable at runtime.
-- **Multi-Community Tenant Isolation & Transport Hardening**: Every community-scoped entity enforces `ICommunityScoped` tenant boundaries, ASP.NET Core Data Protection (`IDataProtectionProvider`), antiforgery validation, and strict HTTP security headers (`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`).
-
-## Data Security & Privacy
-
-- **Outbound PII Redaction**: Before any text or structured context is sent to external model endpoints (`https://api.meta.ai/v1`), `DataSecurityAndPrivacyGuard` strips and tokenizes owner emails, phone numbers, bank account numbers (IBAN / ACH), tax identifiers, and physical building PINs into pseudonymous session tokens (`[OWNER_REF_A301]`, `[IBAN_MASKED]`, `[ACCESS_PIN_VAULTED]`).
-- **Prompt-Injection & Untrusted Input Isolation**: External inputs (resident messages, voice transcripts, OCR text from invoices and paper ballots, bank transfer descriptions, and web bulletins) are sanitized and isolated inside non-executable data delimiters, blocking instructions attempting to alter ledger accounts, approve payouts, or exfiltrate access codes.
-- **Role-Scoped Secret Vault & Least-Privilege Dispatch**: Stairwell intercom codes, boiler-room key-safe PINs, and owner contact details are masked by default according to the active workspace role (`PropertyManagerAdmin`, `AccountingAuditor`, `MaintenanceDispatcher`, `BoardMemberReadOnly`, `ExternalContractorView`). Contractor work orders receive only time-bounded contractor access codes rather than permanent resident codes.
+- **Role-Scoped Secret Vault & Least-Privilege Dispatch**: Stairwell intercom codes, boiler-room key-safe PINs, and owner contact details are masked by default according to the active workspace role (`PropertyManager`, `Resident`, `Contractor`). Contractor work orders receive only time-bounded contractor access codes rather than permanent resident codes.
 - **Tamper-Evident SHA-256 Security Audit Log**: Secret reveals, approval queue decisions, legal dossier exports, and blocked injection attempts are recorded in a hash-chained `SecurityAuditEvent` log (`PreviousChainHash` -> `EntrySha256Hash`) verifiable at runtime.
 - **Multi-Community Tenant Isolation & Transport Hardening**: Every community-scoped entity enforces `ICommunityScoped` tenant boundaries, ASP.NET Core Data Protection (`IDataProtectionProvider`), antiforgery validation, and strict HTTP security headers (`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`).
 

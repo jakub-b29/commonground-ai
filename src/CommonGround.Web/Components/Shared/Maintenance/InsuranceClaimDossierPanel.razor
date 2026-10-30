@@ -1,14 +1,16 @@
 @using CommonGround.Domain.Entities
 @using CommonGround.Domain.Enums
 @inject CommonGroundWorkspaceService Workspace
+@inject WorkspaceLocalization Loc
+@implements IDisposable
 
 <div class="cg-card">
     <div class="cg-section-header">
-        <h2>Insurance claim dossier</h2>
-        <span class="cg-badge">All-risk policy package</span>
+        <h2>@Loc.T("panel.insurance")</h2>
+        <span class="cg-badge">@Loc.T("insurance.policyBadge")</span>
     </div>
     <div>
-        <label for="claimWo">Incident work order</label>
+        <label for="claimWo">@Loc.T("form.incidentOrder")</label>
         <select id="claimWo" value="@_selectedId" @onchange="OnSelect">
             @foreach (var w in WorkOrders)
             {
@@ -17,10 +19,10 @@
         </select>
     </div>
     <div class="cg-toolbar">
-        <button type="button" class="cg-btn cg-btn-primary" disabled="@(_isBusy || _selectedId == Guid.Empty)" @onclick="OnCompile">Compile insurance claim dossier</button>
+        <button type="button" class="cg-btn cg-btn-primary" disabled="@(_isBusy || _selectedId == Guid.Empty)" @onclick="OnCompile">@Loc.T("action.compileDossier")</button>
         @if (_dossier is not null)
         {
-            <a class="cg-btn" href="/api/export/claim-dossier/@_dossier.WorkOrderId">Export claim dossier PDF</a>
+            <a class="cg-btn" href="/api/export/claim-dossier/@_dossier.WorkOrderId">@Loc.T("action.exportPdf")</a>
         }
     </div>
     @if (_dossier is not null)
@@ -31,7 +33,7 @@
                 <span class="cg-badge cg-badge-ok">@_dossier.Status</span>
             </div>
             <div style="font-size: 0.78125rem; margin-block-start: 0.3rem;">
-                Documented loss: <strong class="num">@_dossier.TotalDocumentedLoss.ToString("N2")</strong> · Deductible: <span class="num">@_dossier.DeductibleAmount.ToString("N2")</span> · Net payout: <strong class="num">@_dossier.NetClaimPayoutEstimate.ToString("N2")</strong>
+                @Loc.T("insurance.documentedLoss") <strong class="num">@_dossier.TotalDocumentedLoss.ToString("N2")</strong> · @Loc.T("insurance.deductible") <span class="num">@_dossier.DeductibleAmount.ToString("N2")</span> · @Loc.T("insurance.netPayout") <strong class="num">@_dossier.NetClaimPayoutEstimate.ToString("N2")</strong>
             </div>
             <div style="font-size: 0.72rem; color: var(--color-text-secondary); margin-block-start: 0.2rem;">
                 @_dossier.CoverageClauseCited
@@ -51,6 +53,14 @@
     private bool _isBusy;
     private string _message = string.Empty;
     private InsuranceClaimDossier? _dossier;
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+    }
 
     protected override void OnParametersSet()
     {
@@ -73,9 +83,17 @@
         try
         {
             _dossier = await Workspace.GenerateInsuranceClaimDossierAsync(CommunityId, _selectedId);
-            _message = $"Compiled {_dossier.ClaimReference}.";
+            _message = $"{Loc.T("msg.compiled")} {_dossier.ClaimReference}.";
         }
         catch (Exception ex) { _message = ex.Message; }
         finally { _isBusy = false; }
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null)
+        {
+            Loc.OnChange -= _locHandler;
+        }
     }
 }

@@ -1,11 +1,13 @@
 @using CommonGround.Domain.Calculators
 @inject CommonGroundWorkspaceService Workspace
 @inject WorkspaceUiState UiState
+@inject WorkspaceLocalization Loc
+@implements IDisposable
 
 <div class="cg-card">
     <div class="cg-section-header">
-        <h2>Infrastructure atlas and access vault</h2>
-        <span class="cg-badge">@Photos.Count emergency shutoff points</span>
+        <h2>@Loc.T("panel.atlas")</h2>
+        <span class="cg-badge">@Photos.Count @Loc.T("atlas.shutoffPoints")</span>
     </div>
     <div class="cg-grid-4">
         @foreach (var photo in Photos)
@@ -34,15 +36,15 @@
         }
     </div>
 
-    <h3>Building access code vault</h3>
+    <h3>@Loc.T("panel.accessVault")</h3>
     <div class="cg-table-wrap">
         <table class="cg-table">
             <thead>
                 <tr>
-                    <th>Target area & key-safe location</th>
-                    <th>Permanent resident code</th>
-                    <th>Temporary contractor / courier code</th>
-                    <th>Vault action</th>
+                    <th>@Loc.T("atlas.target")</th>
+                    <th>@Loc.T("atlas.permanent")</th>
+                    <th>@Loc.T("atlas.temporary")</th>
+                    <th>@Loc.T("atlas.vaultAction")</th>
                 </tr>
             </thead>
             <tbody>
@@ -61,7 +63,7 @@
                         </td>
                         <td class="mono">@access.ContractorOrCourierCode</td>
                         <td>
-                            <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => OnRevealAsync(access.Id)">Reveal secret (logged)</button>
+                            <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => OnRevealAsync(access.Id)">@Loc.T("action.reveal")</button>
                         </td>
                     </tr>
                 }
@@ -80,6 +82,14 @@
     [Parameter, EditorRequired] public Guid CommunityId { get; set; }
     private bool _isBusy;
     private string _message = string.Empty;
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+    }
 
     private async Task OnRevealAsync(Guid id)
     {
@@ -88,10 +98,18 @@
         {
             var code = await Workspace.RevealVaultedAccessCodeAsync(CommunityId, id, UiState.ActiveSecurityRole);
             UiState.RevealedAccessCodeIds.Add(id);
-            UiState.Announce("Vaulted code revealed for audit.");
-            _message = $"Revealed code: {code}. Logged in SHA-256 security audit chain.";
+            UiState.Announce(Loc.T("msg.vaultRevealed"));
+            _message = $"{Loc.T("msg.vaultRevealed")}: {code}.";
         }
-        catch (Exception ex) { _message = $"Reveal denied: {ex.Message}"; }
+        catch (Exception ex) { _message = $"{Loc.T("msg.revealDenied")} {ex.Message}"; }
         finally { _isBusy = false; }
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null)
+        {
+            Loc.OnChange -= _locHandler;
+        }
     }
 }

@@ -1,19 +1,21 @@
 @using CommonGround.Domain.Entities
 @inject CommonGroundWorkspaceService Workspace
+@inject WorkspaceLocalization Loc
+@implements IDisposable
 
 <div class="cg-split-main-aside">
     <div class="cg-card">
         <div class="cg-section-header">
-            <h2>Legal corpus studio</h2>
-            <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="OnAcquire">Acquire and sync statutory legal texts (muse-wonder)</button>
+            <h2>@Loc.T("panel.legalCorpus")</h2>
+            <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="OnAcquire">@Loc.T("action.acquireLegal")</button>
         </div>
         <div class="cg-table-wrap">
             <table class="cg-table">
                 <thead>
                     <tr>
-                        <th>Code</th>
-                        <th>Title & authority</th>
-                        <th>Official citation</th>
+                        <th>@Loc.T("table.code")</th>
+                        <th>@Loc.T("legal.titleAuthority")</th>
+                        <th>@Loc.T("legal.citation")</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -34,7 +36,7 @@
         </div>
 
         <div style="margin-block-start: 0.75rem;">
-            <label for="legal-filter">Article & keyword filter</label>
+            <label for="legal-filter">@Loc.T("form.legalFilter")</label>
             <input id="legal-filter" @bind="_filter" @bind:event="oninput" placeholder="Art. 12, Art. 23, 568, 718.112, warranty, riser, quorum" />
         </div>
 
@@ -46,7 +48,7 @@
                     <span class="cg-badge mono">@_selected.DocumentCode</span>
                 </div>
                 <div style="font-size: 0.72rem; color: var(--color-text-secondary); margin-block: 0.25rem 0.45rem;">
-                    @_selected.KeyProvisionsSummary · Applied in: @_selected.AppliedInModules
+                    @_selected.KeyProvisionsSummary · @Loc.T("legal.appliedIn") @_selected.AppliedInModules
                 </div>
                 <div class="mono" style="white-space: pre-wrap; font-size: 0.75rem; background: var(--color-bg-surface); padding: 0.625rem; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-control);">@FilteredText(_selected.VerbatimLegalText)</div>
             </div>
@@ -59,26 +61,26 @@
 
     <div class="cg-card">
         <div class="cg-section-header">
-            <h2>Neighbor dispute mediation</h2>
-            <span class="cg-badge">House rules citation</span>
+            <h2>@Loc.T("panel.mediation")</h2>
+            <span class="cg-badge">@Loc.T("mediation.citationBadge")</span>
         </div>
-        <p style="color: var(--color-text-secondary); font-size: 0.78125rem;">Draft a neutral mediation notice quoting exact clauses from the community's House Rules and Municipal Ordinances.</p>
+        <p style="color: var(--color-text-secondary); font-size: 0.78125rem;">@Loc.T("mediation.hint")</p>
         <div class="cg-grid-2">
             <div>
-                <label for="repUnit">Reporting unit</label>
+                <label for="repUnit">@Loc.T("form.reportingUnit")</label>
                 <input id="repUnit" @bind="_reporter" />
             </div>
             <div>
-                <label for="subUnit">Subject unit</label>
+                <label for="subUnit">@Loc.T("form.subjectUnit")</label>
                 <input id="subUnit" @bind="_subject" />
             </div>
         </div>
         <div style="margin-block-start: 0.5rem;">
-            <label for="issueText">Issue description</label>
+            <label for="issueText">@Loc.T("form.issue")</label>
             <textarea id="issueText" @bind="_issue" rows="3"></textarea>
         </div>
         <div class="cg-toolbar">
-            <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="OnMediate">Draft mediation notice</button>
+            <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="OnMediate">@Loc.T("action.draftMediation")</button>
         </div>
         @if (!string.IsNullOrWhiteSpace(_mediation))
         {
@@ -100,6 +102,14 @@
     private string _mediation = string.Empty;
     private string _message = string.Empty;
     private bool _isBusy;
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+    }
 
     protected override void OnParametersSet()
     {
@@ -118,7 +128,7 @@
         if (string.IsNullOrWhiteSpace(_filter)) return text;
         var lines = text.Split('\n');
         var matched = lines.Where(l => l.Contains(_filter, StringComparison.OrdinalIgnoreCase)).ToList();
-        return matched.Count == 0 ? "No article matches the filter." : string.Join("\n", matched);
+        return matched.Count == 0 ? Loc.T("msg.noMatchFilter") : string.Join("\n", matched);
     }
 
     private async Task OnAcquire()
@@ -127,7 +137,7 @@
         try
         {
             await Workspace.AcquireAndSyncLegalDocumentsAsync(CommunityId);
-            _message = "Statutory legal texts synced.";
+            _message = Loc.T("msg.legalSynced");
             await OnChanged.InvokeAsync();
         }
         catch (Exception ex) { _message = ex.Message; }
@@ -143,5 +153,13 @@
         }
         catch (Exception ex) { _mediation = ex.Message; }
         finally { _isBusy = false; }
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null)
+        {
+            Loc.OnChange -= _locHandler;
+        }
     }
 }

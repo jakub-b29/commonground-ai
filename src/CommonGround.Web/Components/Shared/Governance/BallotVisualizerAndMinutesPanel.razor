@@ -1,13 +1,15 @@
 @using CommonGround.Domain.Entities
 @inject CommonGroundWorkspaceService Workspace
+@inject WorkspaceLocalization Loc
+@implements IDisposable
 
 <div class="cg-card">
     <div class="cg-section-header">
-        <h2>Ballot visualizer and minutes</h2>
-        <span class="cg-badge">Option previews & QR notice</span>
+        <h2>@Loc.T("panel.ballotVisual")</h2>
+        <span class="cg-badge">@Loc.T("ballot.previewsBadge")</span>
     </div>
     <div>
-        <label for="visRes">Visualized resolution</label>
+        <label for="visRes">@Loc.T("form.visualizedResolution")</label>
         <select id="visRes" value="@_selectedId" @onchange="OnSelect">
             @foreach (var r in Resolutions.OrderBy(r => r.Number))
             {
@@ -16,10 +18,10 @@
         </select>
     </div>
     <div class="cg-toolbar">
-        <button type="button" class="cg-btn cg-btn-primary" disabled="@(_isBusy || _selectedId == Guid.Empty)" @onclick="OnVisuals">Generate Option A and B previews</button>
-        <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="OnMinutes">Transcribe meeting audio with diarization</button>
-        <a class="cg-btn" href="/api/export/minutes-pdf/@CommunityId">Export minutes PDF</a>
-        <a class="cg-btn" href="/api/export/minutes-docx/@CommunityId">Export minutes DOCX</a>
+        <button type="button" class="cg-btn cg-btn-primary" disabled="@(_isBusy || _selectedId == Guid.Empty)" @onclick="OnVisuals">@Loc.T("action.generatePreviews")</button>
+        <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="OnMinutes">@Loc.T("action.transcribe")</button>
+        <a class="cg-btn" href="/api/export/minutes-pdf/@CommunityId">@Loc.T("action.exportPdf")</a>
+        <a class="cg-btn" href="/api/export/minutes-docx/@CommunityId">@Loc.T("action.exportDocx")</a>
     </div>
 
     @if (_selected is not null)
@@ -45,8 +47,8 @@
             <div class="cg-subcard" style="margin-block-start: 0.625rem; display: flex; align-items: center; gap: 0.75rem;">
                 <img class="cg-photo-frame" src="@_selected.QrPosterDataUrl" alt="QR poster" style="width: 72px; height: 72px; object-fit: contain; background: #fff;" />
                 <div>
-                    <strong style="font-size: 0.8125rem;">Printable stairwell QR notice poster</strong>
-                    <div style="font-size: 0.72rem; color: var(--color-text-secondary);">Residents scan this code in Stairwell A or B to view Option A/B renders and cast their share-weighted ballot.</div>
+                    <strong style="font-size: 0.8125rem;">@Loc.T("ballot.qrTitle")</strong>
+                    <div style="font-size: 0.72rem; color: var(--color-text-secondary);">@Loc.T("ballot.qrHint")</div>
                 </div>
             </div>
         }
@@ -65,6 +67,14 @@
     private Resolution? _selected;
     private bool _isBusy;
     private string _message = string.Empty;
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+    }
 
     protected override void OnParametersSet()
     {
@@ -93,7 +103,7 @@
         try
         {
             _selected = await Workspace.GenerateRenovationVisualsAndQrPosterAsync(CommunityId, _selected.Id);
-            _message = "Previews and QR poster generated.";
+            _message = Loc.T("msg.previewsGenerated");
             await OnChanged.InvokeAsync();
         }
         catch (Exception ex) { _message = ex.Message; }
@@ -106,10 +116,18 @@
         try
         {
             var m = await Workspace.TranscribeMeetingRecordingToMinutesAsync(CommunityId);
-            _message = $"Minutes transcribed. Actions: {m.ExtractedActionItemsSummary}";
+            _message = $"{Loc.T("msg.minutesTranscribed")} {m.ExtractedActionItemsSummary}";
             await OnChanged.InvokeAsync();
         }
         catch (Exception ex) { _message = ex.Message; }
         finally { _isBusy = false; }
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null)
+        {
+            Loc.OnChange -= _locHandler;
+        }
     }
 }

@@ -1,19 +1,21 @@
 @using CommonGround.Domain.Entities
+@inject WorkspaceLocalization Loc
+@implements IDisposable
 
 <div class="cg-card">
     <div class="cg-section-header">
-        <h2>Utility sources and live tariffs</h2>
-        <span class="cg-badge">@Sources.Count providers monitored</span>
+        <h2>@Loc.T("panel.utilitySources")</h2>
+        <span class="cg-badge">@Sources.Count @Loc.T("utility.providersMonitored")</span>
     </div>
     <div class="cg-table-wrap">
         <table class="cg-table">
             <thead>
                 <tr>
-                    <th>Operator</th>
-                    <th>Links</th>
-                    <th class="num">Unit tariff</th>
-                    <th>Dispatch</th>
-                    <th>Status</th>
+                    <th>@Loc.T("table.operator")</th>
+                    <th>@Loc.T("table.links")</th>
+                    <th class="num">@Loc.T("table.tariff")</th>
+                    <th>@Loc.T("table.dispatch")</th>
+                    <th>@Loc.T("table.status")</th>
                 </tr>
             </thead>
             <tbody>
@@ -25,9 +27,9 @@
                             <div style="font-size: 0.72rem; color: var(--color-text-secondary);">@src.UtilityKind</div>
                         </td>
                         <td>
-                            <a href="@src.OutageBulletinUrl" target="_blank" rel="noopener">Bulletin</a>
+                            <a href="@src.OutageBulletinUrl" target="_blank" rel="noopener">@Loc.T("utility.bulletin")</a>
                             <span> · </span>
-                            <a href="@src.LiveFaultMapUrl" target="_blank" rel="noopener">Fault map</a>
+                            <a href="@src.LiveFaultMapUrl" target="_blank" rel="noopener">@Loc.T("utility.faultMap")</a>
                         </td>
                         <td class="num">@src.CurrentUnitTariff.ToString("N2") @src.TariffUnit</td>
                         <td class="mono">@src.EmergencyPhone</td>
@@ -38,8 +40,8 @@
         </table>
     </div>
     <div class="cg-toolbar">
-        <button type="button" class="cg-btn cg-btn-primary" @onclick="OnScanNow">Scan sources and weather now</button>
-        <button type="button" class="cg-btn" @onclick="OnRefreshSources">Refresh providers via web search</button>
+        <button type="button" class="cg-btn cg-btn-primary" @onclick="OnScanNow">@Loc.T("action.scanNow")</button>
+        <button type="button" class="cg-btn" @onclick="OnRefreshSources">@Loc.T("action.refreshSources")</button>
     </div>
 </div>
 
@@ -47,4 +49,20 @@
     [Parameter, EditorRequired] public IReadOnlyList<UtilityProviderSource> Sources { get; set; } = [];
     [Parameter] public EventCallback OnRefreshSources { get; set; }
     [Parameter] public EventCallback OnScanNow { get; set; }
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null)
+        {
+            Loc.OnChange -= _locHandler;
+        }
+    }
 }

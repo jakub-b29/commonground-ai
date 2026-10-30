@@ -2,27 +2,29 @@
 @using CommonGround.Domain.Enums
 @inject CommonGroundWorkspaceService Workspace
 @inject WorkspaceUiState UiState
+@inject WorkspaceLocalization Loc
+@implements IDisposable
 
 <div class="cg-card">
     <div class="cg-section-header">
-        <h2>Housing association resident approval queue</h2>
+        <h2>@Loc.T("panel.membershipQueue")</h2>
         <span class="cg-badge">@Community.Name</span>
     </div>
     <p style="color: var(--color-text-secondary); font-size: 0.78125rem;">
-        Verify ownership deeds or lease agreements and approve residents for <strong>@Community.Name</strong>. Approved residents receive role-scoped access to their unit dossier, e-voting ballots, and building/riser groups.
+        @Loc.T("membership.verifyHint") <strong>@Community.Name</strong>.
     </p>
 
     <div class="cg-table-wrap">
         <table class="cg-table">
             <thead>
                 <tr>
-                    <th>Applicant</th>
-                    <th>Unit</th>
-                    <th>Provider</th>
-                    <th>Deed / lease verification</th>
-                    <th>Assigned groups</th>
-                    <th>Status</th>
-                    <th>Action</th>
+                    <th>@Loc.T("table.applicant")</th>
+                    <th>@Loc.T("table.unit")</th>
+                    <th>@Loc.T("form.provider")</th>
+                    <th>@Loc.T("membership.deedVerify")</th>
+                    <th>@Loc.T("table.groups")</th>
+                    <th>@Loc.T("table.status")</th>
+                    <th>@Loc.T("table.actions")</th>
                 </tr>
             </thead>
             <tbody>
@@ -46,13 +48,13 @@
                             @if (app.Status == ResidentMembershipStatus.PendingApproval)
                             {
                                 <div style="display: flex; gap: 0.375rem; flex-wrap: wrap;">
-                                    <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => OnDecideAsync(app.Id, true)">Approve resident</button>
-                                    <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => OnDecideAsync(app.Id, false)">Reject</button>
+                                    <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => OnDecideAsync(app.Id, true)">@Loc.T("action.approveResident")</button>
+                                    <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => OnDecideAsync(app.Id, false)">@Loc.T("action.reject")</button>
                                 </div>
                             }
                             else
                             {
-                                <span style="font-size: 0.72rem; color: var(--color-text-secondary);">@(app.DecidedAtUtc?.ToString("yyyy-MM-dd") ?? "Verified")</span>
+                                <span style="font-size: 0.72rem; color: var(--color-text-secondary);">@(app.DecidedAtUtc?.ToString("yyyy-MM-dd") ?? Loc.T("membership.verifiedFallback"))</span>
                             }
                         </td>
                     </tr>
@@ -61,10 +63,10 @@
         </table>
     </div>
 
-    <h3>Submit new resident membership request</h3>
+    <h3>@Loc.T("membership.submitTitle")</h3>
     <div class="cg-grid-3">
         <div>
-            <label for="app-unit">Unit number</label>
+            <label for="app-unit">@Loc.T("form.unitNumber")</label>
             <select id="app-unit" @bind="_unitNumber">
                 @foreach (var u in Community.Units)
                 {
@@ -73,19 +75,19 @@
             </select>
         </div>
         <div>
-            <label for="app-name">Resident full name</label>
+            <label for="app-name">@Loc.T("form.name")</label>
             <input id="app-name" @bind="_fullName" placeholder="Janina Kwiatkowska" />
         </div>
         <div>
-            <label for="app-email">Email address</label>
+            <label for="app-email">@Loc.T("form.email")</label>
             <input id="app-email" @bind="_email" placeholder="janina.k@amberpark.example.com" />
         </div>
         <div>
-            <label for="app-phone">Phone number</label>
+            <label for="app-phone">@Loc.T("form.phone")</label>
             <input id="app-phone" @bind="_phone" placeholder="+48 607 112 304" />
         </div>
         <div>
-            <label for="app-provider">Identity provider</label>
+            <label for="app-provider">@Loc.T("form.provider")</label>
             <select id="app-provider" @bind="_provider">
                 @foreach (var p in Enum.GetValues<IdentityProvider>())
                 {
@@ -94,12 +96,12 @@
             </select>
         </div>
         <div>
-            <label for="app-proof">Notarial deed or lease reference</label>
+            <label for="app-proof">@Loc.T("form.proof")</label>
             <input id="app-proof" @bind="_proof" placeholder="Notarial Deed Rep. A #8810/2026" />
         </div>
     </div>
     <div class="cg-toolbar">
-        <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="OnSubmitApplicationAsync">Submit resident application for association</button>
+        <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="OnSubmitApplicationAsync">@Loc.T("action.submitApplication")</button>
     </div>
 
     @if (!string.IsNullOrWhiteSpace(_message))
@@ -120,6 +122,14 @@
     private string _proof = "Notarial Deed Rep. A #8810/2026 - Land Register verified";
     private bool _isBusy;
     private string _message = string.Empty;
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+    }
 
     protected override void OnParametersSet()
     {
@@ -135,7 +145,7 @@
         try
         {
             var updated = await Workspace.DecideResidentMembershipAsync(Community.Id, applicationId, approve, UiState.ActiveSecurityRole);
-            _message = updated.DecisionNote ?? "Resident membership decision saved.";
+            _message = updated.DecisionNote ?? Loc.T("msg.membershipUpdated");
             await OnChanged.InvokeAsync();
         }
         catch (Exception ex)
@@ -158,7 +168,7 @@
         try
         {
             var created = await Workspace.SubmitResidentMembershipApplicationAsync(Community.Id, _unitNumber, _fullName, _email, _phone, _provider, _proof);
-            _message = $"Submitted membership request for {created.ApplicantFullName} (Unit {created.UnitNumber}) in {Community.Name}.";
+            _message = $"{Loc.T("msg.membershipSubmitted")} {created.ApplicantFullName} ({Loc.T("form.unit")} {created.UnitNumber}) {Loc.T("form.community")} {Community.Name}.";
             await OnChanged.InvokeAsync();
         }
         catch (Exception ex)
@@ -168,6 +178,14 @@
         finally
         {
             _isBusy = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null)
+        {
+            Loc.OnChange -= _locHandler;
         }
     }
 }

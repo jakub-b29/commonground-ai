@@ -1,14 +1,16 @@
 @inject CommonGroundWorkspaceService Workspace
+@inject WorkspaceLocalization Loc
+@implements IDisposable
 
 <div class="cg-card">
     <div class="cg-section-header">
-        <h2>Walkthrough video and site safety</h2>
-        <span class="cg-badge">Vision & audio splitter</span>
+        <h2>@Loc.T("panel.walkthrough")</h2>
+        <span class="cg-badge">@Loc.T("walkthrough.splitterBadge")</span>
     </div>
-    <p style="color: var(--color-text-secondary); font-size: 0.78125rem;">Split narrated stairwell and basement walkthrough videos into individual geo-tagged defect work orders or scan fire access lanes.</p>
+    <p style="color: var(--color-text-secondary); font-size: 0.78125rem;">@Loc.T("walkthrough.hint")</p>
     <div class="cg-toolbar">
-        <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="OnSplit">Segment walkthrough inspection video</button>
-        <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="OnScan">Scan site safety and fire lanes</button>
+        <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="OnSplit">@Loc.T("action.segmentVideo")</button>
+        <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="OnScan">@Loc.T("action.scanSafety")</button>
     </div>
     @if (!string.IsNullOrWhiteSpace(_message))
     {
@@ -21,6 +23,14 @@
     [Parameter] public EventCallback OnChanged { get; set; }
     private bool _isBusy;
     private string _message = string.Empty;
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+    }
 
     private async Task OnSplit()
     {
@@ -28,7 +38,7 @@
         try
         {
             var list = await Workspace.RunWalkthroughVideoSplitAsync(CommunityId);
-            _message = $"Split walkthrough into {list.Count} work orders.";
+            _message = $"{list.Count} {Loc.T("msg.walkthroughSplit")}";
             await OnChanged.InvokeAsync();
         }
         catch (Exception ex) { _message = ex.Message; }
@@ -41,10 +51,18 @@
         try
         {
             var wo = await Workspace.RunSiteSafetyVisionMonitorAsync(CommunityId);
-            _message = $"Safety scan created {wo.Title}.";
+            _message = $"{Loc.T("msg.safetyCreated")} {wo.Title}.";
             await OnChanged.InvokeAsync();
         }
         catch (Exception ex) { _message = ex.Message; }
         finally { _isBusy = false; }
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null)
+        {
+            Loc.OnChange -= _locHandler;
+        }
     }
 }

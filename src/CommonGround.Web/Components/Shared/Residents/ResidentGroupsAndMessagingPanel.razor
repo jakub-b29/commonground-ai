@@ -2,12 +2,14 @@
 @using CommonGround.Domain.Enums
 @inject CommonGroundWorkspaceService Workspace
 @inject WorkspaceUiState UiState
+@inject WorkspaceLocalization Loc
+@implements IDisposable
 
 <div class="cg-split-sidebar-main">
     <div class="cg-card">
         <div class="cg-section-header">
-            <h2>Resident groups & channels</h2>
-            <span class="cg-badge">@Community.ResidentGroups.Count groups</span>
+            <h2>@Loc.T("panel.groups")</h2>
+            <span class="cg-badge">@Community.ResidentGroups.Count @Loc.T("groups.countSuffix")</span>
         </div>
         <div style="display: flex; flex-direction: column; gap: 0.5rem;">
             @foreach (var grp in Community.ResidentGroups)
@@ -16,7 +18,7 @@
                 <div @key="grp.Id" class="cg-subcard" style="@(isSelected ? "border-color: var(--color-accent-solid); background: var(--color-accent-tint);" : "cursor: pointer;")" @onclick="() => SelectGroup(grp.Id)">
                     <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;">
                         <strong>@grp.Name</strong>
-                        <span class="cg-badge num">@grp.MemberUnitsCount units</span>
+                        <span class="cg-badge num">@grp.MemberUnitsCount @Loc.T("groups.unitsSuffix")</span>
                     </div>
                     <div style="font-size: 0.72rem; color: var(--color-text-secondary); margin-block-start: 0.2rem;">
                         <span class="mono">@grp.Kind</span> · <span>@grp.TargetScope</span>
@@ -26,15 +28,15 @@
             }
         </div>
 
-        <h3>Create resident group</h3>
+        <h3>@Loc.T("action.createGroup")</h3>
         <div style="display: flex; flex-direction: column; gap: 0.5rem;">
             <div>
-                <label for="grp-name">Group name</label>
+                <label for="grp-name">@Loc.T("form.groupName")</label>
                 <input id="grp-name" @bind="_newGroupName" placeholder="Stairwell B Residents" />
             </div>
             <div class="cg-grid-2">
                 <div>
-                    <label for="grp-kind">Group type</label>
+                    <label for="grp-kind">@Loc.T("form.groupType")</label>
                     <select id="grp-kind" @bind="_newGroupKind">
                         @foreach (var k in Enum.GetValues<ResidentGroupKind>())
                         {
@@ -43,23 +45,23 @@
                     </select>
                 </div>
                 <div>
-                    <label for="grp-scope">Target scope</label>
+                    <label for="grp-scope">@Loc.T("form.groupScope")</label>
                     <input id="grp-scope" @bind="_newGroupScope" placeholder="Units B-103 to B-403" />
                 </div>
             </div>
             <div>
-                <label for="grp-desc">Description</label>
+                <label for="grp-desc">@Loc.T("form.groupDesc")</label>
                 <input id="grp-desc" @bind="_newGroupDescription" placeholder="Coordination for Stairwell B maintenance and notices." />
             </div>
             <div class="cg-toolbar" style="margin-block-start: 0.25rem;">
-                <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="OnCreateGroupAsync">Create resident group</button>
+                <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="OnCreateGroupAsync">@Loc.T("action.createGroup")</button>
             </div>
         </div>
     </div>
 
     <div class="cg-card">
         <div class="cg-section-header">
-            <h2>Group messages & announcements</h2>
+            <h2>@Loc.T("panel.groupMessages")</h2>
             @if (_selectedGroup is not null)
             {
                 <span class="cg-badge cg-badge-ok">@_selectedGroup.Name</span>
@@ -75,7 +77,7 @@
         }
         @if (messages.Count == 0)
         {
-            <p style="color: var(--color-text-secondary);">No messages posted in this group yet.</p>
+            <p style="color: var(--color-text-secondary);">@Loc.T("msg.noMessages")</p>
         }
         else
         {
@@ -87,14 +89,14 @@
                             <div>
                                 @if (msg.IsPinnedAnnouncement)
                                 {
-                                    <span class="cg-badge cg-badge-ok" style="margin-inline-end: 0.35rem;">Pinned announcement</span>
+                                    <span class="cg-badge cg-badge-ok" style="margin-inline-end: 0.35rem;">@Loc.T("msg.pinnedAnnouncement")</span>
                                 }
                                 <strong>@msg.Subject</strong>
                             </div>
                             <span class="mono" style="font-size: 0.72rem; color: var(--color-text-secondary);">@msg.SentAtUtc.ToString("yyyy-MM-dd HH:mm")</span>
                         </div>
                         <div style="font-size: 0.72rem; color: var(--color-text-secondary); margin-block: 0.2rem 0.35rem;">
-                            From <strong>@msg.SenderName</strong> (@msg.SenderUnitOrRole) · Group: @msg.GroupName
+                            @Loc.T("groups.from") <strong>@msg.SenderName</strong> (@msg.SenderUnitOrRole) · @Loc.T("groups.groupLabel") @msg.GroupName
                         </div>
                         <div style="font-size: 0.8125rem; white-space: pre-wrap;">@msg.Body</div>
                     </div>
@@ -102,10 +104,10 @@
             </div>
         }
 
-        <h3 style="margin-block-start: 0 !important;">Post message or announcement to group</h3>
+        <h3 style="margin-block-start: 0 !important;">@Loc.T("groups.postTitle")</h3>
         <div class="cg-grid-2">
             <div>
-                <label for="msg-group">Target group</label>
+                <label for="msg-group">@Loc.T("form.targetGroup")</label>
                 <select id="msg-group" @bind="_selectedGroupId">
                     @foreach (var grp in Community.ResidentGroups)
                     {
@@ -114,17 +116,17 @@
                 </select>
             </div>
             <div>
-                <label for="msg-subject">Subject</label>
+                <label for="msg-subject">@Loc.T("form.subject")</label>
                 <input id="msg-subject" @bind="_subject" placeholder="Elevator maintenance schedule on Thursday" />
             </div>
         </div>
         <div style="margin-block-start: 0.5rem;">
-            <label for="msg-body">Message body</label>
+            <label for="msg-body">@Loc.T("form.body")</label>
             <textarea id="msg-body" @bind="_body" rows="3" placeholder="Write a message or official notice to residents in the selected group..."></textarea>
         </div>
         <div class="cg-toolbar">
-            <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="() => OnPostMessageAsync(false)">Post group message</button>
-            <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => OnPostMessageAsync(true)">Post as pinned announcement</button>
+            <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="() => OnPostMessageAsync(false)">@Loc.T("action.postMessage")</button>
+            <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => OnPostMessageAsync(true)">@Loc.T("action.postPinned")</button>
         </div>
 
         @if (!string.IsNullOrWhiteSpace(_message))
@@ -148,6 +150,14 @@
     private string _body = string.Empty;
     private bool _isBusy;
     private string _message = string.Empty;
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+    }
 
     protected override void OnParametersSet()
     {
@@ -178,7 +188,7 @@
             _newGroupName = string.Empty;
             _newGroupScope = string.Empty;
             _newGroupDescription = string.Empty;
-            _message = $"Created group '{grp.Name}'.";
+            _message = $"{Loc.T("msg.groupCreated")} '{grp.Name}'.";
             await OnChanged.InvokeAsync();
         }
         catch (Exception ex)
@@ -207,7 +217,7 @@
             var msg = await Workspace.PostCommunityMessageAsync(Community.Id, _selectedGroupId, senderName, senderRole, _subject, _body, isPinned);
             _subject = string.Empty;
             _body = string.Empty;
-            _message = $"Posted '{msg.Subject}' to {msg.GroupName}.";
+            _message = $"{Loc.T("msg.messagePosted")} '{msg.Subject}' {Loc.T("groups.groupLabel")} {msg.GroupName}.";
             await OnChanged.InvokeAsync();
         }
         catch (Exception ex)
@@ -217,6 +227,14 @@
         finally
         {
             _isBusy = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null)
+        {
+            Loc.OnChange -= _locHandler;
         }
     }
 }

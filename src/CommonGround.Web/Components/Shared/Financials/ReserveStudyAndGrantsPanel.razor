@@ -1,26 +1,28 @@
 @using CommonGround.Application.Services
 @using CommonGround.Domain.Calculators
+@inject WorkspaceLocalization Loc
+@implements IDisposable
 
 <div class="cg-card">
     <div class="cg-section-header">
-        <h2>Reserve study and green grants</h2>
-        <button type="button" class="cg-btn cg-btn-primary" @onclick="OnProject">Project 10-year reserve cashflow</button>
+        <h2>@Loc.T("panel.reserve")</h2>
+        <button type="button" class="cg-btn cg-btn-primary" @onclick="OnProject">@Loc.T("action.projectReserve")</button>
     </div>
     @if (_result is not null)
     {
         <div class="cg-callout" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;">
-            <span>Percent funded: <strong class="num">@_result.PercentFunded.ToString("N2") %</strong></span>
-            <span>Min rate to avoid deficit: <strong class="num">@_result.MinimumMonthlyRatePerM2ToAvoidDeficit.ToString("N2") / m²</strong></span>
+            <span>@Loc.T("reserve.percentFunded") <strong class="num">@_result.PercentFunded.ToString("N2") %</strong></span>
+            <span>@Loc.T("reserve.minRate") <strong class="num">@_result.MinimumMonthlyRatePerM2ToAvoidDeficit.ToString("N2") / m²</strong></span>
         </div>
         <div class="cg-table-wrap" style="max-height: 200px; overflow-y: auto;">
             <table class="cg-table">
                 <thead>
                     <tr>
-                        <th class="num">Year</th>
-                        <th class="num">Starting</th>
-                        <th class="num">Inflow</th>
-                        <th class="num">Capex</th>
-                        <th class="num">Ending</th>
+                        <th class="num">@Loc.T("reserve.year")</th>
+                        <th class="num">@Loc.T("reserve.starting")</th>
+                        <th class="num">@Loc.T("reserve.inflow")</th>
+                        <th class="num">@Loc.T("reserve.capex")</th>
+                        <th class="num">@Loc.T("reserve.ending")</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -39,16 +41,16 @@
         </div>
     }
 
-    <h3>Matched green modernization grants</h3>
+    <h3>@Loc.T("reserve.matchedTitle")</h3>
     <div class="cg-table-wrap">
         <table class="cg-table">
             <thead>
                 <tr>
-                    <th>Program & scope</th>
-                    <th class="num">Gross capex</th>
-                    <th class="num">Grant</th>
-                    <th class="num">Net capex</th>
-                    <th class="num">Payback</th>
+                    <th>@Loc.T("reserve.program")</th>
+                    <th class="num">@Loc.T("reserve.gross")</th>
+                    <th class="num">@Loc.T("reserve.grant")</th>
+                    <th class="num">@Loc.T("reserve.net")</th>
+                    <th class="num">@Loc.T("reserve.payback")</th>
                 </tr>
             </thead>
             <tbody>
@@ -62,7 +64,7 @@
                         <td class="num">@g.EstimatedGrossCapex.ToString("N0")</td>
                         <td class="num">@g.GrantSubsidyAmount.ToString("N0") (@g.GrantSubsidyPercent.ToString("N0")%)</td>
                         <td class="num"><strong>@g.NetCommunityCapex.ToString("N0")</strong></td>
-                        <td class="num">@g.PaybackYears.ToString("N1") yrs</td>
+                        <td class="num">@g.PaybackYears.ToString("N1") @Loc.T("reserve.yearsSuffix")</td>
                     </tr>
                 }
             </tbody>
@@ -73,6 +75,14 @@
 @code {
     [Parameter, EditorRequired] public CommunityWorkspaceSnapshot Snapshot { get; set; } = default!;
     private ReserveStudyResult? _result;
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+    }
 
     protected override void OnParametersSet()
     {
@@ -91,5 +101,13 @@
             c.RepairFundRatePerM2,
             c.ReserveComponents,
             DateTime.UtcNow.Year);
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null)
+        {
+            Loc.OnChange -= _locHandler;
+        }
     }
 }

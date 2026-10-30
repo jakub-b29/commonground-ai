@@ -56,8 +56,8 @@
         }
         _contacts = snapshot.Community.EmergencyContacts.OrderBy(c => c.SortOrder).ToList();
         _summary = snapshot.Profile.Mode == SystemOperatingMode.UsHoa
-            ? "US HOA mode: 911 emergency, 311 city services, 811 dig safe."
-            : "Housing Association mode: 112 general, 998 fire, 999 ambulance, 997 police, 992 gas, 991 power, 993 heating, 994 water.";
+            ? Loc.T("emergency.usSummary")
+            : Loc.T("emergency.euSummary");
         StateHasChanged();
     }
 

@@ -1,58 +1,59 @@
 @page "/login"
 @using CommonGround.Domain.Enums
 @inject WorkspaceUiState UiState
+@inject WorkspaceLocalization Loc
 @inject CommonGroundWorkspaceService Workspace
 @inject WorkspaceAuthenticationStateProvider AuthProvider
 @inject NavigationManager Nav
 @implements IDisposable
 
-<PageTitle>Sign in - CommonGround</PageTitle>
+<PageTitle>@Loc.T("page.loginTitle") - CommonGround</PageTitle>
 
 <div class="cg-page-header">
     <div>
-        <h1>Sign in to CommonGround</h1>
-        <p class="cg-page-lead" style="margin-block-end: 0;">Select an identity provider or role-scoped account. Every sign-in is verified and recorded in the security audit chain.</p>
+        <h1>@Loc.T("page.loginTitle")</h1>
+        <p class="cg-page-lead" style="margin-block-end: 0;">@Loc.T("page.loginLead")</p>
     </div>
 </div>
 
 <div class="cg-grid-2">
     <div class="cg-card">
         <div class="cg-section-header">
-            <h2>Continue with a provider</h2>
-            <span class="cg-badge">OAuth 2.0 / OIDC</span>
+            <h2>@Loc.T("login.providerTitle")</h2>
+            <span class="cg-badge">@Loc.T("login.oauthBadge")</span>
         </div>
         <div style="display: flex; flex-direction: column; gap: 0.5rem;">
             <button type="button" class="cg-btn" style="width: 100%; justify-content: flex-start; padding: 0.5rem 0.875rem;" disabled="@_isBusy" @onclick='() => SignInAsync(IdentityProvider.Facebook, "manager.fb@amberpark.example.com", null)'>
                 <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path fill="#1E3A8A" d="M13.5 21v-7h2.4l.4-3h-2.8V9.1c0-.9.3-1.5 1.6-1.5h1.3V4.9c-.3 0-1.1-.1-2-.1-2 0-3.4 1.2-3.4 3.5V11H8.5v3H11v7h2.5z" /></svg>
-                <span>Continue with Facebook (Messenger & WhatsApp linked)</span>
+                <span>@Loc.T("login.facebook")</span>
             </button>
             <button type="button" class="cg-btn" style="width: 100%; justify-content: flex-start; padding: 0.5rem 0.875rem;" disabled="@_isBusy" @onclick='() => SignInAsync(IdentityProvider.Google, "auditor@amberpark.example.com", null)'>
                 <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path fill="#1E3A8A" d="M12 11v3.5h5c-.2 1.4-1.6 4-5 4-3 0-5.5-2.5-5.5-5.5S9 7.5 12 7.5c1.4 0 2.4.6 3 1.1l2.4-2.3C16 4.9 14.2 4 12 4 7.6 4 4 7.6 4 12s3.6 8 8 8c4.6 0 7.6-3.2 7.6-7.7 0-.3 0-.6-.1-.8H12z" /></svg>
-                <span>Continue with Google Workspace</span>
+                <span>@Loc.T("login.google")</span>
             </button>
             <button type="button" class="cg-btn" style="width: 100%; justify-content: flex-start; padding: 0.5rem 0.875rem;" disabled="@_isBusy" @onclick='() => SignInAsync(IdentityProvider.Apple, "owner.a301@privaterelay.example.com", null)'>
                 <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path fill="#0F172A" d="M16.7 12.9c0-2.4 2-3.6 2.1-3.7-1.1-1.7-2.9-1.9-3.5-1.9-1.5-.2-2.9.9-3.7.9-.8 0-1.9-.9-3.2-.9-1.6 0-3.1 1-4 2.4-1.7 2.9-.4 7.3 1.2 9.7.8 1.2 1.8 2.5 3.1 2.4 1.2-.1 1.7-.8 3.2-.8s1.9.8 3.2.8c1.3 0 2.2-1.2 3-2.4.9-1.4 1.3-2.7 1.3-2.8-.1 0-2.7-1-2.7-3.7zM14.3 5.4c.7-.8 1.1-1.9 1-3-1 0-2.1.6-2.8 1.4-.6.7-1.2 1.9-1 3 1.1.1 2.1-.6 2.8-1.4z" /></svg>
-                <span>Continue with Apple ID</span>
+                <span>@Loc.T("login.apple")</span>
             </button>
         </div>
 
-        <h3 style="margin-block-start: 1rem !important;">Sign in with email and password</h3>
+        <h3 style="margin-block-start: 1rem !important;">@Loc.T("login.emailTitle")</h3>
         <EditForm Model="_emailModel" OnValidSubmit="OnEmailSubmit">
             <div style="display: flex; flex-direction: column; gap: 0.5rem;">
                 <div>
-                    <label for="login-email">Work email</label>
+                    <label for="login-email">@Loc.T("form.workEmail")</label>
                     <InputText id="login-email" @bind-Value="_emailModel.Email" />
                 </div>
                 <div>
-                    <label for="login-password">Password</label>
+                    <label for="login-password">@Loc.T("form.password")</label>
                     <InputText id="login-password" type="password" @bind-Value="_emailModel.Password" />
                 </div>
                 <div>
-                    <label for="login-code">6-digit verification code (optional)</label>
+                    <label for="login-code">@Loc.T("form.code")</label>
                     <InputText id="login-code" @bind-Value="_emailModel.Code" />
                 </div>
                 <div class="cg-toolbar">
-                    <button type="submit" class="cg-btn cg-btn-primary" disabled="@_isBusy">Sign in with email</button>
+                    <button type="submit" class="cg-btn cg-btn-primary" disabled="@_isBusy">@Loc.T("action.signInEmail")</button>
                 </div>
             </div>
         </EditForm>
@@ -60,34 +61,34 @@
 
     <div class="cg-card">
         <div class="cg-section-header">
-            <h2>Quick demo identity selector</h2>
-            <span class="cg-badge">Role-scoped vault preview</span>
+            <h2>@Loc.T("login.demoTitle")</h2>
+            <span class="cg-badge">@Loc.T("login.demoBadge")</span>
         </div>
-        <p style="color: var(--color-text-secondary); font-size: 0.78125rem;">One-click cards to test each seeded provider and security role across the workspace. Resident and Contractor status is granted by the Property Manager.</p>
+        <p style="color: var(--color-text-secondary); font-size: 0.78125rem;">@Loc.T("login.demoHint")</p>
         <div style="display: flex; flex-direction: column; gap: 0.5rem;">
             <button type="button" class="cg-btn" style="width: 100%; justify-content: space-between; padding: 0.5rem 0.875rem;" disabled="@_isBusy" @onclick='() => SignInAsync(IdentityProvider.EmailPassword, "manager@amberpark.example.com", "Manager-2026!")'>
-                <span><strong>Email</strong> – Chief property manager</span>
-                <span class="cg-badge mono">PropertyManager</span>
+                <span><strong>Email</strong> – @Loc.T("login.manager")</span>
+                <span class="cg-badge mono">@Loc.T("role.propertyManager")</span>
             </button>
             <button type="button" class="cg-btn" style="width: 100%; justify-content: space-between; padding: 0.5rem 0.875rem;" disabled="@_isBusy" @onclick='() => SignInAsync(IdentityProvider.Facebook, "manager.fb@amberpark.example.com", null)'>
-                <span><strong>Facebook</strong> – Property manager</span>
-                <span class="cg-badge mono">PropertyManager</span>
+                <span><strong>Facebook</strong> – @Loc.T("login.managerFb")</span>
+                <span class="cg-badge mono">@Loc.T("role.propertyManager")</span>
             </button>
             <button type="button" class="cg-btn" style="width: 100%; justify-content: space-between; padding: 0.5rem 0.875rem;" disabled="@_isBusy" @onclick='() => SignInAsync(IdentityProvider.EmailPassword, "resident.a101@amberpark.example.com", "Resident-2026!")'>
-                <span><strong>Resident</strong> – Anna Kowalska (Unit A-101)</span>
-                <span class="cg-badge cg-badge-ok mono">Resident</span>
+                <span><strong>@Loc.T("role.resident")</strong> – @Loc.T("login.residentAnna")</span>
+                <span class="cg-badge cg-badge-ok mono">@Loc.T("role.resident")</span>
             </button>
             <button type="button" class="cg-btn" style="width: 100%; justify-content: space-between; padding: 0.5rem 0.875rem;" disabled="@_isBusy" @onclick='() => SignInAsync(IdentityProvider.Apple, "owner.a301@privaterelay.example.com", null)'>
-                <span><strong>Apple</strong> – Resident and Unit A-301 owner</span>
-                <span class="cg-badge cg-badge-ok mono">Resident</span>
+                <span><strong>Apple</strong> – @Loc.T("login.residentApple")</span>
+                <span class="cg-badge cg-badge-ok mono">@Loc.T("role.resident")</span>
             </button>
             <button type="button" class="cg-btn" style="width: 100%; justify-content: space-between; padding: 0.5rem 0.875rem;" disabled="@_isBusy" @onclick='() => SignInAsync(IdentityProvider.EmailPassword, "service@hydro-instal.example.com", "Contractor-2026!")'>
-                <span><strong>Email</strong> – Contractor (Hydro-Instal)</span>
-                <span class="cg-badge mono">Contractor</span>
+                <span><strong>Email</strong> – @Loc.T("login.contractorHydro")</span>
+                <span class="cg-badge mono">@Loc.T("role.contractor")</span>
             </button>
             <button type="button" class="cg-btn" style="width: 100%; justify-content: space-between; padding: 0.5rem 0.875rem;" disabled="@_isBusy" @onclick='() => SignInAsync(IdentityProvider.Google, "office@elektro-serwis.example.com", "Contractor-2026!")'>
-                <span><strong>Google</strong> – Contractor (Elektro-Serwis)</span>
-                <span class="cg-badge mono">Contractor</span>
+                <span><strong>Google</strong> – @Loc.T("login.contractorElektro")</span>
+                <span class="cg-badge mono">@Loc.T("role.contractor")</span>
             </button>
         </div>
         @if (!string.IsNullOrWhiteSpace(_message))
@@ -99,14 +100,18 @@
 
 @code {
     private Action? _stateHandler;
+    private Action? _locHandler;
     private bool _isBusy;
     private string _message = string.Empty;
     private EmailModel _emailModel = new();
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
         _stateHandler = () => InvokeAsync(StateHasChanged);
         UiState.OnChange += _stateHandler;
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
     }
 
     private async Task SignInAsync(IdentityProvider provider, string email, string? secret)
@@ -117,7 +122,7 @@
             var first = communities.FirstOrDefault();
             if (first is null)
             {
-                _message = "No community is available yet.";
+                _message = Loc.T("msg.noCommunity");
                 return;
             }
             UiState.SelectCommunity(first.Id, first.OperatingMode == SystemOperatingMode.UsHoa ? "US HOA & Condo Mode" : "Housing Association Mode");
@@ -128,12 +133,12 @@
             var user = await Workspace.AuthenticateUserAsync(UiState.SelectedCommunityId!.Value, provider, email, secret);
             if (user is null)
             {
-                _message = "Sign-in failed. Check the provider, email, and password.";
+                _message = Loc.T("msg.signInFailed");
                 return;
             }
             UiState.SetUser(user);
             AuthProvider.NotifyChanged();
-            _message = $"Signed in as {user.FullName} ({user.Provider}, {user.Role}).";
+            _message = $"{Loc.T("msg.signedInAs")} {user.FullName} ({user.Provider}, {user.Role}).";
             Nav.NavigateTo(user.Role == WorkspaceSecurityRole.Resident ? "/residents" : user.Role == WorkspaceSecurityRole.Contractor ? "/maintenance" : "/");
         }
         finally
@@ -152,6 +157,10 @@
         if (_stateHandler is not null)
         {
             UiState.OnChange -= _stateHandler;
+        }
+        if (_locHandler is not null)
+        {
+            Loc.OnChange -= _locHandler;
         }
     }
 

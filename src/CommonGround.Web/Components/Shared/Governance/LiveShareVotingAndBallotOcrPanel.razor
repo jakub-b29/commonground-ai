@@ -2,14 +2,16 @@
 @using CommonGround.Domain.Entities
 @using CommonGround.Domain.Enums
 @inject CommonGroundWorkspaceService Workspace
+@inject WorkspaceLocalization Loc
+@implements IDisposable
 
 <div class="cg-card">
     <div class="cg-section-header">
-        <h2>Live share voting and paper ballot OCR</h2>
-        <span class="cg-badge">Share-weighted & 1/5 switch</span>
+        <h2>@Loc.T("panel.voteFull")</h2>
+        <span class="cg-badge">@Loc.T("vote.weightBadge")</span>
     </div>
     <div>
-        <label for="voteRes">Active resolution</label>
+        <label for="voteRes">@Loc.T("form.resolution")</label>
         <select id="voteRes" value="@_selectedId" @onchange="OnSelect">
             @foreach (var r in Resolutions.OrderBy(r => r.Number))
             {
@@ -27,8 +29,8 @@
 
         <div style="margin-block: 0.75rem;">
             <div style="display: flex; justify-content: space-between; font-size: 0.75rem; margin-block-end: 0.25rem;">
-                <span>Share weight for: <strong class="num">@tally.SharesFor.ToString("P2")</strong> (50.00% threshold)</span>
-                <span class="cg-badge @(tally.IsAdopted ? "cg-badge-ok" : "cg-badge-warn")">@(tally.IsAdopted ? "Adopted" : "Voting in progress")</span>
+                <span>@Loc.T("vote.shareFor") <strong class="num">@tally.SharesFor.ToString("P2")</strong> (@Loc.T("vote.threshold"))</span>
+                <span class="cg-badge @(tally.IsAdopted ? "cg-badge-ok" : "cg-badge-warn")">@(tally.IsAdopted ? Loc.T("vote.adopted") : Loc.T("vote.inProgress"))</span>
             </div>
             <div class="cg-progress-track">
                 <div class="cg-progress-fill-ok" style="width: @(forPct.ToString("F1", System.Globalization.CultureInfo.InvariantCulture))%;"></div>
@@ -41,23 +43,23 @@
             <table class="cg-table">
                 <thead>
                     <tr>
-                        <th>Measure</th>
-                        <th class="num">For</th>
-                        <th class="num">Against</th>
-                        <th class="num">Abstain</th>
-                        <th>Rule / status</th>
+                        <th>@Loc.T("vote.measure")</th>
+                        <th class="num">@Loc.T("vote.for")</th>
+                        <th class="num">@Loc.T("vote.against")</th>
+                        <th class="num">@Loc.T("vote.abstain")</th>
+                        <th>@Loc.T("vote.ruleStatus")</th>
                     </tr>
                 </thead>
                 <tbody>
                     <tr>
-                        <td><strong>Share weight</strong></td>
+                        <td><strong>@Loc.T("vote.shareWeight")</strong></td>
                         <td class="num">@tally.SharesFor.ToString("P2")</td>
                         <td class="num">@tally.SharesAgainst.ToString("P2")</td>
                         <td class="num">@tally.SharesAbstain.ToString("P2")</td>
-                        <td><span class="cg-badge @(tally.IsAdopted ? "cg-badge-ok" : "cg-badge-warn")">@(tally.IsAdopted ? "Adopted" : "Pending")</span></td>
+                        <td><span class="cg-badge @(tally.IsAdopted ? "cg-badge-ok" : "cg-badge-warn")">@(tally.IsAdopted ? Loc.T("vote.adopted") : Loc.T("vote.pending"))</span></td>
                     </tr>
                     <tr>
-                        <td><strong>Owners count</strong></td>
+                        <td><strong>@Loc.T("vote.ownersCount")</strong></td>
                         <td class="num">@tally.OwnersFor</td>
                         <td class="num">@tally.OwnersAgainst</td>
                         <td class="num">@tally.OwnersAbstain</td>
@@ -68,10 +70,10 @@
         </div>
 
         <div class="cg-toolbar">
-            <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="OnDigitize">Digitize signed paper ballot sheet (sam-3.1 + muse-spark-1.3)</button>
-            <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => CastAsync(VoteChoice.For)">Vote for</button>
-            <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => CastAsync(VoteChoice.Against)">Vote against</button>
-            <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => CastAsync(VoteChoice.Abstain)">Abstain</button>
+            <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="OnDigitize">@Loc.T("action.digitize")</button>
+            <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => CastAsync(VoteChoice.For)">@Loc.T("action.voteFor")</button>
+            <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => CastAsync(VoteChoice.Against)">@Loc.T("action.voteAgainst")</button>
+            <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => CastAsync(VoteChoice.Abstain)">@Loc.T("action.abstain")</button>
         </div>
     }
     @if (!string.IsNullOrWhiteSpace(_message))
@@ -89,6 +91,14 @@
     private Resolution? _selected;
     private bool _isBusy;
     private string _message = string.Empty;
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+    }
 
     protected override void OnParametersSet()
     {
@@ -118,7 +128,7 @@
         try
         {
             await Workspace.CastVoteAsync(CommunityId, _selected.Id, unit.Id, choice);
-            _message = $"Recorded {choice} for {unit.UnitNumber}.";
+            _message = $"{Loc.T("msg.voteRecorded")} {choice} {Loc.T("vote.for")} {unit.UnitNumber}.";
             await OnChanged.InvokeAsync();
         }
         catch (Exception ex) { _message = ex.Message; }
@@ -132,10 +142,18 @@
         try
         {
             var tally = await Workspace.DigitizePaperBallotSheetAsync(CommunityId, _selected.Id);
-            _message = $"Merged paper ballots. Shares for {tally.SharesFor:P2}. Adopted: {tally.IsAdopted}.";
+            _message = $"{Loc.T("msg.ballotsMerged")} Shares for {tally.SharesFor:P2}. Adopted: {tally.IsAdopted}.";
             await OnChanged.InvokeAsync();
         }
         catch (Exception ex) { _message = ex.Message; }
         finally { _isBusy = false; }
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null)
+        {
+            Loc.OnChange -= _locHandler;
+        }
     }
 }

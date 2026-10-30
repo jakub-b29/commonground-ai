@@ -1,18 +1,20 @@
 @using CommonGround.Application.Services
+@inject WorkspaceLocalization Loc
+@implements IDisposable
 
 <div class="cg-card">
     <div class="cg-section-header">
-        <h2>Fund ledger and ancillary revenue</h2>
-        <span class="cg-badge cg-badge-ok">Double-entry balanced</span>
+        <h2>@Loc.T("panel.fundLedger")</h2>
+        <span class="cg-badge cg-badge-ok">@Loc.T("ledger.balanced")</span>
     </div>
     <div class="cg-table-wrap">
         <table class="cg-table">
             <thead>
                 <tr>
-                    <th>Code</th>
-                    <th>Account name</th>
-                    <th>Fund</th>
-                    <th class="num">Balance (@Snapshot.Community.CurrencyCode)</th>
+                    <th>@Loc.T("table.code")</th>
+                    <th>@Loc.T("table.account")</th>
+                    <th>@Loc.T("table.fund")</th>
+                    <th class="num">@Loc.T("table.balance") (@Snapshot.Community.CurrencyCode)</th>
                 </tr>
             </thead>
             <tbody>
@@ -31,11 +33,11 @@
 
     <div class="cg-grid-2" style="margin-block-start: 0.75rem;">
         <div>
-            <h3 style="margin-block-start: 0 !important;">Journal entries</h3>
+            <h3 style="margin-block-start: 0 !important;">@Loc.T("ledger.journalTitle")</h3>
             <div class="cg-table-wrap">
                 <table class="cg-table">
                     <thead>
-                        <tr><th>Ref</th><th>Description</th><th>Status</th></tr>
+                        <tr><th>@Loc.T("table.ref")</th><th>@Loc.T("table.description")</th><th>@Loc.T("table.status")</th></tr>
                     </thead>
                     <tbody>
                         @foreach (var j in Snapshot.Community.JournalEntries)
@@ -45,7 +47,7 @@
                                 <td>@j.Description</td>
                                 <td>
                                     <span class="cg-badge @(j.IsBalanced() ? "cg-badge-ok" : "cg-badge-err")">
-                                        @(j.IsBalanced() ? "Balanced" : "Unbalanced")
+                                        @(j.IsBalanced() ? Loc.T("ledger.balanced") : Loc.T("ledger.unbalanced"))
                                     </span>
                                 </td>
                             </tr>
@@ -56,11 +58,11 @@
         </div>
 
         <div>
-            <h3 style="margin-block-start: 0 !important;">Commercial ancillary contracts</h3>
+            <h3 style="margin-block-start: 0 !important;">@Loc.T("ledger.commercialTitle")</h3>
             <div class="cg-table-wrap">
                 <table class="cg-table">
                     <thead>
-                        <tr><th>Tenant / asset</th><th class="num">Monthly offset</th></tr>
+                        <tr><th>@Loc.T("ledger.tenant")</th><th class="num">@Loc.T("ledger.monthlyOffset")</th></tr>
                     </thead>
                     <tbody>
                         @foreach (var c in Snapshot.Community.CommercialContracts)
@@ -82,4 +84,20 @@
 
 @code {
     [Parameter, EditorRequired] public CommunityWorkspaceSnapshot Snapshot { get; set; } = default!;
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null)
+        {
+            Loc.OnChange -= _locHandler;
+        }
+    }
 }

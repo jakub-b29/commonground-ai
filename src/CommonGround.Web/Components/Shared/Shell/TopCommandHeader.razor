@@ -42,7 +42,7 @@
         <div>
             <label for="registry-input">@Loc.T("form.registryInput")</label>
             <div style="display: flex; gap: 0.375rem;">
-                <input id="registry-input" @bind="_registryInput" placeholder="14 Parkowa Ave or Tax ID" style="flex: 1; min-width: 0;" />
+                <input id="registry-input" @bind="_registryInput" placeholder="@Loc.T("form.registryPlaceholder")" style="flex: 1; min-width: 0;" />
                 <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="OnSyncRegistry">@Loc.T("action.syncRegistry")</button>
             </div>
             <div style="display: flex; gap: 0.375rem; margin-block-start: 0.35rem; flex-wrap: wrap;">
