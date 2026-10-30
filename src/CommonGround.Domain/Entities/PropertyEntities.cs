@@ -7,9 +7,47 @@ public interface ICommunityScoped
     Guid CommunityId { get; set; }
 }
 
+public sealed class ManagementFirm
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string Name { get; set; } = string.Empty;
+    public string FirmGroupCode { get; set; } = "CG-FIRM-2026";
+    public SystemOperatingMode OperatingMode { get; set; } = SystemOperatingMode.HousingAssociation;
+
+    // Firm-style contact details (HousingAssociation / Commercial Property Management Firm)
+    public string ManagingFirmLegalName { get; set; } = string.Empty;
+    public string FirmTaxIdOrNip { get; set; } = string.Empty;
+    public string LicenseNumber { get; set; } = string.Empty;
+    public string LeadDirectorName { get; set; } = string.Empty;
+    public string OfficeAddress { get; set; } = string.Empty;
+    public string SupportEmail { get; set; } = string.Empty;
+    public string EmergencyDispatchPhone { get; set; } = string.Empty;
+
+    // HOA-style contact details (UsHoa / Self-Governed Association Board)
+    public string AssociationLegalName { get; set; } = string.Empty;
+    public string HoaEinNumber { get; set; } = string.Empty;
+    public string BoardPresidentName { get; set; } = string.Empty;
+    public string ManagementAgentContact { get; set; } = string.Empty;
+    public string ClubhouseOrOfficeAddress { get; set; } = string.Empty;
+    public string HoaBoardEmail { get; set; } = string.Empty;
+    public string HoaHotlinePhone { get; set; } = string.Empty;
+
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+    public List<Community> Communities { get; set; } = [];
+    public List<FirmManagerGroup> ManagerGroups { get; set; } = [];
+    public List<FirmManagerMessage> ManagerMessages { get; set; } = [];
+    public List<WorkspaceInvitation> Invitations { get; set; } = [];
+}
+
 public sealed class Community
 {
     public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid? ManagementFirmId { get; set; }
+    public string FirmGroupCode { get; set; } = "CG-FIRM-2026";
+    public Guid? AssignedPropertyManagerId { get; set; }
+    public string AssignedPropertyManagerName { get; set; } = string.Empty;
+    public string AssignedPropertyManagerEmail { get; set; } = string.Empty;
+    public string AssignedPropertyManagerPhone { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public SystemOperatingMode OperatingMode { get; set; } = SystemOperatingMode.HousingAssociation;
     public string StreetAddress { get; set; } = string.Empty;

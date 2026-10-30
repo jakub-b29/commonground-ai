@@ -1,27 +1,28 @@
 ﻿@page "/Error"
 @using System.Diagnostics
+@layout Layout.AuthLayout
+@attribute [AllowAnonymous]
 @inject WorkspaceLocalization Loc
 @implements IDisposable
 
 <PageTitle>@Loc.T("error.title")</PageTitle>
 
-<h1 class="text-danger">@Loc.T("error.title")</h1>
-<h2 class="text-danger">@Loc.T("error.body")</h2>
+<div class="cg-auth-heading">
+    <h1>@Loc.T("error.title")</h1>
+    <p>@Loc.T("error.body")</p>
+</div>
 
 @if (ShowRequestId)
 {
-    <p>
-        <strong>@Loc.T("error.requestId")</strong> <code>@RequestId</code>
+    <p class="cg-auth-note">
+        <strong>@Loc.T("error.requestId")</strong> <code class="mono">@RequestId</code>
     </p>
 }
 
-<h3>@Loc.T("error.devMode")</h3>
-<p>
-    @Loc.T("error.devHint")
-</p>
-<p>
-    <strong>@Loc.T("error.devWarn")</strong>
-</p>
+<div class="cg-auth-links">
+    <a href="/login">@Loc.T("nav.signin")</a>
+    <a href="/register-firm">@Loc.T("auth.createFirmLink")</a>
+</div>
 
 @code{
     [CascadingParameter]

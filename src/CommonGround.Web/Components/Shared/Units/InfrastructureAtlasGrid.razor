@@ -1,5 +1,6 @@
 @using CommonGround.Domain.Calculators
 @inject CommonGroundWorkspaceService Workspace
+@inject WorkspaceAccessService Access
 @inject WorkspaceUiState UiState
 @inject WorkspaceLocalization Loc
 @implements IDisposable
@@ -50,7 +51,7 @@
             <tbody>
                 @foreach (var access in AccessCodes)
                 {
-                    var revealed = UiState.RevealedAccessCodeIds.Contains(access.Id);
+                    var revealed = _revealed.Contains(access.Id);
                     <tr @key="access.Id">
                         <td>
                             <strong>@access.TargetArea</strong>
@@ -58,7 +59,7 @@
                         </td>
                         <td class="mono">
                             <span class="cg-badge @(revealed ? "cg-badge-warn" : "")">
-                                @(revealed ? access.ResidentCode : DataSecurityAndPrivacyGuard.MaskSecretForRole(access.ResidentCode, UiState.ActiveSecurityRole, false))
+                                @(revealed ? access.ResidentCode : DataSecurityAndPrivacyGuard.MaskSecretForRole(access.ResidentCode, _role, false))
                             </span>
                         </td>
                         <td class="mono">@access.ContractorOrCourierCode</td>
@@ -82,6 +83,8 @@
     [Parameter, EditorRequired] public Guid CommunityId { get; set; }
     private bool _isBusy;
     private string _message = string.Empty;
+    private WorkspaceSecurityRole _role = WorkspaceSecurityRole.Resident;
+    private readonly HashSet<Guid> _revealed = new();
     private Action? _locHandler;
 
     protected override async Task OnInitializedAsync()
@@ -89,6 +92,11 @@
         _locHandler = () => InvokeAsync(StateHasChanged);
         Loc.OnChange += _locHandler;
         await Loc.EnsureLoadedAsync();
+        try
+        {
+            _role = await Access.GetRoleAsync();
+        }
+        catch { }
     }
 
     private async Task OnRevealAsync(Guid id)
@@ -96,8 +104,8 @@
         _isBusy = true;
         try
         {
-            var code = await Workspace.RevealVaultedAccessCodeAsync(CommunityId, id, UiState.ActiveSecurityRole);
-            UiState.RevealedAccessCodeIds.Add(id);
+            var code = await Workspace.RevealVaultedAccessCodeAsync(CommunityId, id, _role);
+            _revealed.Add(id);
             UiState.Announce(Loc.T("msg.vaultRevealed"));
             _message = $"{Loc.T("msg.vaultRevealed")}: {code}.";
         }

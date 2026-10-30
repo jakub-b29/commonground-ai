@@ -1,7 +1,7 @@
 @using CommonGround.Domain.Entities
 @using CommonGround.Domain.Enums
 @inject CommonGroundWorkspaceService Workspace
-@inject WorkspaceUiState UiState
+@inject WorkspaceAccessService Access
 @inject WorkspaceLocalization Loc
 @implements IDisposable
 
@@ -210,10 +210,12 @@
         _isBusy = true;
         try
         {
-            var senderName = UiState.CurrentUser?.FullName ?? "Chief Property Manager";
-            var senderRole = UiState.CurrentUser?.LinkedUnitNumber is not null
-                ? $"Unit {UiState.CurrentUser.LinkedUnitNumber}"
-                : UiState.ActiveSecurityRole.ToString();
+            var account = await Access.GetAccountAsync();
+            var role = await Access.GetRoleAsync();
+            var senderName = account?.FullName ?? "Chief Property Manager";
+            var senderRole = !string.IsNullOrWhiteSpace(account?.LinkedUnitNumber)
+                ? $"Unit {account.LinkedUnitNumber}"
+                : role.ToString();
             var msg = await Workspace.PostCommunityMessageAsync(Community.Id, _selectedGroupId, senderName, senderRole, _subject, _body, isPinned);
             _subject = string.Empty;
             _body = string.Empty;

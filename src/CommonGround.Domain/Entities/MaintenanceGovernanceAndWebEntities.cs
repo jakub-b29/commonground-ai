@@ -287,6 +287,8 @@ public sealed class WorkspaceUserAccount : ICommunityScoped
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid CommunityId { get; set; }
+    public Guid? ManagementFirmId { get; set; }
+    public string FirmGroupCode { get; set; } = "CG-FIRM-2026";
     public string FullName { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
     public string Phone { get; set; } = string.Empty;
@@ -296,9 +298,66 @@ public sealed class WorkspaceUserAccount : ICommunityScoped
     public WorkspaceSecurityRole Role { get; set; } = WorkspaceSecurityRole.PropertyManager;
     public string? LinkedUnitNumber { get; set; }
     public string? ContractorCompanyOrTrade { get; set; }
+    public ContractorPropertyScope ContractorScope { get; set; } = ContractorPropertyScope.SpecificProperty;
+    public string AllowedCommunityIdsCsv { get; set; } = string.Empty;
+    public bool IsBlankRegisteredPendingAssignment { get; set; }
     public bool GrantedByPropertyManager { get; set; } = true;
     public bool MfaVerified { get; set; } = true;
     public DateTime LastLoginAtUtc { get; set; } = DateTime.UtcNow;
+}
+
+public sealed class FirmManagerGroup
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid ManagementFirmId { get; set; }
+    public string Code { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public string Topic { get; set; } = string.Empty;
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+    public List<FirmManagerMessage> Messages { get; set; } = [];
+}
+
+public sealed class FirmManagerMessage
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid ManagementFirmId { get; set; }
+    public Guid FirmManagerGroupId { get; set; }
+    public string GroupName { get; set; } = string.Empty;
+    public Guid? SenderUserId { get; set; }
+    public string SenderName { get; set; } = string.Empty;
+    public WorkspaceSecurityRole SenderRole { get; set; } = WorkspaceSecurityRole.FirmManager;
+    public string SenderEmail { get; set; } = string.Empty;
+    public string SenderPhone { get; set; } = string.Empty;
+    public string PropertyScopeName { get; set; } = "All Firm Properties";
+    public string Subject { get; set; } = string.Empty;
+    public string Body { get; set; } = string.Empty;
+    public bool IsPriorityNotice { get; set; }
+    public DateTime SentAtUtc { get; set; } = DateTime.UtcNow;
+}
+
+public sealed class WorkspaceInvitation
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid ManagementFirmId { get; set; }
+    public string FirmGroupCode { get; set; } = "CG-FIRM-2026";
+    public string InvitationToken { get; set; } = string.Empty;
+    public string InvitationTokenHash { get; set; } = string.Empty;
+    public string RecipientEmail { get; set; } = string.Empty;
+    public string RecipientName { get; set; } = string.Empty;
+    public string RecipientPhone { get; set; } = string.Empty;
+    public WorkspaceSecurityRole TargetRole { get; set; } = WorkspaceSecurityRole.Resident;
+    public InvitationAssignmentMode AssignmentMode { get; set; } = InvitationAssignmentMode.AutoAssignSpecificProperty;
+    public Guid? TargetCommunityId { get; set; }
+    public string TargetCommunityName { get; set; } = string.Empty;
+    public string? TargetUnitNumber { get; set; }
+    public string? ContractorCompanyOrTrade { get; set; }
+    public WorkspaceInvitationStatus Status { get; set; } = WorkspaceInvitationStatus.Pending;
+    public string RegistrationRelativeUrl { get; set; } = string.Empty;
+    public string IssuedByManagerName { get; set; } = string.Empty;
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+    public DateTime ExpiresAtUtc { get; set; } = DateTime.UtcNow.AddDays(7);
+    public DateTime? AcceptedAtUtc { get; set; }
+    public bool IsExpired => DateTime.UtcNow > ExpiresAtUtc;
 }
 
 public sealed class ResidentMembershipApplication : ICommunityScoped
@@ -345,5 +404,23 @@ public sealed class CommunityMessage : ICommunityScoped
     public string Subject { get; set; } = string.Empty;
     public string Body { get; set; } = string.Empty;
     public bool IsPinnedAnnouncement { get; set; }
+    public DateTime SentAtUtc { get; set; } = DateTime.UtcNow;
+}
+
+public sealed class ResidentDirectMessage : ICommunityScoped
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid CommunityId { get; set; }
+    public Guid? ManagementFirmId { get; set; }
+    public string ThreadKey { get; set; } = string.Empty;
+    public string SenderName { get; set; } = string.Empty;
+    public string SenderEmail { get; set; } = string.Empty;
+    public WorkspaceSecurityRole SenderRole { get; set; } = WorkspaceSecurityRole.Resident;
+    public string SenderUnitNumber { get; set; } = string.Empty;
+    public string RecipientScope { get; set; } = "PropertyManager";
+    public string RecipientName { get; set; } = string.Empty;
+    public string Subject { get; set; } = string.Empty;
+    public string Body { get; set; } = string.Empty;
+    public bool IsReadByRecipient { get; set; }
     public DateTime SentAtUtc { get; set; } = DateTime.UtcNow;
 }

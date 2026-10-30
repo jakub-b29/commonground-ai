@@ -1,5 +1,6 @@
 @inject WorkspaceUiState UiState
 @inject WorkspaceLocalization Loc
+@inject WorkspaceAccessService Access
 @inject CommonGroundWorkspaceService Workspace
 @implements IDisposable
 
@@ -43,6 +44,11 @@
     {
         if (UiState.SelectedCommunityId is null || string.IsNullOrWhiteSpace(_question))
         {
+            return;
+        }
+        if (!await Access.CanAccessCommunityAsync(UiState.SelectedCommunityId.Value))
+        {
+            _answer = "Access to this property is denied for the current account.";
             return;
         }
         _isBusy = true;

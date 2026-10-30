@@ -6,6 +6,11 @@ namespace CommonGround.Infrastructure.Persistence;
 
 public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options), IAppDbContext
 {
+    public DbSet<ManagementFirm> ManagementFirms => Set<ManagementFirm>();
+    public DbSet<FirmManagerGroup> FirmManagerGroups => Set<FirmManagerGroup>();
+    public DbSet<FirmManagerMessage> FirmManagerMessages => Set<FirmManagerMessage>();
+    public DbSet<WorkspaceInvitation> WorkspaceInvitations => Set<WorkspaceInvitation>();
+    public DbSet<ResidentDirectMessage> ResidentDirectMessages => Set<ResidentDirectMessage>();
     public DbSet<Community> Communities => Set<Community>();
     public DbSet<Building> Buildings => Set<Building>();
     public DbSet<VerticalRiserStack> RiserStacks => Set<VerticalRiserStack>();
@@ -56,6 +61,21 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<ManagementFirm>(e =>
+        {
+            e.HasMany(f => f.Communities).WithOne().HasForeignKey(c => c.ManagementFirmId).OnDelete(DeleteBehavior.SetNull);
+            e.HasMany(f => f.ManagerGroups).WithOne().HasForeignKey(g => g.ManagementFirmId).OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(f => f.ManagerMessages).WithOne().HasForeignKey(m => m.ManagementFirmId).OnDelete(DeleteBehavior.NoAction);
+            e.HasMany(f => f.Invitations).WithOne().HasForeignKey(i => i.ManagementFirmId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(f => f.FirmGroupCode).IsUnique();
+        });
+
+        modelBuilder.Entity<FirmManagerGroup>(e =>
+        {
+            e.HasMany(g => g.Messages).WithOne().HasForeignKey(m => m.FirmManagerGroupId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(g => new { g.ManagementFirmId, g.Code });
+        });
+
         modelBuilder.Entity<Community>(e =>
         {
             e.HasMany(c => c.Buildings).WithOne().HasForeignKey(b => b.CommunityId).OnDelete(DeleteBehavior.Cascade);
@@ -148,7 +168,12 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         modelBuilder.Entity<LegalDocumentSource>().HasIndex(x => new { x.CommunityId, x.DocumentCode });
         modelBuilder.Entity<SecurityAuditEvent>().HasIndex(x => new { x.CommunityId, x.OccurredAtUtc });
         modelBuilder.Entity<WorkspaceUserAccount>().HasIndex(x => new { x.CommunityId, x.Email });
+        modelBuilder.Entity<WorkspaceUserAccount>().HasIndex(x => new { x.ManagementFirmId, x.Email });
         modelBuilder.Entity<ResidentMembershipApplication>().HasIndex(x => new { x.CommunityId, x.Status });
         modelBuilder.Entity<CommunityMessage>().HasIndex(x => new { x.CommunityId, x.SentAtUtc });
+        modelBuilder.Entity<FirmManagerMessage>().HasIndex(x => new { x.ManagementFirmId, x.SentAtUtc });
+        modelBuilder.Entity<WorkspaceInvitation>().HasIndex(x => new { x.ManagementFirmId, x.Status });
+        modelBuilder.Entity<WorkspaceInvitation>().HasIndex(x => x.InvitationToken).IsUnique();
+        modelBuilder.Entity<ResidentDirectMessage>().HasIndex(x => new { x.CommunityId, x.ThreadKey, x.SentAtUtc });
     }
 }

@@ -23,7 +23,7 @@ public static class DependencyInjection
     public static IServiceCollection AddCommonGroundInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
         var connectionString = configuration.GetConnectionString("CommonGround")
-            ?? "Server=(localdb)\\MSSQLLocalDB;Database=CommonGroundV2;Trusted_Connection=True;MultipleActiveResultSets=true;TrustServerCertificate=True";
+            ?? "Server=(localdb)\\MSSQLLocalDB;Database=CommonGroundV3;Trusted_Connection=True;MultipleActiveResultSets=true;TrustServerCertificate=True";
 
         services.AddDbContextFactory<AppDbContext>(options =>
         {
@@ -42,7 +42,31 @@ public static class DependencyInjection
         });
         services.AddSingleton<IAppDbContextFactory, AppDbContextFactoryAdapter>();
 
-        services.Configure<MetaModelOptions>(configuration.GetSection(MetaModelOptions.SectionName));
+        services.Configure<MetaModelOptions>(options =>
+        {
+            var section = configuration.GetSection(MetaModelOptions.SectionName);
+            section.Bind(options);
+            var metaKey = configuration["MetaModels:ApiKey"]
+                ?? configuration["META_KEY"]
+                ?? Environment.GetEnvironmentVariable("META_KEY")
+                ?? Environment.GetEnvironmentVariable("MODEL_API_KEY")
+                ?? string.Empty;
+            if (!string.IsNullOrWhiteSpace(metaKey))
+            {
+                options.ApiKey = metaKey.Trim().Trim('"').Trim('\'');
+            }
+            if (string.IsNullOrWhiteSpace(options.BaseUrl))
+            {
+                options.BaseUrl = "https://api.meta.ai/v1";
+            }
+            options.SparkModel = "muse-spark-1.3-contributor";
+            options.WonderModel = "muse-spark-1.3-contributor";
+            options.VoiceModel = "muse-voice-transcribe-1.0";
+            options.SamModel = "sam-3.1";
+            options.ImageModel = "muse-image-1.0";
+            options.UseFallbackWhenNoKey = false;
+            options.UseSearchGrounding = true;
+        });
         services.AddHttpClient("MetaModels").AddStandardResilienceHandler();
         services.AddSingleton<SamOverlayRenderer>();
         services.AddSingleton<MetaModelClients>();
@@ -53,39 +77,32 @@ public static class DependencyInjection
         services.AddSingleton<IMuseImageClient>(sp => sp.GetRequiredService<MetaModelClients>());
         services.AddSingleton<IDocumentExporter, DocumentExporter>();
         services.AddScoped<CommonGroundWorkspaceService>();
-        services.AddScoped<DemoSeeder>();
         return services;
     }
 
-    public static async Task EnsureCommonGroundSeededAsync(this IServiceProvider services, CancellationToken ct = default)
+    public static async Task EnsureCommonGroundDatabaseCreatedAsync(this IServiceProvider services, CancellationToken ct = default)
     {
         using var scope = services.CreateScope();
         var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>();
         await using var db = await factory.CreateDbContextAsync(ct);
-        try
-        {
-            await db.Database.EnsureCreatedAsync(ct);
-            var hasContractorApp = await db.ResidentMemberships.AnyAsync(m => m.RequestedRole == CommonGround.Domain.Enums.WorkspaceSecurityRole.Contractor, ct);
-            if (!hasContractorApp && await db.Communities.AnyAsync(ct))
-            {
-                await db.Database.EnsureDeletedAsync(ct);
-                await db.Database.EnsureCreatedAsync(ct);
-            }
-        }
-        catch
+        await db.Database.EnsureCreatedAsync(ct);
+        if (db.Database.IsSqlServer())
         {
             try
             {
-                await db.Database.EnsureDeletedAsync(ct);
-                await db.Database.EnsureCreatedAsync(ct);
+                await db.Database.ExecuteSqlRawAsync(
+                    "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE Name = N'InvitationTokenHash' AND Object_ID = Object_ID(N'[WorkspaceInvitations]')) ALTER TABLE [WorkspaceInvitations] ADD [InvitationTokenHash] nvarchar(max) NOT NULL DEFAULT N'';",
+                    ct);
+                await db.Database.ExecuteSqlRawAsync(
+                    "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE Name = N'ExpiresAtUtc' AND Object_ID = Object_ID(N'[WorkspaceInvitations]')) ALTER TABLE [WorkspaceInvitations] ADD [ExpiresAtUtc] datetime2 NOT NULL DEFAULT '2000-01-01T00:00:00';",
+                    ct);
+                await db.Database.ExecuteSqlRawAsync(
+                    "UPDATE [WorkspaceInvitations] SET [ExpiresAtUtc] = DATEADD(day, 7, [CreatedAtUtc]) WHERE [ExpiresAtUtc] < '2001-01-01';",
+                    ct);
             }
             catch
             {
-                // InMemory fallback or LocalDB unavailable.
             }
         }
-        var renderer = scope.ServiceProvider.GetRequiredService<SamOverlayRenderer>();
-        var seeder = new DemoSeeder(db, renderer);
-        await seeder.SeedAsync(ct);
     }
 }

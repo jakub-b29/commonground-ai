@@ -1,0 +1,151 @@
+@using CommonGround.Domain.Enums
+@inject CommonGroundWorkspaceService Workspace
+@inject WorkspaceAccessService Access
+@inject WorkspaceLocalization Loc
+@implements IDisposable
+
+<div class="cg-card">
+    <div class="cg-section-header">
+        <h2>@Loc.T("panel.directMessages")</h2>
+        <span class="cg-badge">@_messages.Count @Loc.T("panel.messagesCount")</span>
+    </div>
+    <p style="color: var(--color-text-secondary); font-size: 0.78125rem;">@Loc.T("dm.hint")</p>
+    <div class="cg-table-wrap" style="max-height: 260px; overflow-y: auto;">
+        <table class="cg-table">
+            <thead>
+                <tr>
+                    <th>@Loc.T("table.sender")</th>
+                    <th>@Loc.T("table.subject")</th>
+                    <th>@Loc.T("table.status")</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (_messages.Count == 0)
+                {
+                    <tr><td colspan="3" style="color: var(--color-text-secondary);">@Loc.T("msg.noMessages")</td></tr>
+                }
+                @foreach (var m in _messages)
+                {
+                    <tr @key="m.Id">
+                        <td>
+                            <strong>@m.SenderName</strong>
+                            <div style="font-size: 0.72rem; color: var(--color-text-secondary);">@m.SenderRole · @m.SenderEmail · @m.SentAtUtc.ToString("yyyy-MM-dd HH:mm")</div>
+                            <div style="font-size: 0.72rem;">@Loc.T("dm.to"): @m.RecipientScope @m.RecipientName</div>
+                        </td>
+                        <td>
+                            <strong>@m.Subject</strong>
+                            <div style="font-size: 0.75rem; color: var(--color-text-secondary);">@m.Body</div>
+                        </td>
+                        <td><span class="cg-badge @(m.IsReadByRecipient ? "cg-badge-ok" : "cg-badge-warn")">@(m.IsReadByRecipient ? Loc.T("dm.read") : Loc.T("dm.unread"))</span></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    <h3>@Loc.T("dm.composeTitle")</h3>
+    <div class="cg-grid-2">
+        <div>
+            <label for="dm-scope">@Loc.T("dm.recipientScope")</label>
+            <select id="dm-scope" @bind="_recipientScope">
+                <option value="PropertyManager">@Loc.T("role.propertyManager")</option>
+                <option value="Resident">@Loc.T("role.resident")</option>
+                <option value="Contractor">@Loc.T("role.contractor")</option>
+                <option value="FirmManager">@Loc.T("role.firmManager")</option>
+            </select>
+        </div>
+        <div>
+            <label for="dm-recipient">@Loc.T("dm.recipientName")</label>
+            <input id="dm-recipient" @bind="_recipientName" placeholder="Anna Kowalska" />
+        </div>
+        <div>
+            <label for="dm-subject">@Loc.T("form.subject")</label>
+            <input id="dm-subject" @bind="_subject" placeholder="Leak in bathroom" />
+        </div>
+        <div>
+            <label for="dm-unit">@Loc.T("form.unitNumber")</label>
+            <input id="dm-unit" @bind="_senderUnit" placeholder="A-101" />
+        </div>
+    </div>
+    <div style="margin-block-start: 0.5rem;">
+        <label for="dm-body">@Loc.T("form.body")</label>
+        <textarea id="dm-body" rows="3" @bind="_body" placeholder="Describe the issue"></textarea>
+    </div>
+    <div class="cg-toolbar">
+        <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="OnSend">@Loc.T("action.postMessage")</button>
+    </div>
+    @if (!string.IsNullOrWhiteSpace(_message))
+    {
+        <div role="status" aria-live="polite" class="cg-callout">@_message</div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Guid CommunityId { get; set; }
+    private List<ResidentDirectMessage> _messages = new();
+    private string _recipientScope = "PropertyManager";
+    private string _recipientName = string.Empty;
+    private string _subject = string.Empty;
+    private string _body = string.Empty;
+    private string _senderUnit = string.Empty;
+    private string _message = string.Empty;
+    private bool _isBusy;
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+        await ReloadAsync();
+    }
+
+    protected override async Task OnParametersSetAsync() => await ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        try
+        {
+            var account = await Access.GetAccountAsync();
+            var email = account?.Email;
+            _messages = (await Workspace.GetResidentDirectMessagesAsync(CommunityId, email)).ToList();
+            if (account is not null && string.IsNullOrWhiteSpace(_senderUnit))
+            {
+                _senderUnit = account.LinkedUnitNumber ?? string.Empty;
+            }
+        }
+        catch { }
+        StateHasChanged();
+    }
+
+    private async Task OnSend()
+    {
+        if (CommunityId == Guid.Empty || string.IsNullOrWhiteSpace(_subject) || string.IsNullOrWhiteSpace(_body)) return;
+        _isBusy = true;
+        try
+        {
+            var account = await Access.GetAccountAsync();
+            var role = await Access.GetRoleAsync();
+            var senderName = account?.FullName ?? "Resident";
+            var senderEmail = account?.Email ?? "resident@example.com";
+            var senderRole = account?.Role ?? role;
+            await Workspace.PostResidentDirectMessageAsync(CommunityId, senderName, senderEmail, senderRole, _senderUnit, _recipientScope, _recipientName, _subject, _body);
+            _subject = string.Empty;
+            _body = string.Empty;
+            _message = Loc.T("msg.messagePosted");
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+    }
+}

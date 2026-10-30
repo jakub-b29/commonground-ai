@@ -1,7 +1,7 @@
 @using CommonGround.Domain.Calculators
 @using CommonGround.Domain.Entities
 @inject CommonGroundWorkspaceService Workspace
-@inject WorkspaceUiState UiState
+@inject WorkspaceAccessService Access
 @inject WorkspaceLocalization Loc
 @implements IDisposable
 
@@ -30,8 +30,8 @@ else
                             <tr><td>@Loc.T("unit.floorStorage")</td><td class="num">@Unit.FloorAreaM2.ToString("N2") m² / @Unit.StorageAreaM2.ToString("N2") m²</td></tr>
                             <tr><td>@Loc.T("unit.share")</td><td class="num">@Unit.ShareNumerator / @Unit.ShareDenominator = @Unit.OwnershipShare.ToString("P2")</td></tr>
                             <tr><td>@Loc.T("unit.occupantsStr")</td><td>@Unit.DeclaredOccupants / @(Unit.IsShortTermRental ? Loc.T("unit.strYes") : Loc.T("unit.strNo"))</td></tr>
-                            <tr><td>@Loc.T("unit.iban")</td><td class="mono">@DataSecurityAndPrivacyGuard.MaskIban(Unit.VirtualIbanOrLockboxCode, UiState.ActiveSecurityRole, false)</td></tr>
-                            <tr><td>@Loc.T("unit.contact")</td><td>@DataSecurityAndPrivacyGuard.MaskContactPii(Unit.PrimaryOwnerEmail, UiState.ActiveSecurityRole) · @DataSecurityAndPrivacyGuard.MaskContactPii(Unit.PrimaryOwnerPhone, UiState.ActiveSecurityRole)</td></tr>
+                            <tr><td>@Loc.T("unit.iban")</td><td class="mono">@DataSecurityAndPrivacyGuard.MaskIban(Unit.VirtualIbanOrLockboxCode, _role, false)</td></tr>
+                            <tr><td>@Loc.T("unit.contact")</td><td>@DataSecurityAndPrivacyGuard.MaskContactPii(Unit.PrimaryOwnerEmail, _role) · @DataSecurityAndPrivacyGuard.MaskContactPii(Unit.PrimaryOwnerPhone, _role)</td></tr>
                             <tr><td>@Loc.T("unit.balanceDue")</td><td class="num"><strong>@Unit.CurrentBalance.ToString("N2")</strong> (@Unit.DaysPastDue d)</td></tr>
                         </tbody>
                     </table>
@@ -115,6 +115,7 @@ else
     private MonthlyAssessment? _assessment;
     private bool _isBusy;
     private string _message = string.Empty;
+    private WorkspaceSecurityRole _role = WorkspaceSecurityRole.Resident;
     private Action? _locHandler;
 
     protected override async Task OnInitializedAsync()
@@ -122,6 +123,11 @@ else
         _locHandler = () => InvokeAsync(StateHasChanged);
         Loc.OnChange += _locHandler;
         await Loc.EnsureLoadedAsync();
+        try
+        {
+            _role = await Access.GetRoleAsync();
+        }
+        catch { }
     }
 
     protected override void OnParametersSet()

@@ -1,0 +1,207 @@
+@using CommonGround.Domain.Enums
+@inject CommonGroundWorkspaceService Workspace
+@inject WorkspaceAccessService Access
+@inject WorkspaceLocalization Loc
+@implements IDisposable
+
+<div class="cg-card">
+    <div class="cg-section-header">
+        <h2>@Loc.T("firm.inviteTitle")</h2>
+        <span class="cg-badge">@_invites.Count @Loc.T("firm.invitesCount")</span>
+    </div>
+    <p style="color: var(--color-text-secondary); font-size: 0.78125rem;">@Loc.T("firm.inviteHint")</p>
+    @if (_isManager && FirmId.HasValue)
+    {
+        <div class="cg-grid-3">
+            <div>
+                <label for="inv-email">@Loc.T("form.workEmail")</label>
+                <input id="inv-email" @bind="_email" placeholder="manager@example.com" />
+            </div>
+            <div>
+                <label for="inv-name">@Loc.T("form.name")</label>
+                <input id="inv-name" @bind="_name" placeholder="Anna Kowalska" />
+            </div>
+            <div>
+                <label for="inv-phone">@Loc.T("form.phone")</label>
+                <input id="inv-phone" @bind="_phone" placeholder="+48 600 000 000" />
+            </div>
+            <div>
+                <label for="inv-role">@Loc.T("form.requestedRole")</label>
+                <select id="inv-role" @bind="_role">
+                    @if (_isFirmManager)
+                    {
+                        <option value="@WorkspaceSecurityRole.PropertyManager">@Loc.T("role.propertyManager")</option>
+                    }
+                    <option value="@WorkspaceSecurityRole.Resident">@Loc.T("role.resident")</option>
+                    <option value="@WorkspaceSecurityRole.Contractor">@Loc.T("role.contractor")</option>
+                </select>
+            </div>
+            <div>
+                <label for="inv-mode">@Loc.T("firm.assignmentMode")</label>
+                <select id="inv-mode" @bind="_mode">
+                    <option value="@InvitationAssignmentMode.BlankManualAssign">@Loc.T("firm.blankManual")</option>
+                    <option value="@InvitationAssignmentMode.AutoAssignSpecificProperty">@Loc.T("firm.autoSpecific")</option>
+                    <option value="@InvitationAssignmentMode.AutoAssignAllFirmProperties">@Loc.T("firm.autoAll")</option>
+                </select>
+            </div>
+            <div>
+                <label for="inv-property">@Loc.T("form.community")</label>
+                <select id="inv-property" @bind="_propertyId">
+                    <option value="">@Loc.T("firm.selectProperty")</option>
+                    @foreach (var p in _properties)
+                    {
+                        <option value="@p.Id">@p.Name</option>
+                    }
+                </select>
+            </div>
+            <div>
+                <label for="inv-unit">@Loc.T("form.unitNumber")</label>
+                <input id="inv-unit" @bind="_unit" placeholder="A-101" />
+            </div>
+            <div>
+                <label for="inv-trade">@Loc.T("form.companyTrade")</label>
+                <input id="inv-trade" @bind="_trade" placeholder="Hydro-Instal" />
+            </div>
+        </div>
+        <div class="cg-toolbar">
+            <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="OnInvite">@Loc.T("firm.sendInvite")</button>
+        </div>
+    }
+    <div class="cg-table-wrap" style="margin-block-start: 0.75rem; max-height: 280px; overflow-y: auto;">
+        <table class="cg-table">
+            <thead>
+                <tr>
+                    <th>@Loc.T("table.owner")</th>
+                    <th>@Loc.T("table.group")</th>
+                    <th>@Loc.T("table.status")</th>
+                    <th>@Loc.T("table.links")</th>
+                    <th>@Loc.T("table.actions")</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (_invites.Count == 0)
+                {
+                    <tr><td colspan="5" style="color: var(--color-text-secondary);">@Loc.T("msg.noMessages")</td></tr>
+                }
+                @foreach (var inv in _invites)
+                {
+                    <tr @key="inv.Id">
+                        <td><strong>@inv.RecipientName</strong><div style="font-size: 0.72rem; color: var(--color-text-secondary);">@inv.RecipientEmail · @inv.TargetRole</div></td>
+                        <td><span class="cg-badge">@inv.AssignmentMode</span><div style="font-size: 0.72rem;">@inv.TargetCommunityName @inv.TargetUnitNumber</div></td>
+                        <td><span class="cg-badge @(inv.Status == WorkspaceInvitationStatus.Pending ? "cg-badge-warn" : inv.Status == WorkspaceInvitationStatus.Accepted ? "cg-badge-ok" : "cg-badge-err")">@inv.Status</span></td>
+                        <td class="mono" style="font-size: 0.72rem;">@inv.RegistrationRelativeUrl</td>
+                        <td>
+                            @if (inv.Status == WorkspaceInvitationStatus.Pending)
+                            {
+                                <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => OnRevoke(inv.Id)">@Loc.T("action.reject")</button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    @if (!string.IsNullOrWhiteSpace(_message))
+    {
+        <div role="status" aria-live="polite" class="cg-callout">@_message</div>
+    }
+</div>
+
+@code {
+    [Parameter] public Guid? FirmId { get; set; }
+    private List<Community> _properties = new();
+    private List<WorkspaceInvitation> _invites = new();
+    private string _email = string.Empty;
+    private string _name = string.Empty;
+    private string _phone = string.Empty;
+    private WorkspaceSecurityRole _role = WorkspaceSecurityRole.Resident;
+    private InvitationAssignmentMode _mode = InvitationAssignmentMode.AutoAssignSpecificProperty;
+    private string _propertyId = string.Empty;
+    private string _unit = string.Empty;
+    private string _trade = string.Empty;
+    private string _message = string.Empty;
+    private bool _isBusy;
+    private bool _isManager;
+    private bool _isFirmManager;
+    private WorkspaceSecurityRole _actorRole = WorkspaceSecurityRole.PropertyManager;
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+        try
+        {
+            _actorRole = await Access.GetRoleAsync();
+            _isFirmManager = _actorRole == WorkspaceSecurityRole.FirmManager;
+            _isManager = _isFirmManager || _actorRole == WorkspaceSecurityRole.PropertyManager;
+        }
+        catch { }
+        await ReloadAsync();
+    }
+
+    protected override async Task OnParametersSetAsync() => await ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        if (!FirmId.HasValue) return;
+        try
+        {
+            var myFirm = await Access.GetFirmIdAsync();
+            if (myFirm is null || myFirm.Value != FirmId.Value) return;
+            _properties = (await Access.GetAllowedCommunitiesAsync()).ToList();
+            _invites = (await Workspace.GetFirmInvitationsAsync(FirmId.Value)).ToList();
+        }
+        catch { }
+        StateHasChanged();
+    }
+
+    private async Task OnInvite()
+    {
+        if (!FirmId.HasValue || string.IsNullOrWhiteSpace(_email)) return;
+        _isBusy = true;
+        try
+        {
+            Guid? targetId = null;
+            if (Guid.TryParse(_propertyId, out var pid)) targetId = pid;
+            var account = await Access.GetAccountAsync();
+            var issuedBy = account?.FullName ?? _actorRole.ToString();
+            await Workspace.CreateWorkspaceInvitationAsync(FirmId.Value, _email.Trim(), _name.Trim(), _phone.Trim(), _role, _mode, targetId, string.IsNullOrWhiteSpace(_unit) ? null : _unit.Trim(), string.IsNullOrWhiteSpace(_trade) ? null : _trade.Trim(), issuedBy, _actorRole);
+            _email = _name = _phone = _unit = _trade = string.Empty;
+            _message = Loc.T("msg.messagePosted");
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task OnRevoke(Guid id)
+    {
+        _isBusy = true;
+        try
+        {
+            await Workspace.RevokeWorkspaceInvitationAsync(id, _actorRole);
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+    }
+}

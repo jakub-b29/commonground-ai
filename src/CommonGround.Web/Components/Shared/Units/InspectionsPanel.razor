@@ -1,0 +1,57 @@
+@using CommonGround.Domain.Entities
+@inject WorkspaceLocalization Loc
+@implements IDisposable
+
+<div class="cg-card">
+    <div class="cg-section-header">
+        <h2>@Loc.T("panel.inspections")</h2>
+        <span class="cg-badge">@Inspections.Count @Loc.T("inspection.mandatoryChecks")</span>
+    </div>
+    <div class="cg-table-wrap">
+        <table class="cg-table">
+            <thead>
+                <tr>
+                    <th>@Loc.T("inspection.kind")</th>
+                    <th class="num">@Loc.T("inspection.last")</th>
+                    <th class="num">@Loc.T("inspection.next")</th>
+                    <th>@Loc.T("table.status")</th>
+                    <th>@Loc.T("inspection.findings")</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var i in Inspections)
+                {
+                    <tr @key="i.Id">
+                        <td>
+                            <strong>@i.Kind</strong>
+                            <div style="font-size: 0.72rem; color: var(--color-text-secondary);">@i.InspectorCompany</div>
+                        </td>
+                        <td class="num">@i.LastPerformedDate.ToString("yyyy-MM-dd")</td>
+                        <td class="num">@i.NextDueDate.ToString("yyyy-MM-dd")</td>
+                        <td>
+                            <span class="cg-badge @(i.Status == "Valid" ? "cg-badge-ok" : "cg-badge-warn")">@(i.Status == "Valid" ? Loc.T("inspection.valid") : i.Status)</span>
+                        </td>
+                        <td>@i.SummaryOfDefects</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<StatutoryInspection> Inspections { get; set; } = [];
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+    }
+}

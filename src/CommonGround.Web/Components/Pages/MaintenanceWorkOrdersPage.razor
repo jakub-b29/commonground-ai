@@ -1,0 +1,69 @@
+@page "/maintenance/work-orders"
+@attribute [Authorize(Policy = "WorkspaceMember")]
+@using CommonGround.Web.Components.Shared.Maintenance
+@inject WorkspaceLocalization Loc
+@inject WorkspaceAccessService Access
+@implements IDisposable
+
+<PageTitle>@Loc.T("panel.workOrderInspector") - CommonGround</PageTitle>
+
+<div class="cg-page-header">
+    <div>
+        <h1>@Loc.T("page.workOrdersTitle")</h1>
+        <p class="cg-page-lead">@Loc.T("page.workOrdersLead")</p>
+    </div>
+    <a class="cg-btn" href="/maintenance/intake">@Loc.T("panel.intake")</a>
+</div>
+
+<ScopedCommunityPage @ref="_loader" OnSnapshotLoaded="OnSnapshot">
+    <ChildContent>
+        <AuthorizeView Roles="Contractor" Context="contractor">
+            <Authorized>
+                <div class="cg-callout" role="status" aria-live="polite">@Loc.T("msg.contractorLimited")</div>
+            </Authorized>
+        </AuthorizeView>
+        <WorkOrderSamInspectorPanel WorkOrders="_orders" CommunityId="context.Community.Id" OnChanged="OnReload" />
+    </ChildContent>
+</ScopedCommunityPage>
+
+@code {
+    private ScopedCommunityPage? _loader;
+    private IReadOnlyList<WorkOrder> _orders = [];
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+    }
+
+    private async Task OnSnapshot(CommunityWorkspaceSnapshot snapshot)
+    {
+        var role = await Access.GetRoleAsync();
+        var account = await Access.GetAccountAsync();
+        if (role == WorkspaceSecurityRole.Contractor && account is not null && !string.IsNullOrWhiteSpace(account.ContractorCompanyOrTrade))
+        {
+            var trade = account.ContractorCompanyOrTrade.Trim();
+            _orders = snapshot.Community.WorkOrders
+                .Where(w => string.Equals(w.AssignedVendorName?.Trim(), trade, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            if (_orders.Count == 0)
+                _orders = snapshot.Community.WorkOrders;
+        }
+        else
+        {
+            _orders = snapshot.Community.WorkOrders;
+        }
+    }
+
+    private async Task OnReload()
+    {
+        if (_loader is not null) await _loader.ReloadAsync();
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+    }
+}

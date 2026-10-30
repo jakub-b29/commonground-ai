@@ -1,0 +1,56 @@
+@page "/firm/invitations"
+@attribute [Authorize(Policy = "ManagersOnly")]
+@using CommonGround.Web.Components.Shared.Firm
+@inject WorkspaceLocalization Loc
+@inject WorkspaceAccessService Access
+@implements IDisposable
+
+<PageTitle>@Loc.T("firm.inviteTitle") - CommonGround</PageTitle>
+
+<div class="cg-page-header">
+    <div>
+        <h1>@Loc.T("firm.inviteTitle")</h1>
+        <p class="cg-page-lead">@Loc.T("firm.inviteHint")</p>
+    </div>
+    <a class="cg-btn" href="/firm/properties">@Loc.T("firm.propertiesTitle")</a>
+</div>
+
+@if (!_loaded)
+{
+    <p role="status" aria-live="polite">@Loc.T("msg.loading")</p>
+}
+else if (!_firmId.HasValue)
+{
+    <div class="cg-card"><p class="cg-empty-text">@Loc.T("firm.selectFirmHint")</p></div>
+}
+else
+{
+    <FirmInvitePanel FirmId="_firmId" />
+}
+
+@code {
+    private Guid? _firmId;
+    private bool _loaded;
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+        try
+        {
+            _firmId = await Access.GetFirmIdAsync();
+        }
+        catch { }
+        finally
+        {
+            _loaded = true;
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+    }
+}

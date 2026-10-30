@@ -1,0 +1,105 @@
+@inject CommonGroundWorkspaceService Workspace
+@inject WorkspaceAccessService Access
+@inject WorkspaceLocalization Loc
+@implements IDisposable
+
+<div class="cg-card">
+    <div class="cg-section-header">
+        <h2>@Loc.T("panel.profileEditor")</h2>
+        @if (_account is not null)
+        {
+            <span class="cg-badge">@_role · @_account.Email</span>
+        }
+    </div>
+    @if (!_loaded)
+    {
+        <p role="status" aria-live="polite">@Loc.T("msg.loading")</p>
+    }
+    else if (_account is null)
+    {
+        <p style="color: var(--color-text-secondary);">@Loc.T("role.anonymous") <a href="/login">@Loc.T("nav.signin")</a></p>
+    }
+    else
+    {
+        <div class="cg-grid-3">
+            <div>
+                <label for="profile-name">@Loc.T("form.name")</label>
+                <input id="profile-name" @bind="_fullName" />
+            </div>
+            <div>
+                <label for="profile-phone">@Loc.T("form.phone")</label>
+                <input id="profile-phone" @bind="_phone" />
+            </div>
+            <div>
+                <label for="profile-unit">@Loc.T("form.unitNumber")</label>
+                <input id="profile-unit" @bind="_unit" disabled="@(_role != WorkspaceSecurityRole.Resident)" />
+            </div>
+        </div>
+        <div class="cg-toolbar">
+            <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="OnSave">@Loc.T("action.submit")</button>
+        </div>
+    }
+    @if (!string.IsNullOrWhiteSpace(_message))
+    {
+        <div role="status" aria-live="polite" class="cg-callout">@_message</div>
+    }
+</div>
+
+@code {
+    private WorkspaceUserAccount? _account;
+    private WorkspaceSecurityRole _role = WorkspaceSecurityRole.Resident;
+    private string _fullName = string.Empty;
+    private string _phone = string.Empty;
+    private string _unit = string.Empty;
+    private string _message = string.Empty;
+    private bool _isBusy;
+    private bool _loaded;
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+        try
+        {
+            _account = await Access.GetAccountAsync();
+            _role = await Access.GetRoleAsync();
+            if (_account is not null)
+            {
+                _fullName = _account.FullName;
+                _phone = _account.Phone;
+                _unit = _account.LinkedUnitNumber ?? string.Empty;
+            }
+        }
+        catch { }
+        finally
+        {
+            _loaded = true;
+        }
+    }
+
+    private async Task OnSave()
+    {
+        if (_account is null) return;
+        _isBusy = true;
+        try
+        {
+            _account = await Workspace.UpdateResidentProfileAsync(_account.Id, _fullName, _phone, string.IsNullOrWhiteSpace(_unit) ? null : _unit);
+            _message = Loc.T("msg.profileUpdated");
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+    }
+}

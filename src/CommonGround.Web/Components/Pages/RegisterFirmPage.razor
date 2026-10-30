@@ -1,0 +1,86 @@
+@page "/register-firm"
+@layout Layout.AuthLayout
+@attribute [AllowAnonymous]
+@inject WorkspaceLocalization Loc
+@implements IDisposable
+
+<PageTitle>@Loc.T("firm.registerTitle") - CommonGround</PageTitle>
+
+<div class="cg-auth-heading">
+    <h1>@Loc.T("firm.registerTitle")</h1>
+    <p>@Loc.T("register.lead")</p>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(ErrorCode))
+{
+    <div role="alert" class="cg-auth-error">@Loc.T("msg.signInFailed")</div>
+}
+
+<form method="post" action="/auth/register-firm" class="cg-form-stack">
+    <div>
+        <label for="rf-firm">@Loc.T("firm.firmName")</label>
+        <input id="rf-firm" name="firmName" required autocomplete="organization" />
+    </div>
+    <div>
+        <label for="rf-legal">@Loc.T("settings.firmLegal")</label>
+        <input id="rf-legal" name="firmLegalName" autocomplete="organization" />
+    </div>
+    <div>
+        <label for="rf-tax">@Loc.T("settings.firmTax")</label>
+        <input id="rf-tax" name="firmTaxId" autocomplete="off" />
+    </div>
+    <div>
+        <label for="rf-license">@Loc.T("settings.firmLicense")</label>
+        <input id="rf-license" name="licenseNumber" autocomplete="off" />
+    </div>
+    <div>
+        <label for="rf-office">@Loc.T("settings.firmOffice")</label>
+        <input id="rf-office" name="officeAddress" autocomplete="street-address" />
+    </div>
+    <div>
+        <label for="rf-mode">@Loc.T("firm.operatingMode")</label>
+        <select id="rf-mode" name="mode">
+            <option value="HousingAssociation">Housing Association</option>
+            <option value="UsHoa">US HOA</option>
+        </select>
+    </div>
+    <div>
+        <label for="rf-name">@Loc.T("firm.managerName")</label>
+        <input id="rf-name" name="managerName" required autocomplete="name" />
+    </div>
+    <div>
+        <label for="rf-email">@Loc.T("form.workEmail")</label>
+        <input id="rf-email" name="managerEmail" type="email" required autocomplete="username" />
+    </div>
+    <div>
+        <label for="rf-phone">@Loc.T("form.phone")</label>
+        <input id="rf-phone" name="managerPhone" type="tel" autocomplete="tel" />
+    </div>
+    <div>
+        <label for="rf-pass">@Loc.T("form.password")</label>
+        <input id="rf-pass" name="password" type="password" required minlength="8" autocomplete="new-password" />
+    </div>
+    <button type="submit" class="cg-btn cg-btn-primary cg-btn-block">@Loc.T("firm.registerFirm")</button>
+</form>
+
+<div class="cg-auth-links">
+    <a href="/login">@Loc.T("nav.signin")</a>
+    <a href="/accept-invite">@Loc.T("auth.haveInviteLink")</a>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "error")] public string? ErrorCode { get; set; }
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+    }
+}

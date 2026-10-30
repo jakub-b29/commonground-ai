@@ -1,0 +1,86 @@
+@page "/settings/account"
+@page "/settings"
+@attribute [Authorize(Policy = "WorkspaceMember")]
+@using CommonGround.Web.Components.Shared.Residents
+@inject WorkspaceLocalization Loc
+@inject WorkspaceAccessService Access
+@implements IDisposable
+
+<PageTitle>@Loc.T("settings.accountTitle") - CommonGround</PageTitle>
+
+<div class="cg-page-header">
+    <div>
+        <h1>@Loc.T("settings.accountTitle")</h1>
+        <p class="cg-page-lead">@Loc.T("dm.hint")</p>
+    </div>
+    <div class="cg-toolbar" style="margin-block-start: 0;">
+        <a class="cg-btn" href="/account/profile">@Loc.T("panel.profileEditor")</a>
+        <AuthorizeView Roles="FirmManager">
+            <Authorized>
+                <a class="cg-btn" href="/settings/firm-contacts">@Loc.T("settings.firmContacts")</a>
+            </Authorized>
+        </AuthorizeView>
+        <AuthorizeView Roles="FirmManager,PropertyManager">
+            <Authorized>
+                <a class="cg-btn" href="/settings/property">@Loc.T("settings.propertyTitle")</a>
+            </Authorized>
+        </AuthorizeView>
+    </div>
+</div>
+
+@if (!_loaded)
+{
+    <p role="status" aria-live="polite">@Loc.T("msg.loading")</p>
+}
+else if (_account is null)
+{
+    <div class="cg-card"><p class="cg-empty-text">@Loc.T("role.anonymous")</p></div>
+}
+else
+{
+    <div class="cg-card">
+        <div class="cg-section-header">
+            <h2>@Loc.T("settings.accountTitle")</h2>
+            <span class="cg-badge">@_account.Role · @_account.FirmGroupCode</span>
+        </div>
+        <div class="cg-table-wrap">
+            <table class="cg-table">
+                <tbody>
+                    <tr><td>@Loc.T("form.name")</td><td><strong>@_account.FullName</strong></td></tr>
+                    <tr><td>@Loc.T("form.email")</td><td class="mono">@_account.Email</td></tr>
+                    <tr><td>@Loc.T("form.phone")</td><td class="mono">@_account.Phone</td></tr>
+                    <tr><td>@Loc.T("form.unitNumber")</td><td class="mono">@(_account.LinkedUnitNumber ?? "–")</td></tr>
+                    <tr><td>@Loc.T("form.companyTrade")</td><td>@(_account.ContractorCompanyOrTrade ?? "–")</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <ResidentProfileEditorPanel />
+}
+
+@code {
+    private WorkspaceUserAccount? _account;
+    private bool _loaded;
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+        try
+        {
+            _account = await Access.GetAccountAsync();
+        }
+        catch { }
+        finally
+        {
+            _loaded = true;
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+    }
+}

@@ -1,0 +1,70 @@
+@using CommonGround.Domain.Entities
+@inject CommonGroundWorkspaceService Workspace
+@inject WorkspaceLocalization Loc
+@implements IDisposable
+
+<div class="cg-card">
+    <div class="cg-section-header">
+        <h2>@Loc.T("panel.renovation")</h2>
+        <span class="cg-badge">@Requests.Count @Loc.T("renovation.activeCount")</span>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 0.625rem;">
+        @foreach (var r in Requests)
+        {
+            <div @key="r.Id" class="cg-subcard">
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap;">
+                    <strong>@Loc.T("form.unit") @r.UnitNumber – @r.Kind</strong>
+                    <span class="cg-badge cg-badge-warn">@r.Status</span>
+                </div>
+                <div style="font-size: 0.8125rem; margin-block-start: 0.25rem;">@r.Description</div>
+                <div style="font-size: 0.72rem; color: var(--color-text-secondary); margin-block-start: 0.25rem;">
+                    @Loc.T("renovation.cited") <span class="mono">@r.CitedLegalDocumentCode</span> · @r.CitedVerbatimLegalExcerpt
+                </div>
+                <div style="font-size: 0.75rem; margin-block-start: 0.25rem;">
+                    <strong>@Loc.T("renovation.conditions")</strong> @r.TechnicalConditionsOrDecisionText
+                </div>
+                <div class="cg-toolbar" style="margin-block-start: 0.45rem;">
+                    <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => OnVerifyAsync(r.Id)">@Loc.T("action.verifyCompliance")</button>
+                </div>
+            </div>
+        }
+    </div>
+    @if (!string.IsNullOrWhiteSpace(_message))
+    {
+        <div role="status" aria-live="polite" class="cg-callout">@_message</div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<ModificationOrArcRequest> Requests { get; set; } = [];
+    [Parameter, EditorRequired] public Guid CommunityId { get; set; }
+    [Parameter] public EventCallback OnChanged { get; set; }
+    private bool _isBusy;
+    private string _message = string.Empty;
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+    }
+
+    private async Task OnVerifyAsync(Guid id)
+    {
+        _isBusy = true;
+        try
+        {
+            var r = await Workspace.EvaluateModificationOrArcRequestAsync(CommunityId, id);
+            _message = $"{Loc.T("msg.verified")} {r.CitedLegalDocumentCode}. {r.TechnicalConditionsOrDecisionText}";
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex) { _message = $"{Loc.T("msg.verifyFailed")} {ex.Message}"; }
+        finally { _isBusy = false; }
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+    }
+}

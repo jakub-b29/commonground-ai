@@ -1,10 +1,17 @@
 ﻿@page "/not-found"
-@layout MainLayout
+@layout Layout.AuthLayout
+@attribute [AllowAnonymous]
 @inject WorkspaceLocalization Loc
 @implements IDisposable
 
-<h3>@Loc.T("error.notFoundTitle")</h3>
-<p>@Loc.T("error.notFoundBody")</p>
+<div class="cg-auth-heading">
+    <h1>@Loc.T("error.notFoundTitle")</h1>
+    <p>@Loc.T("error.notFoundBody")</p>
+</div>
+<div class="cg-auth-links">
+    <a href="/login">@Loc.T("nav.signin")</a>
+    <a href="/register-firm">@Loc.T("auth.createFirmLink")</a>
+</div>
 
 @code {
     private Action? _locHandler;

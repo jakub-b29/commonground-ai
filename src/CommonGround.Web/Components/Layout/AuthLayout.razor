@@ -1,0 +1,53 @@
+@inherits LayoutComponentBase
+@inject WorkspaceLocalization Loc
+@implements IDisposable
+
+<a class="skip-link" href="#auth-main">@Loc.T("shell.skipLink")</a>
+
+<div class="cg-auth-page">
+    <div class="cg-auth-column">
+        <a class="cg-auth-brand" href="/" aria-label="CommonGround home">
+            <span class="cg-auth-mark">CG</span>
+            <span class="cg-auth-wordmark">
+                <strong>CommonGround</strong>
+                <small>@Loc.T("nav.workspace")</small>
+            </span>
+        </a>
+        <main id="auth-main" class="cg-auth-card" tabindex="-1">
+            @Body
+        </main>
+        <div class="cg-auth-footer">
+            <div class="cg-auth-lang">
+                <label for="auth-lang">@Loc.T("form.language")</label>
+                <select id="auth-lang" value="@Loc.CurrentLanguage" @onchange="OnLanguageChanged">
+                    @foreach (var lang in Loc.SupportedLanguages)
+                    {
+                        <option value="@lang" selected="@(Loc.CurrentLanguage == lang)">@lang.ToUpperInvariant()</option>
+                    }
+                </select>
+            </div>
+            <p>@Loc.T("auth.footerNote")</p>
+        </div>
+    </div>
+</div>
+
+@code {
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+    }
+
+    private async Task OnLanguageChanged(ChangeEventArgs e)
+    {
+        await Loc.SetLanguageAsync(e.Value?.ToString() ?? "en");
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+    }
+}

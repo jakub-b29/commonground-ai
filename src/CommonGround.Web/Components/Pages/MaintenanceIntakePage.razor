@@ -1,0 +1,44 @@
+@page "/maintenance/intake"
+@page "/maintenance"
+@attribute [Authorize(Policy = "WorkspaceMember")]
+@using CommonGround.Web.Components.Shared.Maintenance
+@inject WorkspaceLocalization Loc
+@implements IDisposable
+
+<PageTitle>@Loc.T("panel.intake") - CommonGround</PageTitle>
+
+<div class="cg-page-header">
+    <div>
+        <h1>@Loc.T("page.workOrdersTitle")</h1>
+        <p class="cg-page-lead">@Loc.T("page.workOrdersLead")</p>
+    </div>
+    <a class="cg-btn" href="/maintenance/work-orders">@Loc.T("panel.workOrderInspector")</a>
+</div>
+
+<ScopedCommunityPage @ref="_loader">
+    <ChildContent>
+        <ResidentIntakeSimulatorPanel CommunityId="context.Community.Id" OnChanged="OnReload" />
+    </ChildContent>
+</ScopedCommunityPage>
+
+@code {
+    private ScopedCommunityPage? _loader;
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+    }
+
+    private async Task OnReload()
+    {
+        if (_loader is not null) await _loader.ReloadAsync();
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+    }
+}

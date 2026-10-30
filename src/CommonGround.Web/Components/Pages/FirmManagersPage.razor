@@ -1,0 +1,105 @@
+@page "/firm/managers"
+@attribute [Authorize(Policy = "FirmManagerOnly")]
+@inject WorkspaceLocalization Loc
+@inject WorkspaceAccessService Access
+@inject CommonGroundWorkspaceService Workspace
+@implements IDisposable
+
+<PageTitle>@Loc.T("firm.assignManagerTitle") - CommonGround</PageTitle>
+
+<div class="cg-page-header">
+    <div>
+        <h1>@Loc.T("firm.assignManagerTitle")</h1>
+        <p class="cg-page-lead">@Loc.T("firm.portfolioLead")</p>
+    </div>
+    <a class="cg-btn" href="/firm/properties">@Loc.T("firm.propertiesTitle")</a>
+</div>
+
+@if (!_loaded)
+{
+    <p role="status" aria-live="polite">@Loc.T("msg.loading")</p>
+}
+else
+{
+    <div class="cg-card">
+        <div class="cg-form-stack">
+            <div>
+                <label for="mgr-prop">@Loc.T("form.community")</label>
+                <select id="mgr-prop" @bind="_assignPropId">
+                    <option value="">@Loc.T("firm.selectProperty")</option>
+                    @foreach (var p in _properties)
+                    {
+                        <option value="@p.Id">@p.Name</option>
+                    }
+                </select>
+            </div>
+            <div>
+                <label for="mgr-name">@Loc.T("form.name")</label>
+                <input id="mgr-name" @bind="_mgrName" autocomplete="name" />
+            </div>
+            <div>
+                <label for="mgr-email">@Loc.T("form.workEmail")</label>
+                <input id="mgr-email" @bind="_mgrEmail" type="email" autocomplete="username" />
+            </div>
+            <div>
+                <label for="mgr-phone">@Loc.T("form.phone")</label>
+                <input id="mgr-phone" @bind="_mgrPhone" type="tel" autocomplete="tel" />
+            </div>
+        </div>
+        <div class="cg-toolbar">
+            <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="OnAssignManager">@Loc.T("firm.assignManager")</button>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(_message))
+        {
+            <div role="status" aria-live="polite" class="cg-callout">@_message</div>
+        }
+    </div>
+}
+
+@code {
+    private List<Community> _properties = new();
+    private string _assignPropId = string.Empty;
+    private string _mgrName = string.Empty;
+    private string _mgrEmail = string.Empty;
+    private string _mgrPhone = string.Empty;
+    private string _message = string.Empty;
+    private bool _isBusy;
+    private bool _loaded;
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+        try
+        {
+            _properties = (await Access.GetAllowedCommunitiesAsync()).ToList();
+        }
+        catch { }
+        finally
+        {
+            _loaded = true;
+        }
+    }
+
+    private async Task OnAssignManager()
+    {
+        if (!Guid.TryParse(_assignPropId, out var pid) || string.IsNullOrWhiteSpace(_mgrEmail)) return;
+        _isBusy = true;
+        try
+        {
+            var role = await Access.GetRoleAsync();
+            await Workspace.AssignPropertyManagerAsync(pid, _mgrName.Trim(), _mgrEmail.Trim(), _mgrPhone.Trim(), null, role);
+            _mgrName = _mgrEmail = _mgrPhone = string.Empty;
+            _message = Loc.T("msg.membershipUpdated");
+        }
+        catch (Exception ex) { _message = ex.Message; }
+        finally { _isBusy = false; }
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+    }
+}

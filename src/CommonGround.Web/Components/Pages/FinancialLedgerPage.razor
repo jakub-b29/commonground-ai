@@ -1,0 +1,41 @@
+@page "/financials/ledger"
+@page "/financials"
+@attribute [Authorize(Policy = "ManagersOnly")]
+@using CommonGround.Web.Components.Shared.Financials
+@inject WorkspaceLocalization Loc
+@implements IDisposable
+
+<PageTitle>@Loc.T("page.ledgerTitle") - CommonGround</PageTitle>
+
+<div class="cg-page-header">
+    <div>
+        <h1>@Loc.T("page.ledgerTitle")</h1>
+        <p class="cg-page-lead">@Loc.T("page.ledgerLead")</p>
+    </div>
+    <div class="cg-toolbar" style="margin-block-start: 0;">
+        <a class="cg-btn" href="/financials/utilities">@Loc.T("panel.utilityRecon")</a>
+        <a class="cg-btn" href="/financials/arrears">@Loc.T("panel.arrears")</a>
+    </div>
+</div>
+
+<ScopedCommunityPage>
+    <ChildContent>
+        <FundLedgerAndAncillaryPanel Snapshot="context" />
+    </ChildContent>
+</ScopedCommunityPage>
+
+@code {
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+    }
+}

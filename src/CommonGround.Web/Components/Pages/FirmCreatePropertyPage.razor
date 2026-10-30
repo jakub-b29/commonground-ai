@@ -1,0 +1,97 @@
+@page "/firm/properties/new"
+@attribute [Authorize(Policy = "FirmManagerOnly")]
+@inject WorkspaceLocalization Loc
+@inject WorkspaceAccessService Access
+@inject CommonGroundWorkspaceService Workspace
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>@Loc.T("firm.createPropertyTitle") - CommonGround</PageTitle>
+
+<div class="cg-page-header">
+    <div>
+        <h1>@Loc.T("firm.createPropertyTitle")</h1>
+        <p class="cg-page-lead">@Loc.T("firm.portfolioLead")</p>
+    </div>
+</div>
+
+<div class="cg-card">
+    <form method="post" action="/auth/noop" class="cg-form-stack" @onsubmit="OnCreateAsync" @onsubmit:preventDefault="true">
+        <div>
+            <label for="prop-name">@Loc.T("form.community")</label>
+            <input id="prop-name" @bind="_name" required autocomplete="off" />
+        </div>
+        <div>
+            <label for="prop-addr">@Loc.T("form.registryInput")</label>
+            <input id="prop-addr" @bind="_address" autocomplete="street-address" />
+        </div>
+        <div>
+            <label for="prop-city">@Loc.T("firm.city")</label>
+            <input id="prop-city" @bind="_city" autocomplete="address-level2" />
+        </div>
+        <div>
+            <label for="prop-tax">@Loc.T("firm.taxId")</label>
+            <input id="prop-tax" @bind="_tax" autocomplete="off" />
+        </div>
+        <div>
+            <label for="prop-mode">@Loc.T("firm.operatingMode")</label>
+            <select id="prop-mode" @bind="_mode">
+                <option value="@SystemOperatingMode.HousingAssociation">Housing Association</option>
+                <option value="@SystemOperatingMode.UsHoa">US HOA</option>
+            </select>
+        </div>
+        <div class="cg-toolbar">
+            <button type="submit" class="cg-btn cg-btn-primary" disabled="@_isBusy">@Loc.T("firm.createProperty")</button>
+            <a class="cg-btn" href="/firm/properties">@Loc.T("action.close")</a>
+        </div>
+    </form>
+    @if (!string.IsNullOrWhiteSpace(_message))
+    {
+        <div role="status" aria-live="polite" class="cg-callout">@_message</div>
+    }
+</div>
+
+@code {
+    private string _name = string.Empty;
+    private string _address = string.Empty;
+    private string _city = string.Empty;
+    private string _tax = string.Empty;
+    private SystemOperatingMode _mode = SystemOperatingMode.HousingAssociation;
+    private string _message = string.Empty;
+    private bool _isBusy;
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+    }
+
+    private async Task OnCreateAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_name)) return;
+        _isBusy = true;
+        try
+        {
+            var firmId = await Access.GetFirmIdAsync();
+            if (firmId is null) throw new InvalidOperationException("No firm selected.");
+            var role = await Access.GetRoleAsync();
+            await Workspace.CreatePropertyForFirmAsync(firmId.Value, _name.Trim(), _address.Trim(), _city.Trim(), _mode, _tax.Trim(), role);
+            Nav.NavigateTo("/firm/properties");
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+    }
+}

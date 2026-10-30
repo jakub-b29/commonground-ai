@@ -22,6 +22,7 @@
     <ProjectReference Include="..\..\src\CommonGround.Domain\CommonGround.Domain.csproj" />
     <ProjectReference Include="..\..\src\CommonGround.Application\CommonGround.Application.csproj" />
     <ProjectReference Include="..\..\src\CommonGround.Infrastructure\CommonGround.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\CommonGround.Web\CommonGround.Web.csproj" />
   </ItemGroup>
 
 </Project>

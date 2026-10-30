@@ -2,7 +2,7 @@
 @using CommonGround.Domain.Entities
 @using CommonGround.Domain.Enums
 @inject CommonGroundWorkspaceService Workspace
-@inject WorkspaceUiState UiState
+@inject WorkspaceAccessService Access
 @inject WorkspaceLocalization Loc
 @implements IDisposable
 
@@ -96,13 +96,13 @@
         await Loc.EnsureLoadedAsync();
     }
 
-    protected override void OnParametersSet()
+    protected override async Task OnParametersSetAsync()
     {
         if (_selectedUnitId == Guid.Empty && Community.Units.Count > 0)
         {
-            var linked = UiState.CurrentUser?.LinkedUnitNumber;
+            var linked = await Access.GetLinkedUnitAsync();
             _unit = (!string.IsNullOrWhiteSpace(linked)
-                ? Community.Units.FirstOrDefault(u => string.Equals(u.UnitNumber, linked, StringComparison.OrdinalIgnoreCase))
+                ? Community.Units.FirstOrDefault(u => string.Equals(u.UnitNumber, linked.Trim(), StringComparison.OrdinalIgnoreCase))
                 : null) ?? Community.Units[0];
             _selectedUnitId = _unit.Id;
         }

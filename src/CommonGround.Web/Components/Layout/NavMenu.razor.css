@@ -1,25 +1,25 @@
 .navbar-toggler {
     appearance: none;
     cursor: pointer;
-    width: 2.75rem;
-    height: 2.25rem;
-    color: white;
+    width: 2.5rem;
+    height: 2rem;
+    color: var(--color-text-primary);
     position: absolute;
     top: 0.65rem;
     right: 0.85rem;
-    border: 1px solid rgba(255, 255, 255, 0.15);
+    border: 1px solid var(--color-border-strong);
     border-radius: 4px;
-    background: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba%28255, 255, 255, 0.75%29' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e") no-repeat center/1.5rem rgba(255, 255, 255, 0.06);
+    background: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba%2815, 23, 42, 0.75%29' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e") no-repeat center/1.25rem var(--color-bg-surface);
 }
 
 .navbar-toggler:checked {
-    background-color: rgba(255, 255, 255, 0.2);
+    background-color: var(--color-bg-subtle);
 }
 
 .top-row {
-    min-height: 3.75rem;
-    background-color: #0b1120;
-    border-bottom: 1px solid #1e293b;
+    min-height: 3.5rem;
+    background-color: var(--color-bg-surface);
+    border-bottom: 1px solid var(--color-border-subtle);
     display: flex;
     align-items: center;
 }
@@ -28,7 +28,7 @@
     display: flex;
     align-items: center;
     gap: 0.625rem;
-    color: #f8fafc;
+    color: var(--color-text-primary);
     text-decoration: none;
     padding: 0;
 }
@@ -40,8 +40,8 @@
     width: 1.85rem;
     height: 1.85rem;
     border-radius: 4px;
-    background-color: #1e3a8a;
-    border: 1px solid #3b82f6;
+    background-color: var(--color-accent-solid);
+    border: 1px solid var(--color-accent-solid);
     color: #ffffff;
     font-family: "JetBrains Mono", Consolas, monospace;
     font-size: 0.75rem;
@@ -58,12 +58,12 @@
 .brand-text strong {
     font-size: 0.92rem;
     font-weight: 700;
-    color: #f8fafc;
+    color: var(--color-text-primary);
 }
 
 .brand-text small {
     font-size: 0.68rem;
-    color: #94a3b8;
+    color: var(--color-text-secondary);
     font-weight: 500;
 }
 
@@ -71,29 +71,31 @@
     padding: 0.75rem 1rem 0.35rem;
     font-size: 0.68rem;
     font-weight: 600;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: #64748b;
+    color: var(--color-text-secondary);
 }
 
 .nav-item {
     padding: 0.125rem 0.625rem;
 }
 
-.nav-icon {
-    width: 0.95rem;
-    height: 0.95rem;
-    flex-shrink: 0;
-    opacity: 0.85;
+.cg-nav-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    margin: 0;
+    padding: 0;
 }
 
 .nav-item ::deep .nav-link {
-    color: #cbd5e1;
+    color: var(--color-text-secondary);
     background: none;
     border: 1px solid transparent;
+    border-inline-start: 2px solid transparent;
     border-radius: 4px;
     padding: 0.5rem 0.65rem;
-    min-height: 2.35rem;
+    min-height: 2rem;
     display: flex;
     align-items: center;
     gap: 0.625rem;
@@ -102,19 +104,24 @@
     line-height: 1.3;
     width: 100%;
     text-decoration: none;
-    transition: background-color 120ms ease-out, color 120ms ease-out;
+    transition-property: background-color, color, border-color;
+    transition-duration: 120ms;
+    transition-timing-function: ease-out;
 }
 
 .nav-item ::deep a.active {
-    background-color: #1e3a8a;
-    border-color: #2563eb;
-    color: #ffffff;
+    background-color: var(--color-accent-tint);
+    border-color: var(--color-accent-border);
+    border-inline-start-color: var(--color-accent-solid);
+    color: var(--color-accent-solid);
     font-weight: 600;
 }
 
-.nav-item ::deep .nav-link:hover {
-    background-color: rgba(255, 255, 255, 0.07);
-    color: #ffffff;
+@media (hover: hover) {
+    .nav-item ::deep .nav-link:hover {
+        background-color: var(--color-bg-subtle);
+        color: var(--color-text-primary);
+    }
 }
 
 .nav-scrollable {

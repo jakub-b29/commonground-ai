@@ -1,0 +1,46 @@
+@page "/governance/voting"
+@attribute [Authorize(Policy = "WorkspaceMember")]
+@using CommonGround.Web.Components.Shared.Governance
+@inject WorkspaceLocalization Loc
+@implements IDisposable
+
+<PageTitle>@Loc.T("panel.voteFull") - CommonGround</PageTitle>
+
+<div class="cg-page-header">
+    <div>
+        <h1>@Loc.T("panel.voteFull")</h1>
+        <p class="cg-page-lead">@Loc.T("page.votingLead")</p>
+    </div>
+    <div class="cg-toolbar" style="margin-block-start: 0;">
+        <a class="cg-btn" href="/governance/meetings">@Loc.T("panel.meetingPack")</a>
+        <a class="cg-btn" href="/governance/minutes">@Loc.T("panel.ballotVisual")</a>
+    </div>
+</div>
+
+<ScopedCommunityPage @ref="_loader">
+    <ChildContent>
+        <LiveShareVotingAndBallotOcrPanel Resolutions="context.Community.Resolutions" Units="context.Community.Units" CommunityId="context.Community.Id" OnChanged="OnReload" />
+    </ChildContent>
+</ScopedCommunityPage>
+
+@code {
+    private ScopedCommunityPage? _loader;
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+    }
+
+    private async Task OnReload()
+    {
+        if (_loader is not null) await _loader.ReloadAsync();
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+    }
+}

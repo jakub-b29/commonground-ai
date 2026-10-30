@@ -1,0 +1,17 @@
+@page "/register"
+@layout Layout.AuthLayout
+@attribute [AllowAnonymous]
+@inject NavigationManager Nav
+
+@code {
+    [SupplyParameterFromQuery(Name = "token")] public string? Token { get; set; }
+    [SupplyParameterFromQuery(Name = "code")] public string? Code { get; set; }
+
+    protected override void OnInitialized()
+    {
+        if (!string.IsNullOrWhiteSpace(Token))
+            Nav.NavigateTo($"/accept-invite?token={Uri.EscapeDataString(Token)}&code={Uri.EscapeDataString(Code ?? string.Empty)}", forceLoad: true);
+        else
+            Nav.NavigateTo("/register-firm", forceLoad: true);
+    }
+}

@@ -1,0 +1,41 @@
+@page "/infrastructure/atlas"
+@page "/infrastructure"
+@attribute [Authorize(Policy = "WorkspaceMember")]
+@using CommonGround.Web.Components.Shared.Units
+@inject WorkspaceLocalization Loc
+@implements IDisposable
+
+<PageTitle>@Loc.T("panel.atlas") - CommonGround</PageTitle>
+
+<div class="cg-page-header">
+    <div>
+        <h1>@Loc.T("page.infrastructureTitle")</h1>
+        <p class="cg-page-lead">@Loc.T("page.infrastructureLead")</p>
+    </div>
+    <div class="cg-toolbar" style="margin-block-start: 0;">
+        <a class="cg-btn" href="/infrastructure/inspections">@Loc.T("panel.inspections")</a>
+        <a class="cg-btn" href="/infrastructure/permits">@Loc.T("panel.renovation")</a>
+    </div>
+</div>
+
+<ScopedCommunityPage>
+    <ChildContent>
+        <InfrastructureAtlasGrid Photos="context.Community.InfrastructurePhotos" AccessCodes="context.Community.AccessCodes" CommunityId="context.Community.Id" />
+    </ChildContent>
+</ScopedCommunityPage>
+
+@code {
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+    }
+}

@@ -1,6 +1,6 @@
 @using CommonGround.Domain.Enums
 @inject CommonGroundWorkspaceService Workspace
-@inject WorkspaceUiState UiState
+@inject WorkspaceAccessService Access
 @inject WorkspaceLocalization Loc
 @implements IDisposable
 
@@ -48,7 +48,8 @@
 
     private async Task OnSubmit()
     {
-        if (UiState.SelectedCommunityId is null) return;
+        if (CommunityId == Guid.Empty) return;
+        if (!await Access.CanAccessCommunityAsync(CommunityId)) return;
         _isBusy = true;
         try
         {

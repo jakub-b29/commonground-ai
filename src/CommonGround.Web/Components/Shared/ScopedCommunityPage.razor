@@ -1,0 +1,92 @@
+@using CommonGround.Application.Services
+@inject WorkspaceUiState UiState
+@inject WorkspaceAccessService Access
+@inject WorkspaceLocalization Loc
+@inject CommonGroundWorkspaceService Workspace
+@implements IDisposable
+
+@if (!_loaded)
+{
+    <p role="status" aria-live="polite">@Loc.T("msg.loading")</p>
+}
+else if (_snapshot is null)
+{
+    <div class="cg-card">
+        <div class="cg-section-header"><h2>@Loc.T("firm.selectFirmTitle")</h2></div>
+        <p class="cg-empty-text">@Loc.T("msg.noCommunityAssigned")</p>
+        <div class="cg-toolbar">
+            <a class="cg-btn cg-btn-primary" href="/account/profile">@Loc.T("settings.accountTitle")</a>
+        </div>
+    </div>
+}
+else
+{
+    @ChildContent(_snapshot)
+}
+
+@code {
+    [Parameter] public RenderFragment<CommunityWorkspaceSnapshot> ChildContent { get; set; } = default!;
+    [Parameter] public EventCallback<CommunityWorkspaceSnapshot> OnSnapshotLoaded { get; set; }
+
+    private CommunityWorkspaceSnapshot? _snapshot;
+    private bool _loaded;
+    private Action? _stateHandler;
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _stateHandler = () => InvokeAsync(ReloadAsync);
+        UiState.OnChange += _stateHandler;
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+        await ReloadAsync();
+    }
+
+    public async Task ReloadAsync()
+    {
+        try
+        {
+            var allowed = await Access.GetAllowedCommunitiesAsync();
+            if (allowed.Count == 0)
+            {
+                _snapshot = null;
+                return;
+            }
+            Guid targetId;
+            if (UiState.SelectedCommunityId.HasValue && allowed.Any(c => c.Id == UiState.SelectedCommunityId.Value))
+            {
+                targetId = UiState.SelectedCommunityId.Value;
+            }
+            else
+            {
+                var first = allowed.OrderBy(c => c.Name).First();
+                UiState.SelectCommunity(first.Id, first.OperatingMode == SystemOperatingMode.UsHoa ? "US HOA & Condo Mode" : "Housing Association Mode");
+                targetId = first.Id;
+            }
+            if (!await Access.CanAccessCommunityAsync(targetId))
+            {
+                _snapshot = null;
+                return;
+            }
+            _snapshot = await Workspace.GetSnapshotAsync(targetId);
+            if (_snapshot is not null)
+                await OnSnapshotLoaded.InvokeAsync(_snapshot);
+        }
+        catch
+        {
+            _snapshot = null;
+        }
+        finally
+        {
+            _loaded = true;
+            StateHasChanged();
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_stateHandler is not null) UiState.OnChange -= _stateHandler;
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+    }
+}

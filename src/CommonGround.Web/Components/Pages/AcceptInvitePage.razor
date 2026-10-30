@@ -1,0 +1,164 @@
+@page "/accept-invite"
+@layout Layout.AuthLayout
+@attribute [AllowAnonymous]
+@inject WorkspaceLocalization Loc
+@inject CommonGroundWorkspaceService Workspace
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>@Loc.T("register.inviteTitle") - CommonGround</PageTitle>
+
+<div class="cg-auth-heading">
+    <h1>@Loc.T("register.inviteTitle")</h1>
+    <p>@Loc.T("register.lead")</p>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(ErrorCode))
+{
+    <div role="alert" class="cg-auth-error">@Loc.T("msg.signInFailed")</div>
+}
+
+@if (_loading)
+{
+    <p role="status" aria-live="polite">@Loc.T("msg.loading")</p>
+}
+else if (_preview is null)
+{
+    <div class="cg-auth-note" role="status" aria-live="polite">
+        <p>@Loc.T("auth.inviteInvalid")</p>
+    </div>
+    <form class="cg-form-stack" @onsubmit="OnLookupAsync" @onsubmit:preventDefault="true">
+        <div>
+            <label for="ai-token">@Loc.T("register.token")</label>
+            <input id="ai-token" @bind="_tokenInput" autocomplete="off" placeholder="INV-..." />
+        </div>
+        <div>
+            <label for="ai-code-manual">@Loc.T("firm.groupCode")</label>
+            <input id="ai-code-manual" @bind="FirmCode" autocomplete="off" />
+        </div>
+        <button type="submit" class="cg-btn cg-btn-primary cg-btn-block" disabled="@_lookupBusy">@Loc.T("action.verify")</button>
+    </form>
+    <div class="cg-auth-links">
+        <a href="/login">@Loc.T("nav.signin")</a>
+        <a href="/register-firm">@Loc.T("auth.createFirmLink")</a>
+    </div>
+}
+else if (_preview.IsExpired || string.Equals(_preview.Status, "Accepted", StringComparison.OrdinalIgnoreCase) || string.Equals(_preview.Status, "Revoked", StringComparison.OrdinalIgnoreCase))
+{
+    <div role="alert" class="cg-auth-error">@Loc.T("auth.inviteInvalid")</div>
+    <div class="cg-auth-links">
+        <a href="/login">@Loc.T("nav.signin")</a>
+    </div>
+}
+else
+{
+    <div class="cg-auth-note" role="status" aria-live="polite">
+        <strong>@_preview.FirmName</strong> · @_preview.TargetRole · @_preview.TargetPropertyName @_preview.TargetUnitNumber
+        <div>@_preview.MaskedRecipientEmail · @Loc.T("table.status"): @_preview.Status</div>
+    </div>
+    <form method="post" action="/auth/accept-invite" class="cg-form-stack">
+        <input type="hidden" name="token" value="@_effectiveToken" />
+        <div>
+            <label for="ai-code">@Loc.T("firm.groupCode")</label>
+            <input id="ai-code" name="firmCode" value="@FirmCode" required autocomplete="off" />
+        </div>
+        <div>
+            <label for="ai-name">@Loc.T("form.name")</label>
+            <input id="ai-name" name="fullName" autocomplete="name" />
+        </div>
+        <div>
+            <label for="ai-email">@Loc.T("form.workEmail")</label>
+            <input id="ai-email" name="email" type="email" autocomplete="username" />
+        </div>
+        <div>
+            <label for="ai-phone">@Loc.T("form.phone")</label>
+            <input id="ai-phone" name="phone" type="tel" autocomplete="tel" />
+        </div>
+        <div>
+            <label for="ai-pass">@Loc.T("form.password")</label>
+            <input id="ai-pass" name="password" type="password" required minlength="8" autocomplete="new-password" />
+        </div>
+        <div>
+            <label for="ai-unit">@Loc.T("form.unitNumber")</label>
+            <input id="ai-unit" name="unit" value="@_preview.TargetUnitNumber" autocomplete="off" />
+        </div>
+        <button type="submit" class="cg-btn cg-btn-primary cg-btn-block">@Loc.T("register.acceptInvite")</button>
+    </form>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "token")] public string? Token { get; set; }
+    [SupplyParameterFromQuery(Name = "code")] public string? QueryCode { get; set; }
+    [SupplyParameterFromQuery(Name = "error")] public string? ErrorCode { get; set; }
+
+    private string FirmCode = string.Empty;
+    private string _tokenInput = string.Empty;
+    private string _effectiveToken = string.Empty;
+    private bool _loading = true;
+    private bool _lookupBusy;
+    private CommonGroundWorkspaceService.WorkspaceInvitationPreview? _preview;
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+        FirmCode = QueryCode ?? string.Empty;
+        _tokenInput = Token ?? string.Empty;
+        _effectiveToken = _tokenInput.Trim();
+        await ReloadAsync();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var incomingToken = Token ?? string.Empty;
+        var incomingCode = QueryCode ?? string.Empty;
+        var changed = !string.Equals(_tokenInput, incomingToken, StringComparison.Ordinal)
+            || !string.Equals(FirmCode, incomingCode, StringComparison.Ordinal);
+        if (changed)
+        {
+            _tokenInput = incomingToken;
+            FirmCode = incomingCode;
+            _effectiveToken = _tokenInput.Trim();
+            await ReloadAsync();
+        }
+    }
+
+    private async Task OnLookupAsync()
+    {
+        _lookupBusy = true;
+        try
+        {
+            _effectiveToken = _tokenInput.Trim();
+            Nav.NavigateTo($"/accept-invite?token={Uri.EscapeDataString(_effectiveToken)}&code={Uri.EscapeDataString(FirmCode.Trim())}", forceLoad: false);
+            await ReloadAsync();
+        }
+        finally
+        {
+            _lookupBusy = false;
+        }
+    }
+
+    private async Task ReloadAsync()
+    {
+        _loading = true;
+        try
+        {
+            _preview = string.IsNullOrWhiteSpace(_effectiveToken) ? null : await Workspace.GetWorkspaceInvitationPreviewAsync(_effectiveToken);
+        }
+        catch
+        {
+            _preview = null;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+    }
+}

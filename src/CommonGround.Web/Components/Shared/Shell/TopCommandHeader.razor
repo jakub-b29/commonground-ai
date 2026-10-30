@@ -1,107 +1,90 @@
-@using CommonGround.Domain.Enums
 @inject WorkspaceUiState UiState
 @inject WorkspaceLocalization Loc
-@inject CommonGroundWorkspaceService Workspace
-@inject NavigationManager Nav
+@inject WorkspaceAccessService Access
 @implements IDisposable
 
-<header class="cg-card" style="margin-block-end: 0.75rem; padding: 0.75rem 1rem;">
-    <div class="cg-grid-3" style="align-items: end; gap: 0.875rem;">
-        <div>
-            <label for="community-select">@Loc.T("form.community")</label>
-            <select id="community-select" value="@UiState.SelectedCommunityId" @onchange="OnCommunityChanged">
-                @foreach (var c in _communities)
-                {
-                    <option value="@c.Id" selected="@(UiState.SelectedCommunityId == c.Id)">@c.Name (@c.OperatingMode)</option>
-                }
-            </select>
-            <div style="margin-block-start: 0.3rem; font-size: 0.75rem; color: var(--color-text-secondary); display: flex; align-items: center; gap: 0.375rem;">
-                <span class="cg-badge cg-badge-ok">@UiState.CurrentTerminology</span>
+<AuthorizeView>
+    <Authorized Context="auth">
+        <header class="cg-topbar" role="banner">
+            <div class="cg-topbar-group">
+                <span class="cg-badge" title="@_firmName">@_firmName</span>
+                <div class="cg-topbar-field">
+                    <label for="community-select">@Loc.T("form.community")</label>
+                    <select id="community-select" value="@UiState.SelectedCommunityId" @onchange="OnCommunityChanged">
+                        <option value="">@Loc.T("firm.selectProperty")</option>
+                        @foreach (var c in _communities)
+                        {
+                            <option value="@c.Id" selected="@(UiState.SelectedCommunityId == c.Id)">@c.Name</option>
+                        }
+                    </select>
+                </div>
             </div>
+            <div class="cg-topbar-group">
+                <div class="cg-topbar-field">
+                    <label for="lang-select">@Loc.T("form.language")</label>
+                    <select id="lang-select" value="@Loc.CurrentLanguage" @onchange="OnLanguageChanged">
+                        @foreach (var lang in Loc.SupportedLanguages)
+                        {
+                            <option value="@lang" selected="@(Loc.CurrentLanguage == lang)">@lang.ToUpperInvariant()</option>
+                        }
+                    </select>
+                </div>
+                <div class="cg-topbar-actions">
+                    <button type="button" class="cg-btn" @onclick="OnToggleQuery" title="@Loc.T("action.portfolioQuery")">@Loc.T("action.portfolioQuery")</button>
+                    <button type="button" class="cg-btn" @onclick="OnToggleEmergency" title="@Loc.T("shell.emergencyContacts")">@Loc.T("shell.emergencyContacts")</button>
+                    <span class="cg-badge cg-badge-ok">@auth.User.Identity?.Name · @WorkspaceClaims.GetRole(auth.User)</span>
+                    <form method="post" action="/auth/logout" class="cg-inline-form">
+                        <button type="submit" class="cg-btn">@Loc.T("nav.signOut")</button>
+                    </form>
+                </div>
+            </div>
+        </header>
+        <div class="cg-topbar-sub">
+            <span class="cg-badge">@UiState.CurrentTerminology</span>
         </div>
-        <div>
-            <label for="role-select">@Loc.T("form.role")</label>
-            <select id="role-select" value="@UiState.ActiveSecurityRole" @onchange="OnRoleChanged">
-                @foreach (var role in Enum.GetValues<WorkspaceSecurityRole>())
-                {
-                    <option value="@role" selected="@(UiState.ActiveSecurityRole == role)">@RoleLabel(role)</option>
-                }
-            </select>
-            <div style="margin-block-start: 0.3rem; font-size: 0.75rem; color: var(--color-text-secondary);">
-                @if (UiState.CurrentUser is not null)
-                {
-                    <strong>@UiState.CurrentUser.FullName</strong> <span>(@UiState.CurrentUser.Provider)</span>
-                }
-                else
-                {
-                    <span>@Loc.T("role.anonymous")</span>
-                }
-                <span> · </span><a href="/login">@Loc.T("role.signInSwitch")</a>
-            </div>
-        </div>
-        <div>
-            <label for="registry-input">@Loc.T("form.registryInput")</label>
-            <div style="display: flex; gap: 0.375rem;">
-                <input id="registry-input" @bind="_registryInput" placeholder="@Loc.T("form.registryPlaceholder")" style="flex: 1; min-width: 0;" />
-                <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="OnSyncRegistry">@Loc.T("action.syncRegistry")</button>
-            </div>
-            <div style="display: flex; gap: 0.375rem; margin-block-start: 0.35rem; flex-wrap: wrap;">
-                <button type="button" class="cg-btn" disabled="@(_isBusy || UiState.SelectedCommunityId is null)" @onclick="OnSosBroadcast">@Loc.T("action.emergencyBroadcast")</button>
-                <button type="button" class="cg-btn" @onclick="OnToggleQuery">@Loc.T("action.portfolioQuery")</button>
-            </div>
-        </div>
-    </div>
-    <div style="display: flex; gap: 0.375rem; align-items: center; margin-block-start: 0.625rem; flex-wrap: wrap;">
-        <label for="lang-select" style="margin: 0;">@Loc.T("form.language")</label>
-        <select id="lang-select" value="@Loc.CurrentLanguage" @onchange="OnLanguageChanged" style="max-width: 12rem;">
-            @foreach (var lang in Loc.SupportedLanguages)
-            {
-                <option value="@lang" selected="@(Loc.CurrentLanguage == lang)">@lang.ToUpperInvariant()</option>
-            }
-        </select>
-        @if (!UiState.IsPropertyManager)
-        {
-            <span class="cg-badge cg-badge-warn">@(UiState.IsResident ? Loc.T("msg.residentOwnOnly") : Loc.T("msg.contractorLimited"))</span>
-        }
-    </div>
-    @if (!string.IsNullOrWhiteSpace(_message))
-    {
-        <div role="status" aria-live="polite" class="cg-callout" style="margin-block-start: 0.625rem; margin-block-end: 0;">@_message</div>
-    }
-</header>
+    </Authorized>
+</AuthorizeView>
 
 @code {
     private Action? _stateHandler;
     private Action? _locHandler;
     private List<Community> _communities = new();
-    private string _registryInput = string.Empty;
-    private string _message = string.Empty;
-    private bool _isBusy;
+    private string _firmName = string.Empty;
 
     protected override async Task OnInitializedAsync()
     {
-        _stateHandler = () => InvokeAsync(StateHasChanged);
+        _stateHandler = () => InvokeAsync(ReloadAsync);
         UiState.OnChange += _stateHandler;
         _locHandler = () => InvokeAsync(StateHasChanged);
         Loc.OnChange += _locHandler;
         await Loc.EnsureLoadedAsync();
-        _communities = (await Workspace.GetCommunitiesAsync()).ToList();
-        if (UiState.SelectedCommunityId is null && _communities.Count > 0)
-        {
-            var first = _communities[0];
-            UiState.SelectCommunity(first.Id, first.OperatingMode == SystemOperatingMode.UsHoa ? "US HOA & Condo Mode" : "Housing Association Mode");
-        }
+        await ReloadAsync();
     }
 
-    private string RoleLabel(WorkspaceSecurityRole role) => role switch
+    private async Task ReloadAsync()
     {
-        WorkspaceSecurityRole.PropertyManager => Loc.T("role.propertyManager"),
-        WorkspaceSecurityRole.Resident => Loc.T("role.resident"),
-        WorkspaceSecurityRole.Contractor => Loc.T("role.contractor"),
-        _ => role.ToString()
-    };
+        try
+        {
+            var firm = await Access.GetFirmAsync();
+            _firmName = firm?.Name ?? string.Empty;
+            _communities = (await Access.GetAllowedCommunitiesAsync()).ToList();
+            if (UiState.SelectedCommunityId is null && _communities.Count > 0)
+            {
+                var first = _communities[0];
+                UiState.SelectCommunity(first.Id, first.OperatingMode == SystemOperatingMode.UsHoa ? "US HOA & Condo Mode" : "Housing Association Mode");
+            }
+            else if (UiState.SelectedCommunityId.HasValue && !_communities.Any(c => c.Id == UiState.SelectedCommunityId.Value))
+            {
+                UiState.SelectedCommunityId = null;
+            }
+        }
+        catch
+        {
+        }
+        StateHasChanged();
+    }
 
-    private async Task OnCommunityChanged(ChangeEventArgs e)
+    private Task OnCommunityChanged(ChangeEventArgs e)
     {
         if (Guid.TryParse(e.Value?.ToString(), out var id))
         {
@@ -110,15 +93,6 @@
             {
                 UiState.SelectCommunity(id, selected.OperatingMode == SystemOperatingMode.UsHoa ? "US HOA & Condo Mode" : "Housing Association Mode");
             }
-        }
-        await Task.CompletedTask;
-    }
-
-    private Task OnRoleChanged(ChangeEventArgs e)
-    {
-        if (Enum.TryParse<WorkspaceSecurityRole>(e.Value?.ToString(), out var role))
-        {
-            UiState.SetRole(role);
         }
         return Task.CompletedTask;
     }
@@ -129,66 +103,12 @@
         UiState.NotifyChanged();
     }
 
-    private async Task OnSyncRegistry()
-    {
-        if (UiState.SelectedCommunityId is null || string.IsNullOrWhiteSpace(_registryInput))
-        {
-            return;
-        }
-        _isBusy = true;
-        try
-        {
-            var result = await Workspace.TriggerWebAutoEnrichmentAsync(UiState.SelectedCommunityId.Value, _registryInput);
-            _message = result.SummaryReport;
-            UiState.Announce(_message);
-        }
-        catch (Exception ex)
-        {
-            _message = $"Registry sync failed: {ex.Message}";
-        }
-        finally
-        {
-            _isBusy = false;
-        }
-    }
-
-    private async Task OnSosBroadcast()
-    {
-        if (UiState.SelectedCommunityId is null)
-        {
-            return;
-        }
-        _isBusy = true;
-        try
-        {
-            var action = await Workspace.TriggerOneClickSosBroadcastAsync(UiState.SelectedCommunityId.Value, "STACK-A1");
-            _message = $"{action.Title}. {action.Rationale}";
-            UiState.Announce(_message);
-        }
-        catch (Exception ex)
-        {
-            _message = $"Broadcast failed: {ex.Message}";
-        }
-        finally
-        {
-            _isBusy = false;
-        }
-    }
-
-    private void OnToggleQuery()
-    {
-        UiState.TogglePortfolioQuery();
-    }
+    private void OnToggleQuery() => UiState.TogglePortfolioQuery();
+    private void OnToggleEmergency() => UiState.ToggleEmergencyDrawer();
 
     public void Dispose()
     {
-        if (_stateHandler is not null)
-        {
-            UiState.OnChange -= _stateHandler;
-        }
-        if (_locHandler is not null)
-        {
-            Loc.OnChange -= _locHandler;
-        }
+        if (_stateHandler is not null) UiState.OnChange -= _stateHandler;
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
     }
 }

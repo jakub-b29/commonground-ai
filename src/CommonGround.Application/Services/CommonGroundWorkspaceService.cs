@@ -23,7 +23,7 @@ public sealed record CommunityWorkspaceSnapshot(
     IReadOnlyList<AgentRun> RecentAgentRuns,
     IReadOnlyList<SecurityAuditEvent> RecentAuditEvents);
 
-public sealed class CommonGroundWorkspaceService(
+public sealed partial class CommonGroundWorkspaceService(
     IAppDbContextFactory dbFactory,
     IMuseSparkClient spark,
     IMuseWonderClient wonder,
@@ -707,11 +707,11 @@ public sealed class CommonGroundWorkspaceService(
     {
         await using var db = await CreateDbAsync(ct);
         var community = await LoadCommunityAsync(db, communityId, ct) ?? throw new InvalidOperationException("Community not found.");
-        if (actorRole != WorkspaceSecurityRole.PropertyManager)
+        if (!DataSecurityAndPrivacyGuard.IsManagerRole(actorRole))
         {
             await AppendAuditAsync(db, community, actorRole, "AI_ACTION_DECISION_DENIED", "Warning", "Pending Approvals queue", $"Role {actorRole} attempted to approve or reject an AI action and was denied.", ct);
             await db.SaveChangesAsync(ct);
-            throw new UnauthorizedAccessException("Only the Property Manager may approve or reject operational actions.");
+            throw new UnauthorizedAccessException("Only a Property Manager or Firm Manager may approve or reject operational actions.");
         }
         var action = community.AiActions.FirstOrDefault(a => a.Id == actionId) ?? throw new InvalidOperationException("Action not found.");
         action.Status = approve ? AiActionStatus.ApprovedAndExecuted : AiActionStatus.Rejected;
@@ -770,7 +770,7 @@ public sealed class CommonGroundWorkspaceService(
         await using var db = await CreateDbAsync(ct);
         var community = await LoadCommunityAsync(db, communityId, ct) ?? throw new InvalidOperationException("Community not found.");
         var access = community.AccessCodes.FirstOrDefault(a => a.Id == accessCodeId) ?? throw new InvalidOperationException("Access code not found.");
-        if (activeRole != WorkspaceSecurityRole.PropertyManager)
+        if (!DataSecurityAndPrivacyGuard.IsManagerRole(activeRole))
         {
             await AppendAuditAsync(db, community, activeRole, "SECRET_VAULT_REVEAL_DENIED", "Warning", $"BuildingAccessCode: {access.TargetArea}", $"Role {activeRole} attempted to reveal a vaulted permanent code and was denied.", ct);
             await db.SaveChangesAsync(ct);
@@ -862,11 +862,11 @@ public sealed class CommonGroundWorkspaceService(
     {
         await using var db = await CreateDbAsync(ct);
         var community = await LoadCommunityAsync(db, communityId, ct) ?? throw new InvalidOperationException("Community not found.");
-        if (actorRole != WorkspaceSecurityRole.PropertyManager)
+        if (!DataSecurityAndPrivacyGuard.IsManagerRole(actorRole))
         {
             await AppendAuditAsync(db, community, actorRole, "ROLE_GRANT_DENIED", "Warning", $"ResidentMembershipApplication: {applicationId}", $"Role {actorRole} attempted to grant or reject Resident/Contractor status and was denied.", ct);
             await db.SaveChangesAsync(ct);
-            throw new UnauthorizedAccessException("Only the Property Manager can grant or reject Resident and Contractor status.");
+            throw new UnauthorizedAccessException("Only a Property Manager or Firm Manager can grant or reject Resident and Contractor status.");
         }
 
         var app = community.ResidentMemberships.FirstOrDefault(m => m.Id == applicationId) ?? throw new InvalidOperationException("Application not found.");
@@ -892,7 +892,7 @@ public sealed class CommonGroundWorkspaceService(
                 Phone = app.ApplicantPhone,
                 Provider = app.Provider,
                 ProviderSubjectId = $"{app.Provider.ToString().ToLowerInvariant()}-{app.UnitNumber}",
-                PasswordSaltAndHash = DataSecurityAndPrivacyGuard.HashPasswordPbkdf2(isContractor ? "Contractor-2026!" : "Resident-2026!"),
+                PasswordSaltAndHash = DataSecurityAndPrivacyGuard.HashPasswordPbkdf2(Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32))),
                 Role = grantedRole,
                 LinkedUnitNumber = isContractor ? null : app.UnitNumber,
                 ContractorCompanyOrTrade = app.ContractorCompanyOrTrade,

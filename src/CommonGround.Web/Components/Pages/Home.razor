@@ -1,8 +1,7 @@
 ﻿@page "/"
+@attribute [Authorize(Policy = "WorkspaceMember")]
 @using CommonGround.Web.Components.Shared.Overview
-@inject WorkspaceUiState UiState
 @inject WorkspaceLocalization Loc
-@inject CommonGroundWorkspaceService Workspace
 @implements IDisposable
 
 <PageTitle>@Loc.T("nav.portfolio") - CommonGround</PageTitle>
@@ -10,103 +9,28 @@
 <div class="cg-page-header">
     <div>
         <h1>@Loc.T("page.portfolioTitle")</h1>
-        <p class="cg-page-lead" style="margin-block-end: 0;">@Loc.T("page.portfolioLead")</p>
+        <p class="cg-page-lead">@Loc.T("page.portfolioLead")</p>
     </div>
-    @if (_snapshot is not null)
-    {
-        <div style="display: flex; align-items: center; gap: 0.5rem;">
-            <span class="cg-badge">@_snapshot.Community.StreetAddress, @_snapshot.Community.City</span>
-            <span class="cg-badge mono">Tax ID: @_snapshot.Community.TaxIdOrEin</span>
-        </div>
-    }
 </div>
 
-@if (_snapshot is null)
-{
-    <p role="status" aria-live="polite">@Loc.T("msg.loading")</p>
-}
-else
-{
-    <div class="cg-stack">
-        @if (UiState.IsContractor)
-        {
-            <div class="cg-callout" role="status" aria-live="polite">@Loc.T("msg.contractorLimited")</div>
-        }
-        <ExecutiveKpiRow Snapshot="_snapshot" />
-        <div class="cg-split-main-aside">
-            <UtilitySourcesTable Sources="_snapshot.UtilitySources" OnRefreshSources="OnRefreshSources" OnScanNow="OnScanNow" />
-            <OutageWeatherAndWastePanel Snapshot="_snapshot" />
-        </div>
-        <PendingApprovalsAndAuditPanel Snapshot="_snapshot" OnChanged="ReloadAsync" />
-        @if (!string.IsNullOrWhiteSpace(_message))
-        {
-            <div class="cg-callout" role="status" aria-live="polite">@_message</div>
-        }
-    </div>
-}
+<ScopedCommunityPage>
+    <ChildContent>
+        <ExecutiveKpiRow Snapshot="context" />
+    </ChildContent>
+</ScopedCommunityPage>
 
 @code {
-    private Action? _stateHandler;
     private Action? _locHandler;
-    private CommunityWorkspaceSnapshot? _snapshot;
-    private string _message = string.Empty;
 
     protected override async Task OnInitializedAsync()
     {
-        _stateHandler = () => InvokeAsync(ReloadAsync);
-        UiState.OnChange += _stateHandler;
         _locHandler = () => InvokeAsync(StateHasChanged);
         Loc.OnChange += _locHandler;
         await Loc.EnsureLoadedAsync();
-        await ReloadAsync();
-    }
-
-    private async Task ReloadAsync()
-    {
-        if (UiState.SelectedCommunityId is null)
-        {
-            var communities = await Workspace.GetCommunitiesAsync();
-            var first = communities.FirstOrDefault();
-            if (first is null)
-            {
-                return;
-            }
-            UiState.SelectCommunity(first.Id, first.OperatingMode == SystemOperatingMode.UsHoa ? "US HOA & Condo Mode" : "Housing Association Mode");
-        }
-        _snapshot = await Workspace.GetSnapshotAsync(UiState.SelectedCommunityId!.Value);
-        StateHasChanged();
-    }
-
-    private async Task OnRefreshSources()
-    {
-        if (UiState.SelectedCommunityId is null || _snapshot is null)
-        {
-            return;
-        }
-        var result = await Workspace.TriggerWebAutoEnrichmentAsync(UiState.SelectedCommunityId.Value, _snapshot.Community.StreetAddress);
-        _message = result.SummaryReport;
-        await ReloadAsync();
-    }
-
-    private async Task OnScanNow()
-    {
-        if (UiState.SelectedCommunityId is null)
-        {
-            return;
-        }
-        _message = await Workspace.ScanUtilitySourcesAndWeatherAsync(UiState.SelectedCommunityId.Value);
-        await ReloadAsync();
     }
 
     public void Dispose()
     {
-        if (_stateHandler is not null)
-        {
-            UiState.OnChange -= _stateHandler;
-        }
-        if (_locHandler is not null)
-        {
-            Loc.OnChange -= _locHandler;
-        }
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
     }
 }

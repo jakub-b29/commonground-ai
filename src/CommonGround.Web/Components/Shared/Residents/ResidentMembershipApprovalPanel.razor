@@ -1,7 +1,7 @@
 @using CommonGround.Domain.Entities
 @using CommonGround.Domain.Enums
 @inject CommonGroundWorkspaceService Workspace
-@inject WorkspaceUiState UiState
+@inject WorkspaceAccessService Access
 @inject WorkspaceLocalization Loc
 @implements IDisposable
 
@@ -76,15 +76,15 @@
         </div>
         <div>
             <label for="app-name">@Loc.T("form.name")</label>
-            <input id="app-name" @bind="_fullName" placeholder="Janina Kwiatkowska" />
+            <input id="app-name" @bind="_fullName" placeholder="@Loc.T("form.name")" />
         </div>
         <div>
             <label for="app-email">@Loc.T("form.email")</label>
-            <input id="app-email" @bind="_email" placeholder="janina.k@amberpark.example.com" />
+            <input id="app-email" @bind="_email" placeholder="@Loc.T("form.email")" />
         </div>
         <div>
             <label for="app-phone">@Loc.T("form.phone")</label>
-            <input id="app-phone" @bind="_phone" placeholder="+48 607 112 304" />
+            <input id="app-phone" @bind="_phone" placeholder="@Loc.T("form.phone")" />
         </div>
         <div>
             <label for="app-provider">@Loc.T("form.provider")</label>
@@ -114,12 +114,12 @@
     [Parameter, EditorRequired] public Community Community { get; set; } = default!;
     [Parameter] public EventCallback OnChanged { get; set; }
 
-    private string _unitNumber = "A-202";
-    private string _fullName = "Janina Kwiatkowska";
-    private string _email = "janina.kwiatkowska@amberpark.example.com";
-    private string _phone = "+48 607 112 304";
-    private IdentityProvider _provider = IdentityProvider.Google;
-    private string _proof = "Notarial Deed Rep. A #8810/2026 - Land Register verified";
+    private string _unitNumber = string.Empty;
+    private string _fullName = string.Empty;
+    private string _email = string.Empty;
+    private string _phone = string.Empty;
+    private IdentityProvider _provider = IdentityProvider.EmailPassword;
+    private string _proof = string.Empty;
     private bool _isBusy;
     private string _message = string.Empty;
     private Action? _locHandler;
@@ -144,7 +144,8 @@
         _isBusy = true;
         try
         {
-            var updated = await Workspace.DecideResidentMembershipAsync(Community.Id, applicationId, approve, UiState.ActiveSecurityRole);
+            var role = await Access.GetRoleAsync();
+            var updated = await Workspace.DecideResidentMembershipAsync(Community.Id, applicationId, approve, role);
             _message = updated.DecisionNote ?? Loc.T("msg.membershipUpdated");
             await OnChanged.InvokeAsync();
         }

@@ -485,6 +485,9 @@ public static partial class DataSecurityAndPrivacyGuard
         return new PromptSecurityScanResult(false, string.Empty, $"<untrusted_input>{safe}</untrusted_input>");
     }
 
+    public static bool IsManagerRole(WorkspaceSecurityRole role)
+        => role == WorkspaceSecurityRole.PropertyManager || role == WorkspaceSecurityRole.FirmManager;
+
     public static string MaskSecretForRole(string secretValue, WorkspaceSecurityRole role, bool isExplicitlyRevealed, bool isContractorCode = false)
     {
         if (string.IsNullOrEmpty(secretValue)) return string.Empty;
@@ -492,7 +495,7 @@ public static partial class DataSecurityAndPrivacyGuard
         {
             return isContractorCode ? secretValue : "#••••*";
         }
-        if (isExplicitlyRevealed && role == WorkspaceSecurityRole.PropertyManager)
+        if (isExplicitlyRevealed && IsManagerRole(role))
         {
             return secretValue;
         }
@@ -502,7 +505,7 @@ public static partial class DataSecurityAndPrivacyGuard
     public static string MaskIban(string iban, WorkspaceSecurityRole role, bool isRevealed, bool isOwnUnit = false)
     {
         if (string.IsNullOrWhiteSpace(iban)) return string.Empty;
-        if (role == WorkspaceSecurityRole.PropertyManager && isRevealed)
+        if (IsManagerRole(role) && isRevealed)
         {
             return iban;
         }
@@ -519,7 +522,7 @@ public static partial class DataSecurityAndPrivacyGuard
     public static string MaskContactPii(string contact, WorkspaceSecurityRole role, bool isOwnUnit = false)
     {
         if (string.IsNullOrWhiteSpace(contact)) return string.Empty;
-        if (role == WorkspaceSecurityRole.PropertyManager)
+        if (IsManagerRole(role))
         {
             return contact;
         }
@@ -543,7 +546,7 @@ public static partial class DataSecurityAndPrivacyGuard
 
     public static bool CanViewUnitPrivateDetails(WorkspaceSecurityRole role, string? currentUserLinkedUnitNumber, string targetUnitNumber)
     {
-        if (role == WorkspaceSecurityRole.PropertyManager)
+        if (IsManagerRole(role))
         {
             return true;
         }

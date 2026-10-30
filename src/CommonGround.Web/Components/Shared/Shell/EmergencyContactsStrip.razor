@@ -1,5 +1,6 @@
 @inject WorkspaceUiState UiState
 @inject WorkspaceLocalization Loc
+@inject WorkspaceAccessService Access
 @inject CommonGroundWorkspaceService Workspace
 @implements IDisposable
 
@@ -39,17 +40,27 @@
 
     private async Task LoadAsync()
     {
-        if (UiState.SelectedCommunityId is null)
+        var allowed = await Access.GetAllowedCommunitiesAsync();
+        if (allowed.Count == 0)
         {
-            var communities = await Workspace.GetCommunitiesAsync();
-            var first = communities.FirstOrDefault();
-            if (first is null)
-            {
-                return;
-            }
-            UiState.SelectCommunity(first.Id, first.OperatingMode == SystemOperatingMode.UsHoa ? "US HOA & Condo Mode" : "Housing Association Mode");
+            return;
         }
-        var snapshot = await Workspace.GetSnapshotAsync(UiState.SelectedCommunityId!.Value);
+        Guid targetId;
+        if (UiState.SelectedCommunityId.HasValue && allowed.Any(c => c.Id == UiState.SelectedCommunityId.Value))
+        {
+            targetId = UiState.SelectedCommunityId.Value;
+        }
+        else
+        {
+            var first = allowed.OrderBy(c => c.Name).First();
+            UiState.SelectCommunity(first.Id, first.OperatingMode == SystemOperatingMode.UsHoa ? "US HOA & Condo Mode" : "Housing Association Mode");
+            targetId = first.Id;
+        }
+        if (!await Access.CanAccessCommunityAsync(targetId))
+        {
+            return;
+        }
+        var snapshot = await Workspace.GetSnapshotAsync(targetId);
         if (snapshot is null)
         {
             return;

@@ -1,0 +1,37 @@
+@page "/approvals"
+@attribute [Authorize(Policy = "ManagersOnly")]
+@using CommonGround.Web.Components.Shared.Overview
+@inject WorkspaceLocalization Loc
+@implements IDisposable
+
+<PageTitle>@Loc.T("panel.pendingApprovals") - CommonGround</PageTitle>
+
+<div class="cg-page-header">
+    <div>
+        <h1>@Loc.T("panel.pendingApprovals")</h1>
+        <p class="cg-page-lead">@Loc.T("page.portfolioLead")</p>
+    </div>
+    <a class="cg-btn" href="/">@Loc.T("nav.portfolio")</a>
+</div>
+
+<ScopedCommunityPage>
+    <ChildContent>
+        <PendingApprovalsAndAuditPanel Snapshot="context" />
+    </ChildContent>
+</ScopedCommunityPage>
+
+@code {
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+    }
+}

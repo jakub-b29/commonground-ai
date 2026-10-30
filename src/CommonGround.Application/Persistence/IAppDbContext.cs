@@ -10,6 +10,11 @@ public interface IAppDbContextFactory
 
 public interface IAppDbContext : IAsyncDisposable
 {
+    DbSet<ManagementFirm> ManagementFirms { get; }
+    DbSet<FirmManagerGroup> FirmManagerGroups { get; }
+    DbSet<FirmManagerMessage> FirmManagerMessages { get; }
+    DbSet<WorkspaceInvitation> WorkspaceInvitations { get; }
+    DbSet<ResidentDirectMessage> ResidentDirectMessages { get; }
     DbSet<Community> Communities { get; }
     DbSet<Building> Buildings { get; }
     DbSet<VerticalRiserStack> RiserStacks { get; }

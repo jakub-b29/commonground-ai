@@ -2,7 +2,7 @@
 @using CommonGround.Domain.Entities
 @using CommonGround.Domain.Enums
 @inject CommonGroundWorkspaceService Workspace
-@inject WorkspaceUiState UiState
+@inject WorkspaceAccessService Access
 @inject WorkspaceLocalization Loc
 @implements IDisposable
 
@@ -50,7 +50,7 @@
     <div class="cg-card">
         <div class="cg-section-header">
             <h2>@Loc.T("panel.membershipQueue")</h2>
-            <a class="cg-btn" href="/residents">@Loc.T("action.openResidentPortal")</a>
+            <a class="cg-btn" href="/residents/approvals">@Loc.T("action.openResidentPortal")</a>
         </div>
         <h3 style="margin-block-start: 0 !important;">@Loc.T("panel.membershipQueue")</h3>
         @{
@@ -148,7 +148,8 @@
         _isBusy = true;
         try
         {
-            await Workspace.DecideAiActionAsync(Snapshot.Community.Id, id, approve, UiState.ActiveSecurityRole);
+            var role = await Access.GetRoleAsync();
+            await Workspace.DecideAiActionAsync(Snapshot.Community.Id, id, approve, role);
             await OnChanged.InvokeAsync();
         }
         finally
@@ -177,7 +178,8 @@
         _isBusy = true;
         try
         {
-            var res = await Workspace.DecideResidentMembershipAsync(Snapshot.Community.Id, appId, approve, UiState.ActiveSecurityRole);
+            var role = await Access.GetRoleAsync();
+            var res = await Workspace.DecideResidentMembershipAsync(Snapshot.Community.Id, appId, approve, role);
             _message = res.DecisionNote ?? Loc.T("msg.membershipUpdated");
             await OnChanged.InvokeAsync();
         }

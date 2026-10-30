@@ -1,30 +1,40 @@
 ﻿@inherits LayoutComponentBase
 @inject WorkspaceUiState UiState
 @inject WorkspaceLocalization Loc
+@inject WorkspaceAccessService Access
 @implements IDisposable
 
 <a class="skip-link" href="#main-content">@Loc.T("shell.skipLink")</a>
-<RadzenComponents @rendermode="new InteractiveServerRenderMode(prerender: false)" />
 
-<div class="page">
-    <aside class="sidebar" aria-label="Primary navigation">
-        <NavMenu />
-    </aside>
+<AuthorizeView>
+    <Authorized>
+        <div class="page">
+            <aside class="sidebar" aria-label="Primary navigation">
+                <NavMenu />
+            </aside>
 
-    <div class="workspace-shell">
-        <div class="workspace-container">
-            <TopCommandHeader />
-            <EmergencyContactsStrip />
-            <div role="status" aria-live="polite" class="@(string.IsNullOrWhiteSpace(UiState.StatusBannerMessage) ? "visually-hidden" : "cg-status-banner")">
-                <span>@UiState.StatusBannerMessage</span>
+            <div class="workspace-shell">
+                <div class="workspace-container">
+                    <TopCommandHeader />
+                    @if (UiState.IsEmergencyDrawerOpen)
+                    {
+                        <EmergencyContactsStrip />
+                    }
+                    <div role="status" aria-live="polite" class="@(string.IsNullOrWhiteSpace(UiState.StatusBannerMessage) ? "visually-hidden" : "cg-status-banner")">
+                        <span>@UiState.StatusBannerMessage</span>
+                    </div>
+                    <main id="main-content" tabindex="-1">
+                        @Body
+                    </main>
+                    <PortfolioQueryDrawer />
+                </div>
             </div>
-            <main id="main-content" tabindex="-1">
-                @Body
-            </main>
-            <PortfolioQueryDrawer />
         </div>
-    </div>
-</div>
+    </Authorized>
+    <NotAuthorized>
+        <RedirectToLogin />
+    </NotAuthorized>
+</AuthorizeView>
 
 <div id="blazor-error-ui" data-nosnippet>
     @Loc.T("error.unhandled")
@@ -33,6 +43,7 @@
 </div>
 
 @code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
     private Action? _stateHandler;
     private Action? _locHandler;
 
@@ -43,17 +54,36 @@
         _locHandler = () => InvokeAsync(StateHasChanged);
         Loc.OnChange += _locHandler;
         await Loc.EnsureLoadedAsync();
+        await SyncIdentityAsync();
+    }
+
+    private async Task SyncIdentityAsync()
+    {
+        try
+        {
+            if (AuthState is null) return;
+            var state = await AuthState;
+            var user = state.User;
+            if (!(user.Identity?.IsAuthenticated ?? false))
+            {
+                UiState.ClearCommunitySelection();
+                return;
+            }
+            var role = WorkspaceClaims.GetRole(user);
+            WorkspaceClaims.TryGetFirmId(user, out var firmId);
+            var firmCode = user.FindFirst(WorkspaceClaimTypes.FirmCode)?.Value ?? string.Empty;
+            WorkspaceClaims.TryGetCommunityId(user, out var primary);
+            var account = await Access.GetAccountAsync();
+            UiState.SyncFromClaims(role, firmId == Guid.Empty ? null : firmId, firmCode, primary == Guid.Empty ? null : primary, account);
+        }
+        catch
+        {
+        }
     }
 
     public void Dispose()
     {
-        if (_stateHandler is not null)
-        {
-            UiState.OnChange -= _stateHandler;
-        }
-        if (_locHandler is not null)
-        {
-            Loc.OnChange -= _locHandler;
-        }
+        if (_stateHandler is not null) UiState.OnChange -= _stateHandler;
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
     }
 }

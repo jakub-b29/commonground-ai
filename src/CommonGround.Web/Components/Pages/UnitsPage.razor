@@ -1,0 +1,105 @@
+@page "/units"
+@page "/apartments"
+@attribute [Authorize(Policy = "WorkspaceMember")]
+@using CommonGround.Web.Components.Shared.Units
+@inject WorkspaceUiState UiState
+@inject WorkspaceLocalization Loc
+@inject WorkspaceAccessService Access
+@inject CommonGroundWorkspaceService Workspace
+@implements IDisposable
+
+<PageTitle>@Loc.T("nav.units") - CommonGround</PageTitle>
+
+<div class="cg-page-header">
+    <div>
+        <h1>@Loc.T("page.unitsTitle")</h1>
+        <p class="cg-page-lead">@Loc.T("page.unitsLead")</p>
+    </div>
+</div>
+
+<ScopedCommunityPage @ref="_loader" OnSnapshotLoaded="OnSnapshot">
+    <ChildContent>
+        <AuthorizeView Roles="Resident" Context="resident">
+            <Authorized>
+                <div class="cg-callout" role="status" aria-live="polite">@Loc.T("msg.residentOwnOnly")</div>
+            </Authorized>
+        </AuthorizeView>
+        <AuthorizeView Roles="Contractor" Context="contractor">
+            <Authorized>
+                <div class="cg-callout" role="status" aria-live="polite">@Loc.T("msg.contractorLimited")</div>
+            </Authorized>
+        </AuthorizeView>
+        @if (!string.IsNullOrWhiteSpace(_message))
+        {
+            <div class="cg-callout" role="status" aria-live="polite">@_message</div>
+        }
+        <div class="cg-split-sidebar-main">
+            <RiserStackCrossSectionGrid Units="_units" SelectedUnitId="_selectedUnitId" OnSelectUnit="OnSelectUnit" OnBroadcastStackAlert="OnBroadcastStackAlert" />
+            <UnitDossierPanel Unit="_selectedUnit" Community="context.Community" OnChanged="OnReload" />
+        </div>
+    </ChildContent>
+</ScopedCommunityPage>
+
+@code {
+    private ScopedCommunityPage? _loader;
+    private CommunityWorkspaceSnapshot? _snapshot;
+    private IReadOnlyList<Unit> _units = [];
+    private Guid _selectedUnitId = Guid.Empty;
+    private Unit? _selectedUnit;
+    private string _message = string.Empty;
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+    }
+
+    private async Task OnSnapshot(CommunityWorkspaceSnapshot snapshot)
+    {
+        _snapshot = snapshot;
+        var linked = await Access.GetLinkedUnitAsync();
+        var role = await Access.GetRoleAsync();
+        _units = role == WorkspaceSecurityRole.Resident && !string.IsNullOrWhiteSpace(linked)
+            ? snapshot.Community.Units.Where(u => string.Equals(u.UnitNumber, linked.Trim(), StringComparison.OrdinalIgnoreCase)).ToList()
+            : snapshot.Community.Units;
+        if (_selectedUnitId == Guid.Empty)
+        {
+            var preferred = _units.FirstOrDefault(u => u.FloorNumber > 0) ?? _units.FirstOrDefault();
+            if (preferred is not null)
+            {
+                _selectedUnitId = preferred.Id;
+                _selectedUnit = preferred;
+            }
+        }
+        else
+        {
+            _selectedUnit = _units.FirstOrDefault(u => u.Id == _selectedUnitId);
+        }
+    }
+
+    private Task OnSelectUnit(Guid id)
+    {
+        _selectedUnitId = id;
+        _selectedUnit = _units.FirstOrDefault(u => u.Id == id);
+        return Task.CompletedTask;
+    }
+
+    private async Task OnBroadcastStackAlert(string stack)
+    {
+        if (_snapshot is null) return;
+        var action = await Workspace.TriggerOneClickSosBroadcastAsync(_snapshot.Community.Id, stack);
+        _message = $"{action.Title}. {action.Rationale}";
+    }
+
+    private async Task OnReload()
+    {
+        if (_loader is not null) await _loader.ReloadAsync();
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+    }
+}

@@ -184,7 +184,28 @@ public enum WorkspaceSecurityRole
 {
     PropertyManager = 0,
     Resident = 1,
-    Contractor = 2
+    Contractor = 2,
+    FirmManager = 3
+}
+
+public enum InvitationAssignmentMode
+{
+    BlankManualAssign = 0,
+    AutoAssignSpecificProperty = 1,
+    AutoAssignAllFirmProperties = 2
+}
+
+public enum WorkspaceInvitationStatus
+{
+    Pending = 0,
+    Accepted = 1,
+    Revoked = 2
+}
+
+public enum ContractorPropertyScope
+{
+    SpecificProperty = 0,
+    AllFirmProperties = 1
 }
 
 public enum IdentityProvider

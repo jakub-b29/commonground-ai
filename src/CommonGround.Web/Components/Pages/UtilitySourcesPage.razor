@@ -1,0 +1,67 @@
+@page "/utilities/sources"
+@page "/utilities-outages"
+@attribute [Authorize(Policy = "WorkspaceMember")]
+@using CommonGround.Web.Components.Shared.Overview
+@inject WorkspaceLocalization Loc
+@inject CommonGroundWorkspaceService Workspace
+@implements IDisposable
+
+<PageTitle>@Loc.T("panel.utilitySources") - CommonGround</PageTitle>
+
+<div class="cg-page-header">
+    <div>
+        <h1>@Loc.T("page.utilitiesOutagesTitle")</h1>
+        <p class="cg-page-lead">@Loc.T("page.utilitiesOutagesLead")</p>
+    </div>
+    <a class="cg-btn" href="/utilities/outages">@Loc.T("panel.outages")</a>
+</div>
+
+<ScopedCommunityPage @ref="_loader" OnSnapshotLoaded="OnSnapshot">
+    <ChildContent>
+        <UtilitySourcesTable Sources="context.UtilitySources" OnRefreshSources="OnRefreshSources" OnScanNow="OnScanNow" />
+        @if (!string.IsNullOrWhiteSpace(_message))
+        {
+            <div class="cg-callout" role="status" aria-live="polite">@_message</div>
+        }
+    </ChildContent>
+</ScopedCommunityPage>
+
+@code {
+    private ScopedCommunityPage? _loader;
+    private CommunityWorkspaceSnapshot? _snapshot;
+    private string _message = string.Empty;
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+    }
+
+    private Task OnSnapshot(CommunityWorkspaceSnapshot snapshot)
+    {
+        _snapshot = snapshot;
+        return Task.CompletedTask;
+    }
+
+    private async Task OnRefreshSources()
+    {
+        if (_snapshot is null) return;
+        var result = await Workspace.TriggerWebAutoEnrichmentAsync(_snapshot.Community.Id, _snapshot.Community.StreetAddress);
+        _message = result.SummaryReport;
+        if (_loader is not null) await _loader.ReloadAsync();
+    }
+
+    private async Task OnScanNow()
+    {
+        if (_snapshot is null) return;
+        _message = await Workspace.ScanUtilitySourcesAndWeatherAsync(_snapshot.Community.Id);
+        if (_loader is not null) await _loader.ReloadAsync();
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+    }
+}

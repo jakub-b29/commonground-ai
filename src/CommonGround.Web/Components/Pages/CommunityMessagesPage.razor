@@ -1,0 +1,37 @@
+@page "/community/messages"
+@attribute [Authorize(Policy = "WorkspaceMember")]
+@using CommonGround.Web.Components.Shared.Residents
+@inject WorkspaceLocalization Loc
+@implements IDisposable
+
+<PageTitle>@Loc.T("panel.directMessages") - CommonGround</PageTitle>
+
+<div class="cg-page-header">
+    <div>
+        <h1>@Loc.T("panel.directMessages")</h1>
+        <p class="cg-page-lead">@Loc.T("page.groupsLead")</p>
+    </div>
+    <a class="cg-btn" href="/community/groups">@Loc.T("panel.groups")</a>
+</div>
+
+<ScopedCommunityPage>
+    <ChildContent>
+        <ResidentDirectMessagesPanel CommunityId="context.Community.Id" />
+    </ChildContent>
+</ScopedCommunityPage>
+
+@code {
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+    }
+}
