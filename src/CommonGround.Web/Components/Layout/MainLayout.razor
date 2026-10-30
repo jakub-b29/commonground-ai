@@ -1,8 +1,9 @@
 ﻿@inherits LayoutComponentBase
 @inject WorkspaceUiState UiState
+@inject WorkspaceLocalization Loc
 @implements IDisposable
 
-<a class="skip-link" href="#main-content">Skip to main content</a>
+<a class="skip-link" href="#main-content">@Loc.T("shell.skipLink")</a>
 <RadzenComponents @rendermode="new InteractiveServerRenderMode(prerender: false)" />
 
 <div class="page">
@@ -33,11 +34,15 @@
 
 @code {
     private Action? _stateHandler;
+    private Action? _locHandler;
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
         _stateHandler = () => InvokeAsync(StateHasChanged);
         UiState.OnChange += _stateHandler;
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
     }
 
     public void Dispose()
@@ -45,6 +50,10 @@
         if (_stateHandler is not null)
         {
             UiState.OnChange -= _stateHandler;
+        }
+        if (_locHandler is not null)
+        {
+            Loc.OnChange -= _locHandler;
         }
     }
 }

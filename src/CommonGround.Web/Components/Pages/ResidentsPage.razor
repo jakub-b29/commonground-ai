@@ -1,25 +1,30 @@
 @page "/residents"
 @using CommonGround.Web.Components.Shared.Residents
 @inject WorkspaceUiState UiState
+@inject WorkspaceLocalization Loc
 @inject CommonGroundWorkspaceService Workspace
 @implements IDisposable
 
-<PageTitle>Resident Portal and Groups - CommonGround</PageTitle>
+<PageTitle>@Loc.T("nav.residents") - CommonGround</PageTitle>
 
 <div class="cg-page-header">
     <div>
-        <h1>Resident portal, groups, and association approvals</h1>
-        <p class="cg-page-lead" style="margin-block-end: 0;">Approve residents for specific housing associations, manage building and riser groups, post community announcements, and inspect unit self-service dossiers.</p>
+        <h1>@Loc.T("page.residentsTitle")</h1>
+        <p class="cg-page-lead" style="margin-block-end: 0;">@Loc.T("page.residentsLead")</p>
     </div>
 </div>
 
 @if (_snapshot is null)
 {
-    <p role="status" aria-live="polite">Loading resident portal and groups.</p>
+    <p role="status" aria-live="polite">@Loc.T("msg.loading")</p>
 }
 else
 {
     <div class="cg-stack">
+        @if (!UiState.IsPropertyManager)
+        {
+            <div class="cg-callout" role="status" aria-live="polite">@Loc.T("msg.managerOnly") @Loc.T("role.grantedByManager").</div>
+        }
         <ResidentMembershipApprovalPanel Community="_snapshot.Community" OnChanged="ReloadAsync" />
         <ResidentGroupsAndMessagingPanel Community="_snapshot.Community" OnChanged="ReloadAsync" />
         <ResidentSelfServicePanel Community="_snapshot.Community" />
@@ -28,12 +33,16 @@ else
 
 @code {
     private Action? _stateHandler;
+    private Action? _locHandler;
     private CommunityWorkspaceSnapshot? _snapshot;
 
     protected override async Task OnInitializedAsync()
     {
         _stateHandler = () => InvokeAsync(ReloadAsync);
         UiState.OnChange += _stateHandler;
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
         await ReloadAsync();
     }
 
@@ -55,6 +64,10 @@ else
         if (_stateHandler is not null)
         {
             UiState.OnChange -= _stateHandler;
+        }
+        if (_locHandler is not null)
+        {
+            Loc.OnChange -= _locHandler;
         }
     }
 }

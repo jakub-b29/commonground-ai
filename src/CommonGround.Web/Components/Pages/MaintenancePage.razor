@@ -1,25 +1,30 @@
 @page "/maintenance"
 @using CommonGround.Web.Components.Shared.Maintenance
 @inject WorkspaceUiState UiState
+@inject WorkspaceLocalization Loc
 @inject CommonGroundWorkspaceService Workspace
 @implements IDisposable
 
-<PageTitle>Work Orders and Inspections - CommonGround</PageTitle>
+<PageTitle>@Loc.T("nav.maintenance") - CommonGround</PageTitle>
 
 <div class="cg-page-header">
     <div>
-        <h1>Work orders and inspections</h1>
-        <p class="cg-page-lead" style="margin-block-end: 0;">Omnichannel resident intake with outage & warranty routing, SAM 3.1 defect area segmentation, investor BOQ cost estimation, before/after repair verification, and insurance claim dossiers.</p>
+        <h1>@Loc.T("page.maintenanceTitle")</h1>
+        <p class="cg-page-lead" style="margin-block-end: 0;">@Loc.T("page.maintenanceLead")</p>
     </div>
 </div>
 
 @if (_snapshot is null)
 {
-    <p role="status" aria-live="polite">Loading maintenance workspace.</p>
+    <p role="status" aria-live="polite">@Loc.T("msg.loading")</p>
 }
 else
 {
     <div class="cg-stack">
+        @if (UiState.IsContractor)
+        {
+            <div class="cg-callout" role="status" aria-live="polite">@Loc.T("msg.contractorLimited")</div>
+        }
         <div class="cg-split-sidebar-main">
             <div class="cg-stack">
                 <ResidentIntakeSimulatorPanel CommunityId="_snapshot.Community.Id" OnChanged="ReloadAsync" />
@@ -33,12 +38,16 @@ else
 
 @code {
     private Action? _stateHandler;
+    private Action? _locHandler;
     private CommunityWorkspaceSnapshot? _snapshot;
 
     protected override async Task OnInitializedAsync()
     {
         _stateHandler = () => InvokeAsync(ReloadAsync);
         UiState.OnChange += _stateHandler;
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
         await ReloadAsync();
     }
 
@@ -58,5 +67,6 @@ else
     public void Dispose()
     {
         if (_stateHandler is not null) UiState.OnChange -= _stateHandler;
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
     }
 }

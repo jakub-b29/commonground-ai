@@ -1,21 +1,33 @@
 @page "/financials"
 @using CommonGround.Web.Components.Shared.Financials
 @inject WorkspaceUiState UiState
+@inject WorkspaceLocalization Loc
 @inject CommonGroundWorkspaceService Workspace
 @implements IDisposable
 
-<PageTitle>Accounting and Utilities - CommonGround</PageTitle>
+<PageTitle>@Loc.T("nav.financials") - CommonGround</PageTitle>
 
 <div class="cg-page-header">
     <div>
-        <h1>Accounting and utilities</h1>
-        <p class="cg-page-lead" style="margin-block-end: 0;">Double-entry fund accounting, ancillary commercial revenue offsets, tariff inflation simulation, sub-meter / RUBS utility reconciliation, 10-year reserve study, and arrears recovery.</p>
+        <h1>@Loc.T("page.financialsTitle")</h1>
+        <p class="cg-page-lead" style="margin-block-end: 0;">@Loc.T("page.financialsLead")</p>
     </div>
 </div>
 
 @if (_snapshot is null)
 {
-    <p role="status" aria-live="polite">Loading accounting workspace.</p>
+    <p role="status" aria-live="polite">@Loc.T("msg.loading")</p>
+}
+else if (UiState.IsContractor)
+{
+    <div class="cg-callout" role="status" aria-live="polite">@Loc.T("msg.contractorLimited")</div>
+}
+else if (UiState.IsResident)
+{
+    <div class="cg-stack">
+        <div class="cg-callout" role="status" aria-live="polite">@Loc.T("msg.residentOwnOnly")</div>
+        <ArrearsAndLegalDossierTable Snapshot="_snapshot" />
+    </div>
 }
 else
 {
@@ -34,12 +46,16 @@ else
 
 @code {
     private Action? _stateHandler;
+    private Action? _locHandler;
     private CommunityWorkspaceSnapshot? _snapshot;
 
     protected override async Task OnInitializedAsync()
     {
         _stateHandler = () => InvokeAsync(ReloadAsync);
         UiState.OnChange += _stateHandler;
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
         await ReloadAsync();
     }
 
@@ -59,5 +75,6 @@ else
     public void Dispose()
     {
         if (_stateHandler is not null) UiState.OnChange -= _stateHandler;
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
     }
 }

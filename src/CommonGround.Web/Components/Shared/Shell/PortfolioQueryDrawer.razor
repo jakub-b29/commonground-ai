@@ -1,19 +1,20 @@
 @inject WorkspaceUiState UiState
+@inject WorkspaceLocalization Loc
 @inject CommonGroundWorkspaceService Workspace
 @implements IDisposable
 
 @if (UiState.IsPortfolioQueryOpen)
 {
-    <aside class="cg-card cg-drawer" style="position: fixed; inset-inline-end: 1rem; inset-block-start: 4.5rem; width: min(28rem, 92vw); max-height: 80dvh; overflow-y: auto; z-index: 900;" role="dialog" aria-label="Portfolio query">
+    <aside class="cg-card cg-drawer" style="position: fixed; inset-inline-end: 1rem; inset-block-start: 4.5rem; width: min(28rem, 92vw); max-height: 80dvh; overflow-y: auto; z-index: 900;" role="dialog" aria-label="@Loc.T("shell.portfolioQuery")">
         <div class="cg-section-header">
-            <h2>Portfolio query</h2>
-            <button type="button" class="cg-btn" @onclick="OnClose">Close panel</button>
+            <h2>@Loc.T("shell.portfolioQuery")</h2>
+            <button type="button" class="cg-btn" @onclick="OnClose">@Loc.T("action.close")</button>
         </div>
-        <p style="color: var(--color-text-secondary); font-size: 0.78125rem;">Ask about units, ledgers, work orders, votes, outages, and waste schedules. State-changing proposals require approval in Pending Approvals.</p>
-        <label for="portfolio-question">Manager question</label>
-        <textarea id="portfolio-question" @bind="_question" rows="3" placeholder="Example: Which units are over 60 days past due on STACK-A1?"></textarea>
+        <p style="color: var(--color-text-secondary); font-size: 0.78125rem;">@Loc.T("shell.queryHint")</p>
+        <label for="portfolio-question">@Loc.T("form.question")</label>
+        <textarea id="portfolio-question" @bind="_question" rows="3" placeholder="@Loc.T("shell.queryPlaceholder")"></textarea>
         <div class="cg-toolbar">
-            <button type="button" class="cg-btn cg-btn-primary" disabled="@(_isBusy || UiState.SelectedCommunityId is null)" @onclick="OnAsk">Run portfolio query</button>
+            <button type="button" class="cg-btn cg-btn-primary" disabled="@(_isBusy || UiState.SelectedCommunityId is null)" @onclick="OnAsk">@Loc.T("action.runQuery")</button>
         </div>
         @if (!string.IsNullOrWhiteSpace(_answer))
         {
@@ -24,14 +25,18 @@
 
 @code {
     private Action? _stateHandler;
+    private Action? _locHandler;
     private string _question = string.Empty;
     private string _answer = string.Empty;
     private bool _isBusy;
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
         _stateHandler = () => InvokeAsync(StateHasChanged);
         UiState.OnChange += _stateHandler;
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
     }
 
     private async Task OnAsk()
@@ -65,6 +70,10 @@
         if (_stateHandler is not null)
         {
             UiState.OnChange -= _stateHandler;
+        }
+        if (_locHandler is not null)
+        {
+            Loc.OnChange -= _locHandler;
         }
     }
 }

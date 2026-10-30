@@ -1,15 +1,16 @@
 ﻿@page "/"
 @using CommonGround.Web.Components.Shared.Overview
 @inject WorkspaceUiState UiState
+@inject WorkspaceLocalization Loc
 @inject CommonGroundWorkspaceService Workspace
 @implements IDisposable
 
-<PageTitle>Portfolio Overview - CommonGround</PageTitle>
+<PageTitle>@Loc.T("nav.portfolio") - CommonGround</PageTitle>
 
 <div class="cg-page-header">
     <div>
-        <h1>Portfolio overview</h1>
-        <p class="cg-page-lead" style="margin-block-end: 0;">Operating cash, delinquency, work orders, utility sources, pending approvals, and the SHA-256 audit trail for the active community.</p>
+        <h1>@Loc.T("page.portfolioTitle")</h1>
+        <p class="cg-page-lead" style="margin-block-end: 0;">@Loc.T("page.portfolioLead")</p>
     </div>
     @if (_snapshot is not null)
     {
@@ -22,11 +23,15 @@
 
 @if (_snapshot is null)
 {
-    <p role="status" aria-live="polite">Loading portfolio snapshot.</p>
+    <p role="status" aria-live="polite">@Loc.T("msg.loading")</p>
 }
 else
 {
     <div class="cg-stack">
+        @if (UiState.IsContractor)
+        {
+            <div class="cg-callout" role="status" aria-live="polite">@Loc.T("msg.contractorLimited")</div>
+        }
         <ExecutiveKpiRow Snapshot="_snapshot" />
         <div class="cg-split-main-aside">
             <UtilitySourcesTable Sources="_snapshot.UtilitySources" OnRefreshSources="OnRefreshSources" OnScanNow="OnScanNow" />
@@ -42,6 +47,7 @@ else
 
 @code {
     private Action? _stateHandler;
+    private Action? _locHandler;
     private CommunityWorkspaceSnapshot? _snapshot;
     private string _message = string.Empty;
 
@@ -49,6 +55,9 @@ else
     {
         _stateHandler = () => InvokeAsync(ReloadAsync);
         UiState.OnChange += _stateHandler;
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
         await ReloadAsync();
     }
 
@@ -94,6 +103,10 @@ else
         if (_stateHandler is not null)
         {
             UiState.OnChange -= _stateHandler;
+        }
+        if (_locHandler is not null)
+        {
+            Loc.OnChange -= _locHandler;
         }
     }
 }
