@@ -68,6 +68,9 @@ public sealed class Community
     public List<LegalDocumentSource> LegalDocuments { get; set; } = [];
     public List<SecurityAuditEvent> SecurityAuditEvents { get; set; } = [];
     public List<WorkspaceUserAccount> UserAccounts { get; set; } = [];
+    public List<ResidentMembershipApplication> ResidentMemberships { get; set; } = [];
+    public List<ResidentGroup> ResidentGroups { get; set; } = [];
+    public List<CommunityMessage> CommunityMessages { get; set; } = [];
     public List<AiAction> AiActions { get; set; } = [];
     public List<AgentRun> AgentRuns { get; set; } = [];
 }

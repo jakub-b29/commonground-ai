@@ -1,27 +1,77 @@
 @using CommonGround.Domain.Entities
 @inject CommonGroundWorkspaceService Workspace
-<div class="cg-card" style="margin-top: 0.875rem;">
-    <h2>Inspections and permits</h2>
-    <h3>Statutory inspections</h3>
-    <div class="cg-table-wrap"><table class="cg-table"><thead><tr><th>Kind</th><th>Last</th><th>Next due</th><th>Status</th><th>Defects</th></tr></thead><tbody>
-        @foreach (var i in Inspections)
-        {
-            <tr @key="i.Id"><td>@i.Kind</td><td class="num">@i.LastPerformedDate.ToString("yyyy-MM-dd")</td><td class="num">@i.NextDueDate.ToString("yyyy-MM-dd")</td><td>@i.Status</td><td>@i.SummaryOfDefects</td></tr>
-        }
-    </tbody></table></div>
-    <h3 style="margin-top: 0.5rem;">Renovation and ARC requests</h3>
-    @foreach (var r in Requests)
-    {
-        <div @key="r.Id" style="border-top: 1px solid var(--color-border-subtle); padding: 0.5rem 0;">
-            <div><strong>@r.UnitNumber - @r.Kind</strong> <span class="cg-badge">@r.Status</span></div>
-            <div style="font-size: 0.8rem;">@r.Description</div>
-            <div style="font-size: 0.75rem; color: var(--color-text-secondary);">Cited: @r.CitedLegalDocumentCode. @r.CitedVerbatimLegalExcerpt</div>
-            <div style="font-size: 0.8rem;">Decision: @r.TechnicalConditionsOrDecisionText</div>
-            <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => OnVerifyAsync(r.Id)">Verify compliance against statute</button>
+
+<div class="cg-grid-2">
+    <div class="cg-card">
+        <div class="cg-section-header">
+            <h2>Statutory technical inspections</h2>
+            <span class="cg-badge">@Inspections.Count mandatory checks</span>
         </div>
-    }
-    @if (!string.IsNullOrWhiteSpace(_message)) { <div role="status" aria-live="polite">@_message</div> }
+        <div class="cg-table-wrap">
+            <table class="cg-table">
+                <thead>
+                    <tr>
+                        <th>Inspection kind</th>
+                        <th class="num">Last</th>
+                        <th class="num">Next due</th>
+                        <th>Status</th>
+                        <th>Findings</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var i in Inspections)
+                    {
+                        <tr @key="i.Id">
+                            <td>
+                                <strong>@i.Kind</strong>
+                                <div style="font-size: 0.72rem; color: var(--color-text-secondary);">@i.InspectorCompany</div>
+                            </td>
+                            <td class="num">@i.LastPerformedDate.ToString("yyyy-MM-dd")</td>
+                            <td class="num">@i.NextDueDate.ToString("yyyy-MM-dd")</td>
+                            <td>
+                                <span class="cg-badge @(i.Status == "Valid" ? "cg-badge-ok" : "cg-badge-warn")">@i.Status</span>
+                            </td>
+                            <td>@i.SummaryOfDefects</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="cg-card">
+        <div class="cg-section-header">
+            <h2>Renovation and ARC requests</h2>
+            <span class="cg-badge">@Requests.Count active applications</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 0.625rem;">
+            @foreach (var r in Requests)
+            {
+                <div @key="r.Id" class="cg-subcard">
+                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap;">
+                        <strong>Unit @r.UnitNumber – @r.Kind</strong>
+                        <span class="cg-badge cg-badge-warn">@r.Status</span>
+                    </div>
+                    <div style="font-size: 0.8125rem; margin-block-start: 0.25rem;">@r.Description</div>
+                    <div style="font-size: 0.72rem; color: var(--color-text-secondary); margin-block-start: 0.25rem;">
+                        Cited: <span class="mono">@r.CitedLegalDocumentCode</span> · @r.CitedVerbatimLegalExcerpt
+                    </div>
+                    <div style="font-size: 0.75rem; margin-block-start: 0.25rem;">
+                        <strong>Conditions:</strong> @r.TechnicalConditionsOrDecisionText
+                    </div>
+                    <div class="cg-toolbar" style="margin-block-start: 0.45rem;">
+                        <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => OnVerifyAsync(r.Id)">Verify compliance against statute</button>
+                    </div>
+                </div>
+            }
+        </div>
+        @if (!string.IsNullOrWhiteSpace(_message))
+        {
+            <div role="status" aria-live="polite" class="cg-callout">@_message</div>
+        }
+    </div>
 </div>
+
 @code {
     [Parameter, EditorRequired] public IReadOnlyList<StatutoryInspection> Inspections { get; set; } = [];
     [Parameter, EditorRequired] public IReadOnlyList<ModificationOrArcRequest> Requests { get; set; } = [];
@@ -29,6 +79,7 @@
     [Parameter] public EventCallback OnChanged { get; set; }
     private bool _isBusy;
     private string _message = string.Empty;
+
     private async Task OnVerifyAsync(Guid id)
     {
         _isBusy = true;

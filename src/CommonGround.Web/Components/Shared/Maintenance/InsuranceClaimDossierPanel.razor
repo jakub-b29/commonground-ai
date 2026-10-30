@@ -1,26 +1,81 @@
 @using CommonGround.Domain.Entities
+@using CommonGround.Domain.Enums
 @inject CommonGroundWorkspaceService Workspace
-<div class="cg-card" style="margin-top:0.875rem;">
-<h2>Insurance claim dossier</h2>
-<label for="claimWo">Work order</label>
-<select id="claimWo" value="@_selectedId" @onchange="OnSelect" style="width:100%;">
-@foreach (var w in WorkOrders) { <option value="@w.Id" selected="@(_selectedId == w.Id)">@w.Title</option> }
-</select>
-<button type="button" class="cg-btn cg-btn-primary" disabled="@(_isBusy || _selectedId == Guid.Empty)" @onclick="OnCompile" style="margin-top:0.375rem;">Compile insurance claim dossier</button>
-@if (_dossier is not null) {
-<div style="font-size:0.8rem;margin-top:0.375rem;">Claim @_dossier.ClaimReference. Loss <span class="num">@_dossier.TotalDocumentedLoss.ToString("N2")</span>, deductible <span class="num">@_dossier.DeductibleAmount.ToString("N2")</span>, net <span class="num">@_dossier.NetClaimPayoutEstimate.ToString("N2")</span>.</div>
-<a class="cg-btn" href="/api/export/claim-dossier/@_dossier.WorkOrderId">Export claim dossier PDF</a>
-}
-@if (!string.IsNullOrWhiteSpace(_message)) { <div role="status" aria-live="polite">@_message</div> }
+
+<div class="cg-card">
+    <div class="cg-section-header">
+        <h2>Insurance claim dossier</h2>
+        <span class="cg-badge">All-risk policy package</span>
+    </div>
+    <div>
+        <label for="claimWo">Incident work order</label>
+        <select id="claimWo" value="@_selectedId" @onchange="OnSelect">
+            @foreach (var w in WorkOrders)
+            {
+                <option value="@w.Id" selected="@(_selectedId == w.Id)">@w.Title</option>
+            }
+        </select>
+    </div>
+    <div class="cg-toolbar">
+        <button type="button" class="cg-btn cg-btn-primary" disabled="@(_isBusy || _selectedId == Guid.Empty)" @onclick="OnCompile">Compile insurance claim dossier</button>
+        @if (_dossier is not null)
+        {
+            <a class="cg-btn" href="/api/export/claim-dossier/@_dossier.WorkOrderId">Export claim dossier PDF</a>
+        }
+    </div>
+    @if (_dossier is not null)
+    {
+        <div class="cg-subcard" style="margin-block-start: 0.625rem;">
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;">
+                <strong class="mono">@_dossier.ClaimReference</strong>
+                <span class="cg-badge cg-badge-ok">@_dossier.Status</span>
+            </div>
+            <div style="font-size: 0.78125rem; margin-block-start: 0.3rem;">
+                Documented loss: <strong class="num">@_dossier.TotalDocumentedLoss.ToString("N2")</strong> · Deductible: <span class="num">@_dossier.DeductibleAmount.ToString("N2")</span> · Net payout: <strong class="num">@_dossier.NetClaimPayoutEstimate.ToString("N2")</strong>
+            </div>
+            <div style="font-size: 0.72rem; color: var(--color-text-secondary); margin-block-start: 0.2rem;">
+                @_dossier.CoverageClauseCited
+            </div>
+        </div>
+    }
+    @if (!string.IsNullOrWhiteSpace(_message))
+    {
+        <div role="status" aria-live="polite" class="cg-callout">@_message</div>
+    }
 </div>
+
 @code {
-[Parameter, EditorRequired] public IReadOnlyList<WorkOrder> WorkOrders { get; set; } = [];
-[Parameter, EditorRequired] public Guid CommunityId { get; set; }
-private Guid _selectedId;
-private bool _isBusy;
-private string _message = string.Empty;
-private InsuranceClaimDossier? _dossier;
-protected override void OnParametersSet() { if (_selectedId == Guid.Empty && WorkOrders.Count > 0) _selectedId = WorkOrders[0].Id; }
-private Task OnSelect(ChangeEventArgs e) { if (Guid.TryParse(e.Value?.ToString(), out var id)) _selectedId = id; return Task.CompletedTask; }
-private async Task OnCompile() { _isBusy = true; try { _dossier = await Workspace.GenerateInsuranceClaimDossierAsync(CommunityId, _selectedId); _message = $"Compiled {_dossier.ClaimReference}."; } catch (Exception ex) { _message = ex.Message; } finally { _isBusy = false; } }
+    [Parameter, EditorRequired] public IReadOnlyList<WorkOrder> WorkOrders { get; set; } = [];
+    [Parameter, EditorRequired] public Guid CommunityId { get; set; }
+    private Guid _selectedId;
+    private bool _isBusy;
+    private string _message = string.Empty;
+    private InsuranceClaimDossier? _dossier;
+
+    protected override void OnParametersSet()
+    {
+        if (_selectedId == Guid.Empty && WorkOrders.Count > 0)
+        {
+            var preferred = WorkOrders.FirstOrDefault(w => w.Status == WorkOrderStatus.PendingSamVerification) ?? WorkOrders[0];
+            _selectedId = preferred.Id;
+        }
+    }
+
+    private Task OnSelect(ChangeEventArgs e)
+    {
+        if (Guid.TryParse(e.Value?.ToString(), out var id)) _selectedId = id;
+        return Task.CompletedTask;
+    }
+
+    private async Task OnCompile()
+    {
+        _isBusy = true;
+        try
+        {
+            _dossier = await Workspace.GenerateInsuranceClaimDossierAsync(CommunityId, _selectedId);
+            _message = $"Compiled {_dossier.ClaimReference}.";
+        }
+        catch (Exception ex) { _message = ex.Message; }
+        finally { _isBusy = false; }
+    }
 }

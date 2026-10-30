@@ -1,0 +1,222 @@
+@using CommonGround.Domain.Entities
+@using CommonGround.Domain.Enums
+@inject CommonGroundWorkspaceService Workspace
+@inject WorkspaceUiState UiState
+
+<div class="cg-split-sidebar-main">
+    <div class="cg-card">
+        <div class="cg-section-header">
+            <h2>Resident groups & channels</h2>
+            <span class="cg-badge">@Community.ResidentGroups.Count groups</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+            @foreach (var grp in Community.ResidentGroups)
+            {
+                var isSelected = _selectedGroupId == grp.Id;
+                <div @key="grp.Id" class="cg-subcard" style="@(isSelected ? "border-color: var(--color-accent-solid); background: var(--color-accent-tint);" : "cursor: pointer;")" @onclick="() => SelectGroup(grp.Id)">
+                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;">
+                        <strong>@grp.Name</strong>
+                        <span class="cg-badge num">@grp.MemberUnitsCount units</span>
+                    </div>
+                    <div style="font-size: 0.72rem; color: var(--color-text-secondary); margin-block-start: 0.2rem;">
+                        <span class="mono">@grp.Kind</span> · <span>@grp.TargetScope</span>
+                    </div>
+                    <div style="font-size: 0.75rem; margin-block-start: 0.25rem;">@grp.Description</div>
+                </div>
+            }
+        </div>
+
+        <h3>Create resident group</h3>
+        <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+            <div>
+                <label for="grp-name">Group name</label>
+                <input id="grp-name" @bind="_newGroupName" placeholder="Stairwell B Residents" />
+            </div>
+            <div class="cg-grid-2">
+                <div>
+                    <label for="grp-kind">Group type</label>
+                    <select id="grp-kind" @bind="_newGroupKind">
+                        @foreach (var k in Enum.GetValues<ResidentGroupKind>())
+                        {
+                            <option value="@k">@k</option>
+                        }
+                    </select>
+                </div>
+                <div>
+                    <label for="grp-scope">Target scope</label>
+                    <input id="grp-scope" @bind="_newGroupScope" placeholder="Units B-103 to B-403" />
+                </div>
+            </div>
+            <div>
+                <label for="grp-desc">Description</label>
+                <input id="grp-desc" @bind="_newGroupDescription" placeholder="Coordination for Stairwell B maintenance and notices." />
+            </div>
+            <div class="cg-toolbar" style="margin-block-start: 0.25rem;">
+                <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="OnCreateGroupAsync">Create resident group</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="cg-card">
+        <div class="cg-section-header">
+            <h2>Group messages & announcements</h2>
+            @if (_selectedGroup is not null)
+            {
+                <span class="cg-badge cg-badge-ok">@_selectedGroup.Name</span>
+            }
+        </div>
+
+        @{
+            var messages = Community.CommunityMessages
+                .Where(m => _selectedGroupId == Guid.Empty || m.ResidentGroupId == _selectedGroupId)
+                .OrderByDescending(m => m.IsPinnedAnnouncement)
+                .ThenByDescending(m => m.SentAtUtc)
+                .ToList();
+        }
+        @if (messages.Count == 0)
+        {
+            <p style="color: var(--color-text-secondary);">No messages posted in this group yet.</p>
+        }
+        else
+        {
+            <div style="display: flex; flex-direction: column; gap: 0.625rem; margin-block-end: 1rem;">
+                @foreach (var msg in messages)
+                {
+                    <div @key="msg.Id" class="cg-subcard" style="@(msg.IsPinnedAnnouncement ? "border-inline-start: 3px solid var(--color-accent-solid);" : string.Empty)">
+                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap;">
+                            <div>
+                                @if (msg.IsPinnedAnnouncement)
+                                {
+                                    <span class="cg-badge cg-badge-ok" style="margin-inline-end: 0.35rem;">Pinned announcement</span>
+                                }
+                                <strong>@msg.Subject</strong>
+                            </div>
+                            <span class="mono" style="font-size: 0.72rem; color: var(--color-text-secondary);">@msg.SentAtUtc.ToString("yyyy-MM-dd HH:mm")</span>
+                        </div>
+                        <div style="font-size: 0.72rem; color: var(--color-text-secondary); margin-block: 0.2rem 0.35rem;">
+                            From <strong>@msg.SenderName</strong> (@msg.SenderUnitOrRole) · Group: @msg.GroupName
+                        </div>
+                        <div style="font-size: 0.8125rem; white-space: pre-wrap;">@msg.Body</div>
+                    </div>
+                }
+            </div>
+        }
+
+        <h3 style="margin-block-start: 0 !important;">Post message or announcement to group</h3>
+        <div class="cg-grid-2">
+            <div>
+                <label for="msg-group">Target group</label>
+                <select id="msg-group" @bind="_selectedGroupId">
+                    @foreach (var grp in Community.ResidentGroups)
+                    {
+                        <option value="@grp.Id">@grp.Name (@grp.TargetScope)</option>
+                    }
+                </select>
+            </div>
+            <div>
+                <label for="msg-subject">Subject</label>
+                <input id="msg-subject" @bind="_subject" placeholder="Elevator maintenance schedule on Thursday" />
+            </div>
+        </div>
+        <div style="margin-block-start: 0.5rem;">
+            <label for="msg-body">Message body</label>
+            <textarea id="msg-body" @bind="_body" rows="3" placeholder="Write a message or official notice to residents in the selected group..."></textarea>
+        </div>
+        <div class="cg-toolbar">
+            <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="() => OnPostMessageAsync(false)">Post group message</button>
+            <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => OnPostMessageAsync(true)">Post as pinned announcement</button>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(_message))
+        {
+            <div role="status" aria-live="polite" class="cg-callout">@_message</div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Community Community { get; set; } = default!;
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private Guid _selectedGroupId;
+    private ResidentGroup? _selectedGroup;
+    private string _newGroupName = string.Empty;
+    private ResidentGroupKind _newGroupKind = ResidentGroupKind.Stairwell;
+    private string _newGroupScope = string.Empty;
+    private string _newGroupDescription = string.Empty;
+    private string _subject = string.Empty;
+    private string _body = string.Empty;
+    private bool _isBusy;
+    private string _message = string.Empty;
+
+    protected override void OnParametersSet()
+    {
+        if (_selectedGroupId == Guid.Empty && Community.ResidentGroups.Count > 0)
+        {
+            _selectedGroupId = Community.ResidentGroups[0].Id;
+        }
+        _selectedGroup = Community.ResidentGroups.FirstOrDefault(g => g.Id == _selectedGroupId);
+    }
+
+    private void SelectGroup(Guid id)
+    {
+        _selectedGroupId = id;
+        _selectedGroup = Community.ResidentGroups.FirstOrDefault(g => g.Id == id);
+    }
+
+    private async Task OnCreateGroupAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_newGroupName))
+        {
+            return;
+        }
+        _isBusy = true;
+        try
+        {
+            var grp = await Workspace.CreateResidentGroupAsync(Community.Id, _newGroupName, _newGroupKind, _newGroupScope, _newGroupDescription);
+            _selectedGroupId = grp.Id;
+            _newGroupName = string.Empty;
+            _newGroupScope = string.Empty;
+            _newGroupDescription = string.Empty;
+            _message = $"Created group '{grp.Name}'.";
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task OnPostMessageAsync(bool isPinned)
+    {
+        if (_selectedGroupId == Guid.Empty || string.IsNullOrWhiteSpace(_subject) || string.IsNullOrWhiteSpace(_body))
+        {
+            return;
+        }
+        _isBusy = true;
+        try
+        {
+            var senderName = UiState.CurrentUser?.FullName ?? "Chief Property Manager";
+            var senderRole = UiState.CurrentUser?.LinkedUnitNumber is not null
+                ? $"Unit {UiState.CurrentUser.LinkedUnitNumber}"
+                : UiState.ActiveSecurityRole.ToString();
+            var msg = await Workspace.PostCommunityMessageAsync(Community.Id, _selectedGroupId, senderName, senderRole, _subject, _body, isPinned);
+            _subject = string.Empty;
+            _body = string.Empty;
+            _message = $"Posted '{msg.Subject}' to {msg.GroupName}.";
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+}

@@ -75,6 +75,9 @@ public sealed class CommonGroundWorkspaceService(
             .Include(c => c.LegalDocuments)
             .Include(c => c.SecurityAuditEvents)
             .Include(c => c.UserAccounts)
+            .Include(c => c.ResidentMemberships)
+            .Include(c => c.ResidentGroups)
+            .Include(c => c.CommunityMessages)
             .Include(c => c.AiActions)
             .Include(c => c.AgentRuns).ThenInclude(r => r.Steps)
             .FirstOrDefaultAsync(c => c.Id == communityId, ct);
@@ -140,7 +143,7 @@ public sealed class CommonGroundWorkspaceService(
         var scan = DataSecurityAndPrivacyGuard.InspectAndSanitizeUntrustedInput(messageText);
         if (scan.IsInjectionDetected)
         {
-            await AppendAuditAsync(db, community, WorkspaceSecurityRole.PropertyManagerAdmin, "PROMPT_INJECTION_BLOCKED", "Critical", "Resident intake", $"Blocked prompt-injection pattern '{scan.MatchedPattern}' in resident message.", ct);
+            await AppendAuditAsync(db, community, WorkspaceSecurityRole.PropertyManager, "PROMPT_INJECTION_BLOCKED", "Critical", "Resident intake", $"Blocked prompt-injection pattern '{scan.MatchedPattern}' in resident message.", ct);
             await db.SaveChangesAsync(ct);
             throw new InvalidOperationException($"Request blocked by prompt-injection guard: pattern '{scan.MatchedPattern}' detected. The attempt was logged in the SHA-256 audit chain.");
         }
@@ -646,7 +649,7 @@ public sealed class CommonGroundWorkspaceService(
             if (existing is null) { doc.CommunityId = community.Id; community.LegalDocuments.Add(doc); db.LegalDocuments.Add(doc); }
             else { existing.VerbatimLegalText = doc.VerbatimLegalText; existing.KeyProvisionsSummary = doc.KeyProvisionsSummary; existing.AcquiredAtUtc = DateTime.UtcNow; }
         }
-        await AppendAuditAsync(db, community, WorkspaceSecurityRole.PropertyManagerAdmin, "STATUTE_CORPUS_ACQUIRED", "Info", "LegalDocumentSource corpus", $"{docs.Count} statutory and governing documents synced.", ct);
+        await AppendAuditAsync(db, community, WorkspaceSecurityRole.PropertyManager, "STATUTE_CORPUS_ACQUIRED", "Info", "LegalDocumentSource corpus", $"{docs.Count} statutory and governing documents synced.", ct);
         var run = NewRun(community.Id, "WebAutoEnrichmentOutageAndGrantAgent", "Statutory legal corpus acquisition", "muse-wonder + muse-spark-1.3",
             [Step(1, "Verbatim legal text acquisition", "muse-wonder", $"{docs.Count} documents acquired from public legal registries.", 1500)]);
         community.AgentRuns.Add(run); db.AgentRuns.Add(run);
@@ -687,7 +690,7 @@ public sealed class CommonGroundWorkspaceService(
         var scan = DataSecurityAndPrivacyGuard.InspectAndSanitizeUntrustedInput(managerQuestion);
         if (scan.IsInjectionDetected)
         {
-            await AppendAuditAsync(db, community, WorkspaceSecurityRole.PropertyManagerAdmin, "PROMPT_INJECTION_BLOCKED", "Critical", "Portfolio Query", $"Blocked pattern '{scan.MatchedPattern}' in portfolio query.", ct);
+            await AppendAuditAsync(db, community, WorkspaceSecurityRole.PropertyManager, "PROMPT_INJECTION_BLOCKED", "Critical", "Portfolio Query", $"Blocked pattern '{scan.MatchedPattern}' in portfolio query.", ct);
             await db.SaveChangesAsync(ct);
             throw new InvalidOperationException("Query blocked by prompt-injection guard and logged in the audit chain.");
         }
@@ -700,14 +703,20 @@ public sealed class CommonGroundWorkspaceService(
     }
 
     // Pending approvals
-    public async Task<AiAction> DecideAiActionAsync(Guid communityId, Guid actionId, bool approve, WorkspaceSecurityRole actorRole = WorkspaceSecurityRole.PropertyManagerAdmin, CancellationToken ct = default)
+    public async Task<AiAction> DecideAiActionAsync(Guid communityId, Guid actionId, bool approve, WorkspaceSecurityRole actorRole = WorkspaceSecurityRole.PropertyManager, CancellationToken ct = default)
     {
         await using var db = await CreateDbAsync(ct);
         var community = await LoadCommunityAsync(db, communityId, ct) ?? throw new InvalidOperationException("Community not found.");
+        if (actorRole != WorkspaceSecurityRole.PropertyManager)
+        {
+            await AppendAuditAsync(db, community, actorRole, "AI_ACTION_DECISION_DENIED", "Warning", "Pending Approvals queue", $"Role {actorRole} attempted to approve or reject an AI action and was denied.", ct);
+            await db.SaveChangesAsync(ct);
+            throw new UnauthorizedAccessException("Only the Property Manager may approve or reject operational actions.");
+        }
         var action = community.AiActions.FirstOrDefault(a => a.Id == actionId) ?? throw new InvalidOperationException("Action not found.");
         action.Status = approve ? AiActionStatus.ApprovedAndExecuted : AiActionStatus.Rejected;
         action.DecidedAt = DateTime.UtcNow;
-        await AppendAuditAsync(db, community, actorRole, approve ? "AI_ACTION_APPROVED" : "AI_ACTION_REJECTED", "Info", $"AiAction: {action.Title}", $"Manager {(approve ? "approved" : "rejected")} proposed action '{action.Title}'.", ct);
+        await AppendAuditAsync(db, community, actorRole, approve ? "AI_ACTION_APPROVED" : "AI_ACTION_REJECTED", "Info", $"AiAction: {action.Title}", $"Property Manager {(approve ? "approved" : "rejected")} proposed action '{action.Title}'.", ct);
         await db.SaveChangesAsync(ct);
         return action;
     }
@@ -718,7 +727,7 @@ public sealed class CommonGroundWorkspaceService(
         var community = await LoadCommunityAsync(db, communityId, ct) ?? throw new InvalidOperationException("Community not found.");
         var pending = community.AiActions.Where(a => a.Status == AiActionStatus.Proposed).ToList();
         foreach (var action in pending) { action.Status = AiActionStatus.ApprovedAndExecuted; action.DecidedAt = DateTime.UtcNow; }
-        await AppendAuditAsync(db, community, WorkspaceSecurityRole.PropertyManagerAdmin, "AI_ACTION_APPROVED", "Info", "Pending Approvals queue", $"Approved all {pending.Count} pending actions.", ct);
+        await AppendAuditAsync(db, community, WorkspaceSecurityRole.PropertyManager, "AI_ACTION_APPROVED", "Info", "Pending Approvals queue", $"Approved all {pending.Count} pending actions.", ct);
         await db.SaveChangesAsync(ct);
         return pending.Count;
     }
@@ -731,7 +740,7 @@ public sealed class CommonGroundWorkspaceService(
         var valve = community.InfrastructurePhotos.FirstOrDefault(p => p.RiserStackOrZone.Contains(stackCode, StringComparison.OrdinalIgnoreCase)) ?? community.InfrastructurePhotos.FirstOrDefault();
         var action = new AiAction { CommunityId = community.Id, Kind = AiActionKind.BroadcastSosEmergency, AgentName = "PortfolioCopilotAgent", Title = $"Emergency shutoff broadcast for {stackCode}", Rationale = valve is null ? "Emergency broadcast to all units on the stack." : $"Shutoff: {valve.Title}. {valve.ShutoffInstructions} Contractor code attached; resident codes withheld from external recipients.", ModelUsed = "muse-spark-1.3", Confidence = 1.0, Status = AiActionStatus.ApprovedAndExecuted, DecidedAt = DateTime.UtcNow, TargetEntitySummary = $"Riser stack {stackCode}, {community.Units.Count(u => u.VerticalStackCode == stackCode)} units", ProposedPayloadJson = $"{{\"stack\":\"{stackCode}\",\"channels\":[\"SMS\",\"WhatsApp\",\"Messenger\",\"Email\"]}}" };
         community.AiActions.Add(action); db.AiActions.Add(action);
-        await AppendAuditAsync(db, community, WorkspaceSecurityRole.PropertyManagerAdmin, "SOS_BROADCAST_SENT", "Warning", $"Riser stack {stackCode}", "Emergency shutoff broadcast sent with annotated valve photo.", ct);
+        await AppendAuditAsync(db, community, WorkspaceSecurityRole.PropertyManager, "SOS_BROADCAST_SENT", "Warning", $"Riser stack {stackCode}", "Emergency shutoff broadcast sent with annotated valve photo.", ct);
         await db.SaveChangesAsync(ct);
         return action;
     }
@@ -750,7 +759,7 @@ public sealed class CommonGroundWorkspaceService(
         }
         else
         {
-            await AppendAuditAsync(db, community, WorkspaceSecurityRole.BoardMemberReadOnly, "USER_LOGIN_FAILED", "Warning", $"Login attempt: {email}", $"Sign-in via {provider} failed.", ct);
+            await AppendAuditAsync(db, community, WorkspaceSecurityRole.Resident, "USER_LOGIN_FAILED", "Warning", $"Login attempt: {email}", $"Sign-in via {provider} failed.", ct);
         }
         await db.SaveChangesAsync(ct);
         return success ? user : null;
@@ -761,11 +770,11 @@ public sealed class CommonGroundWorkspaceService(
         await using var db = await CreateDbAsync(ct);
         var community = await LoadCommunityAsync(db, communityId, ct) ?? throw new InvalidOperationException("Community not found.");
         var access = community.AccessCodes.FirstOrDefault(a => a.Id == accessCodeId) ?? throw new InvalidOperationException("Access code not found.");
-        if (activeRole is not (WorkspaceSecurityRole.PropertyManagerAdmin or WorkspaceSecurityRole.MaintenanceDispatcher))
+        if (activeRole != WorkspaceSecurityRole.PropertyManager)
         {
-            await AppendAuditAsync(db, community, activeRole, "SECRET_VAULT_REVEAL_DENIED", "Warning", $"BuildingAccessCode: {access.TargetArea}", $"Role {activeRole} attempted to reveal a vaulted code and was denied.", ct);
+            await AppendAuditAsync(db, community, activeRole, "SECRET_VAULT_REVEAL_DENIED", "Warning", $"BuildingAccessCode: {access.TargetArea}", $"Role {activeRole} attempted to reveal a vaulted permanent code and was denied.", ct);
             await db.SaveChangesAsync(ct);
-            throw new UnauthorizedAccessException($"Role {activeRole} may not reveal vaulted access codes.");
+            throw new UnauthorizedAccessException($"Role {activeRole} may not reveal vaulted permanent resident codes.");
         }
         await AppendAuditAsync(db, community, activeRole, "SECRET_VAULT_REVEAL", "Warning", $"BuildingAccessCode: {access.TargetArea}", $"Vaulted code for {access.TargetArea} revealed by {activeRole}.", ct);
         await db.SaveChangesAsync(ct);
@@ -788,6 +797,195 @@ public sealed class CommonGroundWorkspaceService(
         var community = await LoadCommunityAsync(db, communityId, ct) ?? throw new InvalidOperationException("Community not found.");
         return TariffAndInflationSimulator.Simulate(community, community.Units, heatingPct, electricityPct, wagePct, repairPct,
             (c, u) => AncillaryRevenueEngine.CreditForUnit(c.CommercialContracts, u));
+    }
+
+    public async Task<ResidentMembershipApplication> SubmitResidentMembershipApplicationAsync(
+        Guid communityId,
+        string unitNumber,
+        string fullName,
+        string email,
+        string phone,
+        IdentityProvider provider,
+        string proofSummary,
+        WorkspaceSecurityRole requestedRole = WorkspaceSecurityRole.Resident,
+        string? contractorCompanyOrTrade = null,
+        CancellationToken ct = default)
+    {
+        await using var db = await CreateDbAsync(ct);
+        var community = await LoadCommunityAsync(db, communityId, ct) ?? throw new InvalidOperationException("Community not found.");
+        var scan = DataSecurityAndPrivacyGuard.InspectAndSanitizeUntrustedInput($"{fullName} {email} {proofSummary} {contractorCompanyOrTrade}");
+        if (scan.IsInjectionDetected)
+        {
+            throw new InvalidOperationException("Application blocked by security guard.");
+        }
+
+        var isContractor = requestedRole == WorkspaceSecurityRole.Contractor;
+        var unit = isContractor
+            ? null
+            : community.Units.FirstOrDefault(u => string.Equals(u.UnitNumber, unitNumber, StringComparison.OrdinalIgnoreCase)) ?? community.Units.FirstOrDefault();
+        var assignedGroups = isContractor
+            ? "Assigned Work Orders, Temporary Contractor Access Codes, Resident & Property Manager Phone Directory"
+            : unit is not null
+                ? $"All Building Residents, Stairwell {unit.StairwellNumber} Residents, Riser Stack {unit.VerticalStackCode} Alerts"
+                : "All Building Residents";
+
+        var app = new ResidentMembershipApplication
+        {
+            CommunityId = community.Id,
+            RequestedRole = isContractor ? WorkspaceSecurityRole.Contractor : WorkspaceSecurityRole.Resident,
+            UnitId = unit?.Id,
+            UnitNumber = isContractor ? (string.IsNullOrWhiteSpace(contractorCompanyOrTrade) ? "CONTRACTOR" : contractorCompanyOrTrade.Trim()) : (unit?.UnitNumber ?? unitNumber),
+            ContractorCompanyOrTrade = isContractor ? (contractorCompanyOrTrade ?? "General Maintenance & Trade Services").Trim() : null,
+            ApplicantFullName = fullName.Trim(),
+            ApplicantEmail = email.Trim(),
+            ApplicantPhone = phone.Trim(),
+            Provider = provider,
+            OwnershipOrLeaseProofSummary = string.IsNullOrWhiteSpace(proofSummary)
+                ? (isContractor ? "Trade license & liability insurance certificate submitted for Property Manager approval" : "Deed / lease reference submitted via resident portal")
+                : proofSummary.Trim(),
+            AssignedGroupsSummary = assignedGroups,
+            Status = ResidentMembershipStatus.PendingApproval,
+            SubmittedAtUtc = DateTime.UtcNow
+        };
+        community.ResidentMemberships.Add(app);
+        db.ResidentMemberships.Add(app);
+        await db.SaveChangesAsync(ct);
+        return app;
+    }
+
+    public async Task<ResidentMembershipApplication> DecideResidentMembershipAsync(
+        Guid communityId,
+        Guid applicationId,
+        bool approve,
+        WorkspaceSecurityRole actorRole = WorkspaceSecurityRole.PropertyManager,
+        CancellationToken ct = default)
+    {
+        await using var db = await CreateDbAsync(ct);
+        var community = await LoadCommunityAsync(db, communityId, ct) ?? throw new InvalidOperationException("Community not found.");
+        if (actorRole != WorkspaceSecurityRole.PropertyManager)
+        {
+            await AppendAuditAsync(db, community, actorRole, "ROLE_GRANT_DENIED", "Warning", $"ResidentMembershipApplication: {applicationId}", $"Role {actorRole} attempted to grant or reject Resident/Contractor status and was denied.", ct);
+            await db.SaveChangesAsync(ct);
+            throw new UnauthorizedAccessException("Only the Property Manager can grant or reject Resident and Contractor status.");
+        }
+
+        var app = community.ResidentMemberships.FirstOrDefault(m => m.Id == applicationId) ?? throw new InvalidOperationException("Application not found.");
+        DataSecurityAndPrivacyGuard.EnsureCommunityScope(app, communityId);
+
+        var isContractor = app.RequestedRole == WorkspaceSecurityRole.Contractor;
+        var grantedRole = isContractor ? WorkspaceSecurityRole.Contractor : WorkspaceSecurityRole.Resident;
+        app.Status = approve ? ResidentMembershipStatus.Approved : ResidentMembershipStatus.Rejected;
+        app.DecidedAtUtc = DateTime.UtcNow;
+        app.DecisionNote = approve
+            ? (isContractor
+                ? $"Contractor status granted by Property Manager for {community.Name} ({app.ContractorCompanyOrTrade ?? app.UnitNumber}). Provisioned Contractor account with basic building info and contact phones for residents and property managers."
+                : $"Resident status granted by Property Manager for {community.Name} (Unit {app.UnitNumber}). Provisioned Resident account with unit self-service, voting, and request submission.")
+            : $"Application for {app.ApplicantFullName} ({app.RequestedRole}) rejected by Property Manager.";
+
+        if (approve && !community.UserAccounts.Any(u => string.Equals(u.Email, app.ApplicantEmail, StringComparison.OrdinalIgnoreCase)))
+        {
+            var account = new WorkspaceUserAccount
+            {
+                CommunityId = community.Id,
+                FullName = app.ApplicantFullName,
+                Email = app.ApplicantEmail,
+                Phone = app.ApplicantPhone,
+                Provider = app.Provider,
+                ProviderSubjectId = $"{app.Provider.ToString().ToLowerInvariant()}-{app.UnitNumber}",
+                PasswordSaltAndHash = DataSecurityAndPrivacyGuard.HashPasswordPbkdf2(isContractor ? "Contractor-2026!" : "Resident-2026!"),
+                Role = grantedRole,
+                LinkedUnitNumber = isContractor ? null : app.UnitNumber,
+                ContractorCompanyOrTrade = app.ContractorCompanyOrTrade,
+                GrantedByPropertyManager = true
+            };
+            community.UserAccounts.Add(account);
+            db.UserAccounts.Add(account);
+        }
+
+        await AppendAuditAsync(
+            db,
+            community,
+            actorRole,
+            approve ? (isContractor ? "CONTRACTOR_STATUS_GRANTED" : "RESIDENT_STATUS_GRANTED") : "ROLE_APPLICATION_REJECTED",
+            "Info",
+            $"RoleGrant ({grantedRole}): {app.ApplicantFullName} ({app.UnitNumber})",
+            app.DecisionNote,
+            ct);
+
+        await db.SaveChangesAsync(ct);
+        return app;
+    }
+
+    public async Task<ResidentGroup> CreateResidentGroupAsync(
+        Guid communityId,
+        string name,
+        ResidentGroupKind kind,
+        string targetScope,
+        string description,
+        CancellationToken ct = default)
+    {
+        await using var db = await CreateDbAsync(ct);
+        var community = await LoadCommunityAsync(db, communityId, ct) ?? throw new InvalidOperationException("Community not found.");
+        var scan = DataSecurityAndPrivacyGuard.InspectAndSanitizeUntrustedInput($"{name} {targetScope} {description}");
+        if (scan.IsInjectionDetected)
+        {
+            throw new InvalidOperationException("Group creation blocked by security guard.");
+        }
+
+        var code = $"GRP-{name.ToUpperInvariant().Replace(' ', '-')}-{community.ResidentGroups.Count + 1}";
+        var group = new ResidentGroup
+        {
+            CommunityId = community.Id,
+            Code = code.Length > 28 ? code[..28] : code,
+            Name = name.Trim(),
+            Kind = kind,
+            TargetScope = string.IsNullOrWhiteSpace(targetScope) ? "Selected units" : targetScope.Trim(),
+            Description = description.Trim(),
+            MemberUnitsCount = Math.Max(1, community.Units.Count / 2)
+        };
+        community.ResidentGroups.Add(group);
+        db.ResidentGroups.Add(group);
+        await db.SaveChangesAsync(ct);
+        return group;
+    }
+
+    public async Task<CommunityMessage> PostCommunityMessageAsync(
+        Guid communityId,
+        Guid groupId,
+        string senderName,
+        string senderUnitOrRole,
+        string subject,
+        string body,
+        bool isPinned = false,
+        CancellationToken ct = default)
+    {
+        await using var db = await CreateDbAsync(ct);
+        var community = await LoadCommunityAsync(db, communityId, ct) ?? throw new InvalidOperationException("Community not found.");
+        var scan = DataSecurityAndPrivacyGuard.InspectAndSanitizeUntrustedInput($"{subject} {body}");
+        if (scan.IsInjectionDetected)
+        {
+            await AppendAuditAsync(db, community, WorkspaceSecurityRole.PropertyManager, "PROMPT_INJECTION_BLOCKED", "Critical", "CommunityMessage", $"Blocked pattern '{scan.MatchedPattern}' in group message.", ct);
+            await db.SaveChangesAsync(ct);
+            throw new InvalidOperationException($"Message blocked by security guard: pattern '{scan.MatchedPattern}' detected.");
+        }
+
+        var group = community.ResidentGroups.FirstOrDefault(g => g.Id == groupId) ?? community.ResidentGroups.First();
+        var msg = new CommunityMessage
+        {
+            CommunityId = community.Id,
+            ResidentGroupId = group.Id,
+            GroupName = group.Name,
+            SenderName = string.IsNullOrWhiteSpace(senderName) ? "Property Manager" : senderName.Trim(),
+            SenderUnitOrRole = string.IsNullOrWhiteSpace(senderUnitOrRole) ? "PropertyManager" : senderUnitOrRole.Trim(),
+            Subject = subject.Trim(),
+            Body = body.Trim(),
+            IsPinnedAnnouncement = isPinned,
+            SentAtUtc = DateTime.UtcNow
+        };
+        community.CommunityMessages.Add(msg);
+        db.CommunityMessages.Add(msg);
+        await db.SaveChangesAsync(ct);
+        return msg;
     }
 }
 

@@ -6,25 +6,23 @@
 <RadzenComponents @rendermode="new InteractiveServerRenderMode(prerender: false)" />
 
 <div class="page">
-    <div class="sidebar">
+    <aside class="sidebar" aria-label="Primary navigation">
         <NavMenu />
-    </div>
+    </aside>
 
-    <main>
-        <div class="top-row px-4">
-            <span>CommonGround workspace</span>
-        </div>
-
-        <article class="content px-4">
+    <div class="workspace-shell">
+        <div class="workspace-container">
             <TopCommandHeader />
             <EmergencyContactsStrip />
-            <div role="status" aria-live="polite">@UiState.StatusBannerMessage</div>
-            <main id="main-content">
+            <div role="status" aria-live="polite" class="@(string.IsNullOrWhiteSpace(UiState.StatusBannerMessage) ? "visually-hidden" : "cg-status-banner")">
+                <span>@UiState.StatusBannerMessage</span>
+            </div>
+            <main id="main-content" tabindex="-1">
                 @Body
             </main>
             <PortfolioQueryDrawer />
-        </article>
-    </main>
+        </div>
+    </div>
 </div>
 
 <div id="blazor-error-ui" data-nosnippet>

@@ -1,0 +1,173 @@
+@using CommonGround.Domain.Entities
+@using CommonGround.Domain.Enums
+@inject CommonGroundWorkspaceService Workspace
+@inject WorkspaceUiState UiState
+
+<div class="cg-card">
+    <div class="cg-section-header">
+        <h2>Housing association resident approval queue</h2>
+        <span class="cg-badge">@Community.Name</span>
+    </div>
+    <p style="color: var(--color-text-secondary); font-size: 0.78125rem;">
+        Verify ownership deeds or lease agreements and approve residents for <strong>@Community.Name</strong>. Approved residents receive role-scoped access to their unit dossier, e-voting ballots, and building/riser groups.
+    </p>
+
+    <div class="cg-table-wrap">
+        <table class="cg-table">
+            <thead>
+                <tr>
+                    <th>Applicant</th>
+                    <th>Unit</th>
+                    <th>Provider</th>
+                    <th>Deed / lease verification</th>
+                    <th>Assigned groups</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var app in Community.ResidentMemberships.OrderBy(m => m.Status).ThenByDescending(m => m.SubmittedAtUtc))
+                {
+                    <tr @key="app.Id">
+                        <td>
+                            <strong>@app.ApplicantFullName</strong>
+                            <div style="font-size: 0.72rem; color: var(--color-text-secondary);">@app.ApplicantEmail · @app.ApplicantPhone</div>
+                        </td>
+                        <td class="mono"><strong>@app.UnitNumber</strong></td>
+                        <td><span class="cg-badge">@app.Provider</span></td>
+                        <td>@app.OwnershipOrLeaseProofSummary</td>
+                        <td style="font-size: 0.75rem; color: var(--color-text-secondary);">@app.AssignedGroupsSummary</td>
+                        <td>
+                            <span class="cg-badge @(app.Status == ResidentMembershipStatus.Approved ? "cg-badge-ok" : app.Status == ResidentMembershipStatus.PendingApproval ? "cg-badge-warn" : "cg-badge-err")">
+                                @app.Status
+                            </span>
+                        </td>
+                        <td>
+                            @if (app.Status == ResidentMembershipStatus.PendingApproval)
+                            {
+                                <div style="display: flex; gap: 0.375rem; flex-wrap: wrap;">
+                                    <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => OnDecideAsync(app.Id, true)">Approve resident</button>
+                                    <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => OnDecideAsync(app.Id, false)">Reject</button>
+                                </div>
+                            }
+                            else
+                            {
+                                <span style="font-size: 0.72rem; color: var(--color-text-secondary);">@(app.DecidedAtUtc?.ToString("yyyy-MM-dd") ?? "Verified")</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <h3>Submit new resident membership request</h3>
+    <div class="cg-grid-3">
+        <div>
+            <label for="app-unit">Unit number</label>
+            <select id="app-unit" @bind="_unitNumber">
+                @foreach (var u in Community.Units)
+                {
+                    <option value="@u.UnitNumber">@u.UnitNumber (@u.VerticalStackCode)</option>
+                }
+            </select>
+        </div>
+        <div>
+            <label for="app-name">Resident full name</label>
+            <input id="app-name" @bind="_fullName" placeholder="Janina Kwiatkowska" />
+        </div>
+        <div>
+            <label for="app-email">Email address</label>
+            <input id="app-email" @bind="_email" placeholder="janina.k@amberpark.example.com" />
+        </div>
+        <div>
+            <label for="app-phone">Phone number</label>
+            <input id="app-phone" @bind="_phone" placeholder="+48 607 112 304" />
+        </div>
+        <div>
+            <label for="app-provider">Identity provider</label>
+            <select id="app-provider" @bind="_provider">
+                @foreach (var p in Enum.GetValues<IdentityProvider>())
+                {
+                    <option value="@p">@p</option>
+                }
+            </select>
+        </div>
+        <div>
+            <label for="app-proof">Notarial deed or lease reference</label>
+            <input id="app-proof" @bind="_proof" placeholder="Notarial Deed Rep. A #8810/2026" />
+        </div>
+    </div>
+    <div class="cg-toolbar">
+        <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="OnSubmitApplicationAsync">Submit resident application for association</button>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_message))
+    {
+        <div role="status" aria-live="polite" class="cg-callout">@_message</div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Community Community { get; set; } = default!;
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private string _unitNumber = "A-202";
+    private string _fullName = "Janina Kwiatkowska";
+    private string _email = "janina.kwiatkowska@amberpark.example.com";
+    private string _phone = "+48 607 112 304";
+    private IdentityProvider _provider = IdentityProvider.Google;
+    private string _proof = "Notarial Deed Rep. A #8810/2026 - Land Register verified";
+    private bool _isBusy;
+    private string _message = string.Empty;
+
+    protected override void OnParametersSet()
+    {
+        if (Community.Units.Count > 0 && !Community.Units.Any(u => u.UnitNumber == _unitNumber))
+        {
+            _unitNumber = Community.Units[0].UnitNumber;
+        }
+    }
+
+    private async Task OnDecideAsync(Guid applicationId, bool approve)
+    {
+        _isBusy = true;
+        try
+        {
+            var updated = await Workspace.DecideResidentMembershipAsync(Community.Id, applicationId, approve, UiState.ActiveSecurityRole);
+            _message = updated.DecisionNote ?? "Resident membership decision saved.";
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task OnSubmitApplicationAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_fullName) || string.IsNullOrWhiteSpace(_email))
+        {
+            return;
+        }
+        _isBusy = true;
+        try
+        {
+            var created = await Workspace.SubmitResidentMembershipApplicationAsync(Community.Id, _unitNumber, _fullName, _email, _phone, _provider, _proof);
+            _message = $"Submitted membership request for {created.ApplicantFullName} (Unit {created.UnitNumber}) in {Community.Name}.";
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+}

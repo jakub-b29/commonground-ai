@@ -49,6 +49,9 @@ public interface IAppDbContext : IAsyncDisposable
     DbSet<LegalDocumentSource> LegalDocuments { get; }
     DbSet<SecurityAuditEvent> SecurityAuditEvents { get; }
     DbSet<WorkspaceUserAccount> UserAccounts { get; }
+    DbSet<ResidentMembershipApplication> ResidentMemberships { get; }
+    DbSet<ResidentGroup> ResidentGroups { get; }
+    DbSet<CommunityMessage> CommunityMessages { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

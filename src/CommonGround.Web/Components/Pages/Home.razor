@@ -6,8 +6,19 @@
 
 <PageTitle>Portfolio Overview - CommonGround</PageTitle>
 
-<h1>Portfolio overview</h1>
-<p style="color: var(--color-text-secondary);">Operating cash, delinquency, work orders, utility sources, pending approvals, and the SHA-256 audit trail for the active community.</p>
+<div class="cg-page-header">
+    <div>
+        <h1>Portfolio overview</h1>
+        <p class="cg-page-lead" style="margin-block-end: 0;">Operating cash, delinquency, work orders, utility sources, pending approvals, and the SHA-256 audit trail for the active community.</p>
+    </div>
+    @if (_snapshot is not null)
+    {
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <span class="cg-badge">@_snapshot.Community.StreetAddress, @_snapshot.Community.City</span>
+            <span class="cg-badge mono">Tax ID: @_snapshot.Community.TaxIdOrEin</span>
+        </div>
+    }
+</div>
 
 @if (_snapshot is null)
 {
@@ -15,14 +26,18 @@
 }
 else
 {
-    <ExecutiveKpiRow Snapshot="_snapshot" />
-    <UtilitySourcesTable Sources="_snapshot.UtilitySources" OnRefreshSources="OnRefreshSources" OnScanNow="OnScanNow" />
-    <OutageWeatherAndWastePanel Snapshot="_snapshot" />
-    <PendingApprovalsAndAuditPanel Snapshot="_snapshot" OnChanged="ReloadAsync" />
-    @if (!string.IsNullOrWhiteSpace(_message))
-    {
-        <div class="cg-card" role="status" aria-live="polite" style="margin-top: 0.875rem;">@_message</div>
-    }
+    <div class="cg-stack">
+        <ExecutiveKpiRow Snapshot="_snapshot" />
+        <div class="cg-split-main-aside">
+            <UtilitySourcesTable Sources="_snapshot.UtilitySources" OnRefreshSources="OnRefreshSources" OnScanNow="OnScanNow" />
+            <OutageWeatherAndWastePanel Snapshot="_snapshot" />
+        </div>
+        <PendingApprovalsAndAuditPanel Snapshot="_snapshot" OnChanged="ReloadAsync" />
+        @if (!string.IsNullOrWhiteSpace(_message))
+        {
+            <div class="cg-callout" role="status" aria-live="polite">@_message</div>
+        }
+    </div>
 }
 
 @code {

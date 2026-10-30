@@ -4,18 +4,20 @@
 
 @if (UiState.IsPortfolioQueryOpen)
 {
-    <aside class="cg-card cg-drawer" style="position: fixed; inset-inline-end: 0.75rem; inset-block-start: 4rem; width: min(26rem, 92vw); max-height: 80dvh; overflow-y: auto; z-index: 900;" role="dialog" aria-label="Portfolio query">
-        <h3>Portfolio query</h3>
-        <p style="color: var(--color-text-secondary);">Ask about units, ledgers, work orders, votes, outages, and waste schedules. State-changing proposals require approval in Pending Approvals.</p>
-        <label for="portfolio-question">Manager question</label>
-        <textarea id="portfolio-question" @bind="_question" rows="3" style="width: 100%;" placeholder="Example: Which units are over 60 days past due on STACK-A1?"></textarea>
-        <div style="display: flex; gap: 0.375rem; margin-top: 0.375rem;">
-            <button type="button" class="cg-btn cg-btn-primary" disabled="@(_isBusy || UiState.SelectedCommunityId is null)" @onclick="OnAsk">Run portfolio query</button>
+    <aside class="cg-card cg-drawer" style="position: fixed; inset-inline-end: 1rem; inset-block-start: 4.5rem; width: min(28rem, 92vw); max-height: 80dvh; overflow-y: auto; z-index: 900;" role="dialog" aria-label="Portfolio query">
+        <div class="cg-section-header">
+            <h2>Portfolio query</h2>
             <button type="button" class="cg-btn" @onclick="OnClose">Close panel</button>
+        </div>
+        <p style="color: var(--color-text-secondary); font-size: 0.78125rem;">Ask about units, ledgers, work orders, votes, outages, and waste schedules. State-changing proposals require approval in Pending Approvals.</p>
+        <label for="portfolio-question">Manager question</label>
+        <textarea id="portfolio-question" @bind="_question" rows="3" placeholder="Example: Which units are over 60 days past due on STACK-A1?"></textarea>
+        <div class="cg-toolbar">
+            <button type="button" class="cg-btn cg-btn-primary" disabled="@(_isBusy || UiState.SelectedCommunityId is null)" @onclick="OnAsk">Run portfolio query</button>
         </div>
         @if (!string.IsNullOrWhiteSpace(_answer))
         {
-            <div role="status" aria-live="polite" style="margin-top: 0.5rem; white-space: pre-wrap;">@_answer</div>
+            <div role="status" aria-live="polite" class="cg-callout" style="margin-block-start: 0.625rem; white-space: pre-wrap;">@_answer</div>
         }
     </aside>
 }

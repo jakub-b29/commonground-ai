@@ -488,21 +488,25 @@ public static partial class DataSecurityAndPrivacyGuard
     public static string MaskSecretForRole(string secretValue, WorkspaceSecurityRole role, bool isExplicitlyRevealed, bool isContractorCode = false)
     {
         if (string.IsNullOrEmpty(secretValue)) return string.Empty;
-        if (role == WorkspaceSecurityRole.ExternalContractorView)
+        if (role == WorkspaceSecurityRole.Contractor)
         {
             return isContractorCode ? secretValue : "#••••*";
         }
-        if (isExplicitlyRevealed && role is WorkspaceSecurityRole.PropertyManagerAdmin or WorkspaceSecurityRole.MaintenanceDispatcher)
+        if (isExplicitlyRevealed && role == WorkspaceSecurityRole.PropertyManager)
         {
             return secretValue;
         }
         return secretValue.StartsWith('#') ? "#••••*" : "PIN ••••";
     }
 
-    public static string MaskIban(string iban, WorkspaceSecurityRole role, bool isRevealed)
+    public static string MaskIban(string iban, WorkspaceSecurityRole role, bool isRevealed, bool isOwnUnit = false)
     {
         if (string.IsNullOrWhiteSpace(iban)) return string.Empty;
-        if (isRevealed && role is WorkspaceSecurityRole.PropertyManagerAdmin or WorkspaceSecurityRole.AccountingAuditor)
+        if (role == WorkspaceSecurityRole.PropertyManager && isRevealed)
+        {
+            return iban;
+        }
+        if (role == WorkspaceSecurityRole.Resident && isOwnUnit && isRevealed)
         {
             return iban;
         }
@@ -512,10 +516,14 @@ public static partial class DataSecurityAndPrivacyGuard
         return $"{prefix} •••• •••• {last4}";
     }
 
-    public static string MaskContactPii(string contact, WorkspaceSecurityRole role)
+    public static string MaskContactPii(string contact, WorkspaceSecurityRole role, bool isOwnUnit = false)
     {
         if (string.IsNullOrWhiteSpace(contact)) return string.Empty;
-        if (role is WorkspaceSecurityRole.PropertyManagerAdmin or WorkspaceSecurityRole.AccountingAuditor or WorkspaceSecurityRole.MaintenanceDispatcher)
+        if (role == WorkspaceSecurityRole.PropertyManager)
+        {
+            return contact;
+        }
+        if (role == WorkspaceSecurityRole.Resident && isOwnUnit)
         {
             return contact;
         }
@@ -525,8 +533,27 @@ public static partial class DataSecurityAndPrivacyGuard
             var name = parts[0].Length <= 2 ? "**" : $"{parts[0][..2]}***";
             return $"{name}@{parts[1]}";
         }
+        if (role == WorkspaceSecurityRole.Contractor)
+        {
+            return contact;
+        }
         var digits = new string(contact.Where(char.IsDigit).ToArray());
         return digits.Length >= 3 ? $"*** *** {digits[^3..]}" : "***";
+    }
+
+    public static bool CanViewUnitPrivateDetails(WorkspaceSecurityRole role, string? currentUserLinkedUnitNumber, string targetUnitNumber)
+    {
+        if (role == WorkspaceSecurityRole.PropertyManager)
+        {
+            return true;
+        }
+        if (role == WorkspaceSecurityRole.Resident &&
+            !string.IsNullOrWhiteSpace(currentUserLinkedUnitNumber) &&
+            string.Equals(currentUserLinkedUnitNumber, targetUnitNumber, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+        return false;
     }
 
     public static SecurityAuditEvent CreateChainedAuditEvent(

@@ -1,22 +1,95 @@
 @using CommonGround.Application.Services
 @using CommonGround.Domain.Calculators
-<div class="cg-card" style="margin-top:0.875rem;">
-<h2>Reserve study and green grants</h2>
-@if (_result is null) { <button type="button" class="cg-btn cg-btn-primary" @onclick="OnProject">Project 10-year reserve cashflow</button> }
-else {
-<div>Percent funded: <span class="num">@_result.PercentFunded.ToString("N2") %</span>. Minimum rate: <span class="num">@_result.MinimumMonthlyRatePerM2ToAvoidDeficit.ToString("N2")</span> per m2.</div>
-<div class="cg-table-wrap"><table class="cg-table"><thead><tr><th class="num">Year</th><th class="num">Starting</th><th class="num">Inflow</th><th class="num">Capex</th><th class="num">Ending</th></tr></thead><tbody>
-@foreach (var y in _result.Years) { <tr @key="y.Year"><td class="num">@y.Year</td><td class="num">@y.StartingBalance.ToString("N2")</td><td class="num">@y.AnnualInflow.ToString("N2")</td><td class="num">@y.AnnualCapexOutflow.ToString("N2")</td><td class="num">@y.EndingBalance.ToString("N2")</td></tr> }
-</tbody></table></div>
-}
-<h3>Green grants</h3>
-@foreach (var g in Snapshot.Community.GreenSubsidies) { <div @key="g.Id" style="font-size:0.8rem;">@g.ProgramName - @g.UpgradeScope: gross <span class="num">@g.EstimatedGrossCapex.ToString("N2")</span>, grant <span class="num">@g.GrantSubsidyAmount.ToString("N2")</span>, net <span class="num">@g.NetCommunityCapex.ToString("N2")</span>, payback <span class="num">@g.PaybackYears.ToString("N1")</span> years.</div> }
+
+<div class="cg-card">
+    <div class="cg-section-header">
+        <h2>Reserve study and green grants</h2>
+        <button type="button" class="cg-btn cg-btn-primary" @onclick="OnProject">Project 10-year reserve cashflow</button>
+    </div>
+    @if (_result is not null)
+    {
+        <div class="cg-callout" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;">
+            <span>Percent funded: <strong class="num">@_result.PercentFunded.ToString("N2") %</strong></span>
+            <span>Min rate to avoid deficit: <strong class="num">@_result.MinimumMonthlyRatePerM2ToAvoidDeficit.ToString("N2") / m²</strong></span>
+        </div>
+        <div class="cg-table-wrap" style="max-height: 200px; overflow-y: auto;">
+            <table class="cg-table">
+                <thead>
+                    <tr>
+                        <th class="num">Year</th>
+                        <th class="num">Starting</th>
+                        <th class="num">Inflow</th>
+                        <th class="num">Capex</th>
+                        <th class="num">Ending</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var y in _result.Years)
+                    {
+                        <tr @key="y.Year">
+                            <td class="num"><strong>@y.Year</strong></td>
+                            <td class="num">@y.StartingBalance.ToString("N2")</td>
+                            <td class="num">@y.AnnualInflow.ToString("N2")</td>
+                            <td class="num">@y.AnnualCapexOutflow.ToString("N2")</td>
+                            <td class="num">@y.EndingBalance.ToString("N2")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    <h3>Matched green modernization grants</h3>
+    <div class="cg-table-wrap">
+        <table class="cg-table">
+            <thead>
+                <tr>
+                    <th>Program & scope</th>
+                    <th class="num">Gross capex</th>
+                    <th class="num">Grant</th>
+                    <th class="num">Net capex</th>
+                    <th class="num">Payback</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var g in Snapshot.Community.GreenSubsidies)
+                {
+                    <tr @key="g.Id">
+                        <td>
+                            <strong>@g.ProgramName</strong>
+                            <div style="font-size: 0.72rem; color: var(--color-text-secondary);">@g.UpgradeScope</div>
+                        </td>
+                        <td class="num">@g.EstimatedGrossCapex.ToString("N0")</td>
+                        <td class="num">@g.GrantSubsidyAmount.ToString("N0") (@g.GrantSubsidyPercent.ToString("N0")%)</td>
+                        <td class="num"><strong>@g.NetCommunityCapex.ToString("N0")</strong></td>
+                        <td class="num">@g.PaybackYears.ToString("N1") yrs</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
 </div>
+
 @code {
-[Parameter, EditorRequired] public CommunityWorkspaceSnapshot Snapshot { get; set; } = default!;
-private ReserveStudyResult? _result;
-private void OnProject() {
-var c = Snapshot.Community;
-_result = ReserveStudyCalculator.Project(c.LedgerAccounts.Where(a => a.Fund == FundKind.RepairReserve).Sum(a => a.Balance), c.Units.Sum(u => u.FloorAreaM2), c.RepairFundRatePerM2, c.ReserveComponents, DateTime.UtcNow.Year);
-}
+    [Parameter, EditorRequired] public CommunityWorkspaceSnapshot Snapshot { get; set; } = default!;
+    private ReserveStudyResult? _result;
+
+    protected override void OnParametersSet()
+    {
+        if (_result is null)
+        {
+            OnProject();
+        }
+    }
+
+    private void OnProject()
+    {
+        var c = Snapshot.Community;
+        _result = ReserveStudyCalculator.Project(
+            c.LedgerAccounts.Where(a => a.Fund == FundKind.RepairReserve).Sum(a => a.Balance),
+            c.Units.Sum(u => u.FloorAreaM2),
+            c.RepairFundRatePerM2,
+            c.ReserveComponents,
+            DateTime.UtcNow.Year);
+    }
 }

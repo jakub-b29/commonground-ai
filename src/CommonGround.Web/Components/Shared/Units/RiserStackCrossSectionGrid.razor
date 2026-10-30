@@ -1,42 +1,85 @@
 @using CommonGround.Domain.Entities
+
 <div class="cg-card">
-    <h2>Riser stack cross-section</h2>
-    <p style="color: var(--color-text-secondary);">Floors 4 to 1 plus basement manifold across STACK-A1, STACK-A2, STACK-B1.</p>
+    <div class="cg-section-header">
+        <h2>Riser stack cross-section</h2>
+        <span class="cg-badge mono">@_selectedStack</span>
+    </div>
+    <p style="color: var(--color-text-secondary); font-size: 0.78125rem;">Floors 4 to 1 plus basement manifold across STACK-A1, STACK-A2, STACK-B1. Select any unit to inspect its dossier and riser column.</p>
     <div class="cg-table-wrap">
         <table class="cg-table">
-            <thead><tr><th>Floor</th><th>STACK-A1</th><th>STACK-A2</th><th>STACK-B1</th></tr></thead>
+            <thead>
+                <tr>
+                    <th>Floor</th>
+                    <th>STACK-A1</th>
+                    <th>STACK-A2</th>
+                    <th>STACK-B1</th>
+                </tr>
+            </thead>
             <tbody>
                 @for (var floor = 4; floor >= 1; floor--)
                 {
                     var f = floor;
                     <tr>
-                        <td>Floor @f</td>
+                        <td><strong>Floor @f</strong></td>
                         @foreach (var stack in new[] { "STACK-A1", "STACK-A2", "STACK-B1" })
                         {
                             var s = stack;
                             var unit = Units.FirstOrDefault(u => u.FloorNumber == f && u.VerticalStackCode == s);
-                            <td @key="@(f + s)">
+                            <td @key="@(f + s)" style="@(s == _selectedStack ? "background-color: var(--color-accent-tint);" : string.Empty)">
                                 @if (unit is not null)
                                 {
-                                    <button type="button" class="cg-btn" style="@(SelectedUnitId == unit.Id ? "border-color: var(--color-accent-solid);" : string.Empty)" @onclick="() => OnSelectUnit.InvokeAsync(unit.Id)">@unit.UnitNumber</button>
+                                    var isSelected = SelectedUnitId == unit.Id;
+                                    var hasLeak = unit.Meters.Any(m => m.HasSilentLeakAnomaly);
+                                    <button type="button" class="cg-btn @(isSelected ? "cg-btn-primary" : "")" style="width: 100%; justify-content: space-between;" @onclick="() => OnSelectUnit.InvokeAsync(unit.Id)">
+                                        <span class="mono">@unit.UnitNumber</span>
+                                        @if (hasLeak)
+                                        {
+                                            <span class="cg-badge cg-badge-err" style="font-size: 0.65rem; padding: 0.05rem 0.3rem;">Leak</span>
+                                        }
+                                        else if (unit.CurrentBalance > 0)
+                                        {
+                                            <span class="cg-badge cg-badge-warn" style="font-size: 0.65rem; padding: 0.05rem 0.3rem;">Arrears</span>
+                                        }
+                                    </button>
                                 }
                                 else
                                 {
-                                    <span style="color: var(--color-text-muted);">-</span>
+                                    <span style="color: var(--color-text-muted);">–</span>
                                 }
                             </td>
                         }
                     </tr>
                 }
-                <tr><td>Basement</td><td colspan="3">Shutoff manifold - blue valve (STACK-A1/A2), red valve (STACK-B1)</td></tr>
+                <tr>
+                    <td><strong>Ground / 0</strong></td>
+                    <td colspan="3">
+                        <div style="display: flex; gap: 0.375rem; flex-wrap: wrap;">
+                            @foreach (var groundUnit in Units.Where(u => u.FloorNumber == 0))
+                            {
+                                var isSelected = SelectedUnitId == groundUnit.Id;
+                                <button type="button" class="cg-btn @(isSelected ? "cg-btn-primary" : "")" @key="groundUnit.Id" @onclick="() => OnSelectUnit.InvokeAsync(groundUnit.Id)">
+                                    <span class="mono">@groundUnit.UnitNumber</span> (@groundUnit.Kind)
+                                </button>
+                            }
+                        </div>
+                    </td>
+                </tr>
+                <tr>
+                    <td><strong>Basement</strong></td>
+                    <td colspan="3" style="font-size: 0.75rem; color: var(--color-text-secondary);">Shutoff manifold – blue valve (STACK-A1/A2), red valve (STACK-B1)</td>
+                </tr>
             </tbody>
         </table>
     </div>
     @if (SelectedUnitId != Guid.Empty)
     {
-        <button type="button" class="cg-btn" @onclick="() => OnBroadcastStackAlert.InvokeAsync(_selectedStack)">Broadcast riser shutoff alert</button>
+        <div class="cg-toolbar">
+            <button type="button" class="cg-btn" @onclick="() => OnBroadcastStackAlert.InvokeAsync(_selectedStack)">Broadcast riser shutoff alert (@_selectedStack)</button>
+        </div>
     }
 </div>
+
 @code {
     [Parameter, EditorRequired] public IReadOnlyList<Unit> Units { get; set; } = [];
     [Parameter] public Guid SelectedUnitId { get; set; }

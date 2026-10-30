@@ -182,11 +182,9 @@ public enum LegalDocumentKind
 
 public enum WorkspaceSecurityRole
 {
-    PropertyManagerAdmin = 0,
-    AccountingAuditor = 1,
-    MaintenanceDispatcher = 2,
-    BoardMemberReadOnly = 3,
-    ExternalContractorView = 4
+    PropertyManager = 0,
+    Resident = 1,
+    Contractor = 2
 }
 
 public enum IdentityProvider
@@ -195,4 +193,20 @@ public enum IdentityProvider
     Facebook = 1,
     Google = 2,
     Apple = 3
+}
+
+public enum ResidentMembershipStatus
+{
+    PendingApproval = 0,
+    Approved = 1,
+    Rejected = 2
+}
+
+public enum ResidentGroupKind
+{
+    BuildingWide = 0,
+    Stairwell = 1,
+    RiserStack = 2,
+    BoardAndOwners = 3,
+    InterestGroup = 4
 }

@@ -235,14 +235,18 @@ public sealed class DomainCalculatorsTests
         Assert.False(safe.IsInjectionDetected);
         Assert.Contains("<untrusted_input>", safe.SafeDelimitedPayload, StringComparison.Ordinal);
 
-        Assert.Equal("#••••*", DataSecurityAndPrivacyGuard.MaskSecretForRole("#4812*", WorkspaceSecurityRole.BoardMemberReadOnly, false));
-        Assert.Equal("#4812*", DataSecurityAndPrivacyGuard.MaskSecretForRole("#4812*", WorkspaceSecurityRole.PropertyManagerAdmin, true));
-        Assert.Equal("#9021*", DataSecurityAndPrivacyGuard.MaskSecretForRole("#9021*", WorkspaceSecurityRole.ExternalContractorView, false, isContractorCode: true));
-        Assert.Equal("#••••*", DataSecurityAndPrivacyGuard.MaskSecretForRole("#4812*", WorkspaceSecurityRole.ExternalContractorView, true));
+        Assert.Equal("#••••*", DataSecurityAndPrivacyGuard.MaskSecretForRole("#4812*", WorkspaceSecurityRole.Resident, false));
+        Assert.Equal("#4812*", DataSecurityAndPrivacyGuard.MaskSecretForRole("#4812*", WorkspaceSecurityRole.PropertyManager, true));
+        Assert.Equal("#9021*", DataSecurityAndPrivacyGuard.MaskSecretForRole("#9021*", WorkspaceSecurityRole.Contractor, false, isContractorCode: true));
+        Assert.Equal("#••••*", DataSecurityAndPrivacyGuard.MaskSecretForRole("#4812*", WorkspaceSecurityRole.Contractor, true));
+        Assert.True(DataSecurityAndPrivacyGuard.CanViewUnitPrivateDetails(WorkspaceSecurityRole.PropertyManager, null, "A-101"));
+        Assert.True(DataSecurityAndPrivacyGuard.CanViewUnitPrivateDetails(WorkspaceSecurityRole.Resident, "A-101", "A-101"));
+        Assert.False(DataSecurityAndPrivacyGuard.CanViewUnitPrivateDetails(WorkspaceSecurityRole.Resident, "A-101", "A-102"));
+        Assert.False(DataSecurityAndPrivacyGuard.CanViewUnitPrivateDetails(WorkspaceSecurityRole.Contractor, null, "A-101"));
 
         var communityId = Guid.NewGuid();
-        var first = DataSecurityAndPrivacyGuard.CreateChainedAuditEvent(communityId, WorkspaceSecurityRole.PropertyManagerAdmin, "USER_LOGIN_SUCCESS", "Info", "WorkspaceUserAccount", "Login succeeded", "GENESIS-0000000000000000");
-        var second = DataSecurityAndPrivacyGuard.CreateChainedAuditEvent(communityId, WorkspaceSecurityRole.PropertyManagerAdmin, "SECRET_VAULT_REVEAL", "Warning", "BuildingAccessCode: Stairwell A", "Secret revealed", first.EntrySha256Hash);
+        var first = DataSecurityAndPrivacyGuard.CreateChainedAuditEvent(communityId, WorkspaceSecurityRole.PropertyManager, "USER_LOGIN_SUCCESS", "Info", "WorkspaceUserAccount", "Login succeeded", "GENESIS-0000000000000000");
+        var second = DataSecurityAndPrivacyGuard.CreateChainedAuditEvent(communityId, WorkspaceSecurityRole.PropertyManager, "SECRET_VAULT_REVEAL", "Warning", "BuildingAccessCode: Stairwell A", "Secret revealed", first.EntrySha256Hash);
         var (isValid, verified) = DataSecurityAndPrivacyGuard.VerifyAuditChainIntegrity([first, second]);
         Assert.True(isValid);
         Assert.Equal(2, verified);

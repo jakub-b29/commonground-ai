@@ -45,6 +45,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<LegalDocumentSource> LegalDocuments => Set<LegalDocumentSource>();
     public DbSet<SecurityAuditEvent> SecurityAuditEvents => Set<SecurityAuditEvent>();
     public DbSet<WorkspaceUserAccount> UserAccounts => Set<WorkspaceUserAccount>();
+    public DbSet<ResidentMembershipApplication> ResidentMemberships => Set<ResidentMembershipApplication>();
+    public DbSet<ResidentGroup> ResidentGroups => Set<ResidentGroup>();
+    public DbSet<CommunityMessage> CommunityMessages => Set<CommunityMessage>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
@@ -80,6 +83,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.HasMany(c => c.LegalDocuments).WithOne().HasForeignKey(x => x.CommunityId).OnDelete(DeleteBehavior.Cascade);
             e.HasMany(c => c.SecurityAuditEvents).WithOne().HasForeignKey(x => x.CommunityId).OnDelete(DeleteBehavior.Cascade);
             e.HasMany(c => c.UserAccounts).WithOne().HasForeignKey(x => x.CommunityId).OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(c => c.ResidentMemberships).WithOne().HasForeignKey(x => x.CommunityId).OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(c => c.ResidentGroups).WithOne().HasForeignKey(x => x.CommunityId).OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(c => c.CommunityMessages).WithOne().HasForeignKey(x => x.CommunityId).OnDelete(DeleteBehavior.Cascade);
             e.HasMany(c => c.AiActions).WithOne().HasForeignKey(x => x.CommunityId).OnDelete(DeleteBehavior.Cascade);
             e.HasMany(c => c.AgentRuns).WithOne().HasForeignKey(x => x.CommunityId).OnDelete(DeleteBehavior.Cascade);
         });
@@ -132,9 +138,17 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             e.HasMany(r => r.Steps).WithOne().HasForeignKey(s => s.AgentRunId).OnDelete(DeleteBehavior.Cascade);
         });
 
+        modelBuilder.Entity<ResidentGroup>(e =>
+        {
+            e.HasMany(g => g.Messages).WithOne().HasForeignKey(m => m.ResidentGroupId).OnDelete(DeleteBehavior.NoAction);
+            e.HasIndex(g => new { g.CommunityId, g.Code });
+        });
+
         modelBuilder.Entity<Community>().Ignore(c => c.IsUnderDeveloperWarranty);
         modelBuilder.Entity<LegalDocumentSource>().HasIndex(x => new { x.CommunityId, x.DocumentCode });
         modelBuilder.Entity<SecurityAuditEvent>().HasIndex(x => new { x.CommunityId, x.OccurredAtUtc });
         modelBuilder.Entity<WorkspaceUserAccount>().HasIndex(x => new { x.CommunityId, x.Email });
+        modelBuilder.Entity<ResidentMembershipApplication>().HasIndex(x => new { x.CommunityId, x.Status });
+        modelBuilder.Entity<CommunityMessage>().HasIndex(x => new { x.CommunityId, x.SentAtUtc });
     }
 }

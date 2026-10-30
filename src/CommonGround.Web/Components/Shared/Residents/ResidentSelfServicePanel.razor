@@ -1,0 +1,124 @@
+@using CommonGround.Domain.Calculators
+@using CommonGround.Domain.Entities
+@using CommonGround.Domain.Enums
+@inject CommonGroundWorkspaceService Workspace
+@inject WorkspaceUiState UiState
+
+<div class="cg-card">
+    <div class="cg-section-header">
+        <h2>Resident self-service panel</h2>
+        @if (_unit is not null)
+        {
+            <span class="cg-badge cg-badge-ok">Unit @_unit.UnitNumber · @_unit.VerticalStackCode</span>
+        }
+    </div>
+    <div style="margin-block-end: 0.75rem;">
+        <label for="resident-unit-select">Active resident unit view</label>
+        <select id="resident-unit-select" value="@_selectedUnitId" @onchange="OnSelectUnit">
+            @foreach (var u in Community.Units)
+            {
+                <option value="@u.Id" selected="@(_selectedUnitId == u.Id)">@u.UnitNumber – @u.PrimaryOwnerName (@u.VerticalStackCode)</option>
+            }
+        </select>
+    </div>
+
+    @if (_unit is not null)
+    {
+        <div class="cg-grid-3" style="margin-block-end: 0.75rem;">
+            <div class="cg-subcard">
+                <div class="kpi-label">Monthly assessment</div>
+                <div class="kpi-value num" style="font-size: 1.15rem;">@_assessment?.TotalAssessment.ToString("N2") @Community.CurrencyCode</div>
+                <div class="kpi-sub">Share: <span class="num">@_unit.ShareNumerator / @_unit.ShareDenominator</span></div>
+            </div>
+            <div class="cg-subcard">
+                <div class="kpi-label">Account balance</div>
+                <div class="kpi-value num" style="font-size: 1.15rem;">@_unit.CurrentBalance.ToString("N2") @Community.CurrencyCode</div>
+                <div class="kpi-sub">Status: <span class="cg-badge @(_unit.CurrentBalance > 0 ? "cg-badge-warn" : "cg-badge-ok")">@_unit.ArrearsStage</span></div>
+            </div>
+            <div class="cg-subcard">
+                <div class="kpi-label">Sub-meters</div>
+                <div class="kpi-value num" style="font-size: 1.15rem;">@_unit.Meters.Count</div>
+                <div class="kpi-sub">Riser stack: <span class="mono">@_unit.VerticalStackCode</span></div>
+            </div>
+        </div>
+
+        <h3 style="margin-block-start: 0 !important;">Unit work orders & active ballots</h3>
+        <div class="cg-table-wrap">
+            <table class="cg-table">
+                <thead>
+                    <tr>
+                        <th>Item</th>
+                        <th>Category / Rule</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var wo in Community.WorkOrders.Where(w => w.UnitId == _unit.Id || w.VerticalStackCode == _unit.VerticalStackCode).Take(3))
+                    {
+                        <tr @key="wo.Id">
+                            <td><strong>@wo.Title</strong></td>
+                            <td>@wo.Category (@wo.VerticalStackCode)</td>
+                            <td><span class="cg-badge">@wo.Status</span></td>
+                        </tr>
+                    }
+                    @foreach (var res in Community.Resolutions.Take(2))
+                    {
+                        var voted = res.Votes.FirstOrDefault(v => v.UnitId == _unit.Id);
+                        <tr @key="res.Id">
+                            <td><strong>@res.Number – @res.Title</strong></td>
+                            <td>@res.MajorityRule</td>
+                            <td>
+                                <span class="cg-badge @(voted is not null ? "cg-badge-ok" : "cg-badge-warn")">
+                                    @(voted is not null ? $"Voted: {voted.Choice}" : "Ballot open")
+                                </span>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Community Community { get; set; } = default!;
+    private Guid _selectedUnitId;
+    private Unit? _unit;
+    private MonthlyAssessment? _assessment;
+
+    protected override void OnParametersSet()
+    {
+        if (_selectedUnitId == Guid.Empty && Community.Units.Count > 0)
+        {
+            var linked = UiState.CurrentUser?.LinkedUnitNumber;
+            _unit = (!string.IsNullOrWhiteSpace(linked)
+                ? Community.Units.FirstOrDefault(u => string.Equals(u.UnitNumber, linked, StringComparison.OrdinalIgnoreCase))
+                : null) ?? Community.Units[0];
+            _selectedUnitId = _unit.Id;
+        }
+        else
+        {
+            _unit = Community.Units.FirstOrDefault(u => u.Id == _selectedUnitId);
+        }
+
+        if (_unit is not null)
+        {
+            var credit = AncillaryRevenueEngine.CreditForUnit(Community.CommercialContracts, _unit);
+            _assessment = AssessmentCalculator.Compute(Community, _unit, "2026-11", credit);
+        }
+    }
+
+    private void OnSelectUnit(ChangeEventArgs e)
+    {
+        if (Guid.TryParse(e.Value?.ToString(), out var id))
+        {
+            _selectedUnitId = id;
+            _unit = Community.Units.FirstOrDefault(u => u.Id == id);
+            if (_unit is not null)
+            {
+                var credit = AncillaryRevenueEngine.CreditForUnit(Community.CommercialContracts, _unit);
+                _assessment = AssessmentCalculator.Compute(Community, _unit, "2026-11", credit);
+            }
+        }
+    }
+}

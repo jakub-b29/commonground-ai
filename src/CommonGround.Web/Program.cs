@@ -14,6 +14,7 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
 builder.Services.AddAuthorization();
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddScoped<WorkspaceUiState>();
+builder.Services.AddScoped<WorkspaceLocalization>();
 builder.Services.AddScoped<WorkspaceAuthenticationStateProvider>();
 builder.Services.AddScoped<AuthenticationStateProvider>(sp => sp.GetRequiredService<WorkspaceAuthenticationStateProvider>());
 

@@ -1,25 +1,96 @@
 @using CommonGround.Application.Services
 @inject CommonGroundWorkspaceService Workspace
+
 <div class="cg-card">
-<h2>Meeting package and compliance</h2>
-<div style="display:flex;gap:0.375rem;flex-wrap:wrap;">
-<button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="OnPrepare">Prepare annual meeting package</button>
-<a class="cg-btn" href="/api/export/meeting-pack/@Snapshot.Community.Id">Export meeting package PDF</a>
+    <div class="cg-section-header">
+        <h2>Meeting package and compliance</h2>
+        <div style="display: flex; gap: 0.375rem; flex-wrap: wrap;">
+            <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="OnPrepare">Prepare annual meeting package</button>
+            <a class="cg-btn" href="/api/export/meeting-pack/@Snapshot.Community.Id">Export meeting package PDF</a>
+        </div>
+    </div>
+    <div class="cg-table-wrap">
+        <table class="cg-table">
+            <thead>
+                <tr>
+                    <th>Resolution</th>
+                    <th>Majority rule</th>
+                    <th>Compliance status</th>
+                    <th>Cited provision</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in Snapshot.Community.Resolutions.OrderBy(r => r.Number))
+                {
+                    <tr @key="r.Id">
+                        <td>
+                            <strong class="mono">@r.Number</strong> – <strong>@r.Title</strong>
+                            <div style="font-size: 0.72rem; color: var(--color-text-secondary);">@r.Content</div>
+                        </td>
+                        <td><span class="cg-badge">@r.MajorityRule</span></td>
+                        <td>
+                            <span class="cg-badge @(r.ComplianceStatus == "VerifiedClean" ? "cg-badge-ok" : "cg-badge-err")">@r.ComplianceStatus</span>
+                        </td>
+                        <td class="mono">@(string.IsNullOrWhiteSpace(r.CitedLegalDocumentCode) ? "Verified against statute" : r.CitedLegalDocumentCode)</td>
+                        <td>
+                            @if (r.ComplianceStatus == "ConflictDetected")
+                            {
+                                <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => OnFixAsync(r.Id)">Apply compliant resolution text</button>
+                            }
+                            else
+                            {
+                                <span style="font-size: 0.72rem; color: var(--color-text-secondary);">Ready for ballot</span>
+                            }
+                        </td>
+                    </tr>
+                    @if (!string.IsNullOrWhiteSpace(r.ComplianceConflictSummary))
+                    {
+                        <tr @key="@(r.Id.ToString() + "-c")">
+                            <td colspan="5" style="background-color: var(--status-err-bg); color: var(--status-err-fg); font-size: 0.78125rem;">
+                                <strong>Statutory conflict detected:</strong> @r.ComplianceConflictSummary · <strong>Cited (<span class="mono">@r.CitedLegalDocumentCode</span>):</strong> @r.CitedVerbatimLegalExcerpt
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+    @if (!string.IsNullOrWhiteSpace(_message))
+    {
+        <div role="status" aria-live="polite" class="cg-callout">@_message</div>
+    }
 </div>
-<div class="cg-table-wrap" style="margin-top:0.5rem;"><table class="cg-table"><thead><tr><th>Resolution</th><th>Rule</th><th>Compliance</th><th>Cited provision</th><th>Action</th></tr></thead><tbody>
-@foreach (var r in Snapshot.Community.Resolutions) {
-<tr @key="r.Id"><td>@r.Number - @r.Title</td><td>@r.MajorityRule</td><td>@r.ComplianceStatus</td><td class="mono">@r.CitedLegalDocumentCode</td>
-<td>@if (r.ComplianceStatus == "ConflictDetected") { <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => OnFixAsync(r.Id)">Apply compliant resolution text</button> }</td></tr>
-@if (!string.IsNullOrWhiteSpace(r.ComplianceConflictSummary)) { <tr @key="@(r.Id.ToString() + "-c")"><td colspan="5" style="color:var(--status-err-fg);">@r.ComplianceConflictSummary Cited: @r.CitedLegalDocumentCode. @r.CitedVerbatimLegalExcerpt</td></tr> }
-}
-</tbody></table></div>
-@if (!string.IsNullOrWhiteSpace(_message)) { <div role="status" aria-live="polite">@_message</div> }
-</div>
+
 @code {
-[Parameter, EditorRequired] public CommunityWorkspaceSnapshot Snapshot { get; set; } = default!;
-[Parameter] public EventCallback OnChanged { get; set; }
-private bool _isBusy;
-private string _message = string.Empty;
-private async Task OnPrepare() { _isBusy = true; try { await Workspace.RunAnnualMeetingAutopilotAsync(Snapshot.Community.Id); _message = "Annual meeting package prepared."; await OnChanged.InvokeAsync(); } catch (Exception ex) { _message = ex.Message; } finally { _isBusy = false; } }
-private async Task OnFixAsync(Guid id) { _isBusy = true; try { var r = await Workspace.ApplyStatuteComplianceFixAsync(Snapshot.Community.Id, id); _message = $"{r.Number}: {r.ComplianceStatus}."; await OnChanged.InvokeAsync(); } catch (Exception ex) { _message = ex.Message; } finally { _isBusy = false; } }
+    [Parameter, EditorRequired] public CommunityWorkspaceSnapshot Snapshot { get; set; } = default!;
+    [Parameter] public EventCallback OnChanged { get; set; }
+    private bool _isBusy;
+    private string _message = string.Empty;
+
+    private async Task OnPrepare()
+    {
+        _isBusy = true;
+        try
+        {
+            await Workspace.RunAnnualMeetingAutopilotAsync(Snapshot.Community.Id);
+            _message = "Annual meeting package prepared.";
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex) { _message = ex.Message; }
+        finally { _isBusy = false; }
+    }
+
+    private async Task OnFixAsync(Guid id)
+    {
+        _isBusy = true;
+        try
+        {
+            var r = await Workspace.ApplyStatuteComplianceFixAsync(Snapshot.Community.Id, id);
+            _message = $"{r.Number}: {r.ComplianceStatus}.";
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex) { _message = ex.Message; }
+        finally { _isBusy = false; }
+    }
 }

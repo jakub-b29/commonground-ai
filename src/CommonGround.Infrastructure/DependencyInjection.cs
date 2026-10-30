@@ -23,7 +23,7 @@ public static class DependencyInjection
     public static IServiceCollection AddCommonGroundInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
         var connectionString = configuration.GetConnectionString("CommonGround")
-            ?? "Server=(localdb)\\MSSQLLocalDB;Database=CommonGround;Trusted_Connection=True;MultipleActiveResultSets=true;TrustServerCertificate=True";
+            ?? "Server=(localdb)\\MSSQLLocalDB;Database=CommonGroundV2;Trusted_Connection=True;MultipleActiveResultSets=true;TrustServerCertificate=True";
 
         services.AddDbContextFactory<AppDbContext>(options =>
         {
@@ -65,10 +65,24 @@ public static class DependencyInjection
         try
         {
             await db.Database.EnsureCreatedAsync(ct);
+            var hasContractorApp = await db.ResidentMemberships.AnyAsync(m => m.RequestedRole == CommonGround.Domain.Enums.WorkspaceSecurityRole.Contractor, ct);
+            if (!hasContractorApp && await db.Communities.AnyAsync(ct))
+            {
+                await db.Database.EnsureDeletedAsync(ct);
+                await db.Database.EnsureCreatedAsync(ct);
+            }
         }
         catch
         {
-            // InMemory fallback or LocalDB unavailable: EnsureCreated on the configured provider still applies; seeding proceeds in memory.
+            try
+            {
+                await db.Database.EnsureDeletedAsync(ct);
+                await db.Database.EnsureCreatedAsync(ct);
+            }
+            catch
+            {
+                // InMemory fallback or LocalDB unavailable.
+            }
         }
         var renderer = scope.ServiceProvider.GetRequiredService<SamOverlayRenderer>();
         var seeder = new DemoSeeder(db, renderer);

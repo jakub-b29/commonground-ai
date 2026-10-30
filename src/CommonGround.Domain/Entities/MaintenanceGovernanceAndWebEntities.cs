@@ -273,7 +273,7 @@ public sealed class SecurityAuditEvent : ICommunityScoped
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid CommunityId { get; set; }
-    public WorkspaceSecurityRole ActorRole { get; set; } = WorkspaceSecurityRole.PropertyManagerAdmin;
+    public WorkspaceSecurityRole ActorRole { get; set; } = WorkspaceSecurityRole.PropertyManager;
     public string ActionCategory { get; set; } = string.Empty;
     public string Severity { get; set; } = "Info";
     public string ResourceDescriptor { get; set; } = string.Empty;
@@ -289,11 +289,61 @@ public sealed class WorkspaceUserAccount : ICommunityScoped
     public Guid CommunityId { get; set; }
     public string FullName { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
+    public string Phone { get; set; } = string.Empty;
     public IdentityProvider Provider { get; set; } = IdentityProvider.EmailPassword;
     public string ProviderSubjectId { get; set; } = string.Empty;
     public string PasswordSaltAndHash { get; set; } = string.Empty;
-    public WorkspaceSecurityRole Role { get; set; } = WorkspaceSecurityRole.PropertyManagerAdmin;
+    public WorkspaceSecurityRole Role { get; set; } = WorkspaceSecurityRole.PropertyManager;
     public string? LinkedUnitNumber { get; set; }
+    public string? ContractorCompanyOrTrade { get; set; }
+    public bool GrantedByPropertyManager { get; set; } = true;
     public bool MfaVerified { get; set; } = true;
     public DateTime LastLoginAtUtc { get; set; } = DateTime.UtcNow;
+}
+
+public sealed class ResidentMembershipApplication : ICommunityScoped
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid CommunityId { get; set; }
+    public WorkspaceSecurityRole RequestedRole { get; set; } = WorkspaceSecurityRole.Resident;
+    public Guid? UnitId { get; set; }
+    public string UnitNumber { get; set; } = string.Empty;
+    public string? ContractorCompanyOrTrade { get; set; }
+    public string ApplicantFullName { get; set; } = string.Empty;
+    public string ApplicantEmail { get; set; } = string.Empty;
+    public string ApplicantPhone { get; set; } = string.Empty;
+    public IdentityProvider Provider { get; set; } = IdentityProvider.EmailPassword;
+    public string OwnershipOrLeaseProofSummary { get; set; } = string.Empty;
+    public string AssignedGroupsSummary { get; set; } = string.Empty;
+    public ResidentMembershipStatus Status { get; set; } = ResidentMembershipStatus.PendingApproval;
+    public DateTime SubmittedAtUtc { get; set; } = DateTime.UtcNow;
+    public DateTime? DecidedAtUtc { get; set; }
+    public string? DecisionNote { get; set; }
+}
+
+public sealed class ResidentGroup : ICommunityScoped
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid CommunityId { get; set; }
+    public string Code { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public ResidentGroupKind Kind { get; set; } = ResidentGroupKind.BuildingWide;
+    public string TargetScope { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public int MemberUnitsCount { get; set; }
+    public List<CommunityMessage> Messages { get; set; } = [];
+}
+
+public sealed class CommunityMessage : ICommunityScoped
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid CommunityId { get; set; }
+    public Guid ResidentGroupId { get; set; }
+    public string GroupName { get; set; } = string.Empty;
+    public string SenderName { get; set; } = string.Empty;
+    public string SenderUnitOrRole { get; set; } = string.Empty;
+    public string Subject { get; set; } = string.Empty;
+    public string Body { get; set; } = string.Empty;
+    public bool IsPinnedAnnouncement { get; set; }
+    public DateTime SentAtUtc { get; set; } = DateTime.UtcNow;
 }
