@@ -1,0 +1,76 @@
+@inject WorkspaceAccessService Access
+@inject NavigationManager Nav
+@inject WorkspaceLocalization Loc
+@implements IDisposable
+
+@if (!_checked)
+{
+    <p role="status" aria-live="polite">@Loc.T("msg.loading")</p>
+}
+else if (_authorized)
+{
+    @ChildContent
+}
+
+@code {
+    [Parameter] public Guid PropertyId { get; set; }
+    [Parameter] public WorkspacePermissionFlags RequiredPermission { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private bool _checked;
+    private bool _authorized;
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+        await CheckAsync();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await CheckAsync();
+    }
+
+    private async Task CheckAsync()
+    {
+        _checked = false;
+        _authorized = false;
+        try
+        {
+            if (PropertyId == Guid.Empty)
+            {
+                Nav.NavigateTo("/no-access", replace: true);
+                return;
+            }
+
+            await Access.RequirePropertyAccessAsync(PropertyId, RequiredPermission);
+            _authorized = true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            Nav.NavigateTo("/no-access", replace: true);
+            return;
+        }
+        catch
+        {
+            Nav.NavigateTo("/no-access", replace: true);
+            return;
+        }
+        finally
+        {
+            _checked = true;
+            StateHasChanged();
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null)
+        {
+            Loc.OnChange -= _locHandler;
+        }
+    }
+}

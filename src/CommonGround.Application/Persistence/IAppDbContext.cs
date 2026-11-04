@@ -54,9 +54,26 @@ public interface IAppDbContext : IAsyncDisposable
     DbSet<LegalDocumentSource> LegalDocuments { get; }
     DbSet<SecurityAuditEvent> SecurityAuditEvents { get; }
     DbSet<WorkspaceUserAccount> UserAccounts { get; }
+    DbSet<WorkspaceAccountMembership> AccountMemberships { get; }
     DbSet<ResidentMembershipApplication> ResidentMemberships { get; }
     DbSet<ResidentGroup> ResidentGroups { get; }
     DbSet<CommunityMessage> CommunityMessages { get; }
+    DbSet<User> Users { get; }
+    DbSet<FirmMembership> FirmMemberships { get; }
+    DbSet<MembershipPropertyAccess> MembershipPropertyAccesses { get; }
+    DbSet<MembershipUnitLink> MembershipUnitLinks { get; }
+    DbSet<Invitation> Invitations { get; }
+    DbSet<JoinRequest> JoinRequests { get; }
+    DbSet<PropertyAnnouncement> PropertyAnnouncements { get; }
+    DbSet<WorkOrderMessage> WorkOrderMessages { get; }
+    DbSet<ResidentProfile> ResidentProfiles { get; }
+    DbSet<ResidentUnitAssignment> ResidentUnitAssignments { get; }
+    DbSet<UnitOwnership> UnitOwnerships { get; }
+    DbSet<ResidentHouseholdMember> ResidentHouseholdMembers { get; }
+    DbSet<ResidentDocument> ResidentDocuments { get; }
+    DbSet<CommunityContact> CommunityContacts { get; }
+    DbSet<ResidentRegistrationToken> ResidentRegistrationTokens { get; }
+    DbSet<ResidentRegistrationRequest> ResidentRegistrationRequests { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

@@ -1,0 +1,73 @@
+@inject WorkspaceUiState UiState
+@inject WorkspaceAccessService Access
+@implements IDisposable
+
+@if (_properties.Count > 0)
+{
+    <div class="cg-topbar-field">
+        <label for="property-select">Property</label>
+        <select id="property-select" value="@UiState.SelectedPropertyId" @onchange="OnPropertyChanged">
+            <option value="">Select property</option>
+            @foreach (var property in _properties)
+            {
+                <option value="@property.Id" selected="@(UiState.SelectedPropertyId == property.Id)" @key="property.Id">@property.Name</option>
+            }
+        </select>
+    </div>
+}
+
+@code {
+    private Action? _stateHandler;
+    private List<Community> _properties = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _stateHandler = () => InvokeAsync(ReloadAsync);
+        UiState.OnChange += _stateHandler;
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        try
+        {
+            _properties = (await Access.GetAllowedCommunitiesAsync()).ToList();
+            if (UiState.SelectedPropertyId.HasValue && _properties.All(p => p.Id != UiState.SelectedPropertyId.Value))
+            {
+                UiState.ClearCommunitySelection();
+            }
+        }
+        catch
+        {
+            _properties = new List<Community>();
+        }
+
+        StateHasChanged();
+    }
+
+    private Task OnPropertyChanged(ChangeEventArgs e)
+    {
+        if (Guid.TryParse(e.Value?.ToString(), out var propertyId))
+        {
+            var selected = _properties.FirstOrDefault(p => p.Id == propertyId);
+            if (selected is not null)
+            {
+                UiState.SelectCommunity(propertyId, selected.OperatingMode == SystemOperatingMode.UsHoa ? "US HOA & Condo Mode" : "Housing Association Mode");
+            }
+        }
+        else
+        {
+            UiState.ClearCommunitySelection();
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public void Dispose()
+    {
+        if (_stateHandler is not null)
+        {
+            UiState.OnChange -= _stateHandler;
+        }
+    }
+}

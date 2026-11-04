@@ -1,0 +1,246 @@
+@page "/register-resident"
+@page "/register-resident/{token}"
+@layout Layout.AuthLayout
+@attribute [AllowAnonymous]
+@using CommonGround.Application.Services
+@inject WorkspaceLocalization Loc
+@inject CommonGroundWorkspaceService Workspace
+@implements IDisposable
+
+<PageTitle>Resident Registration — CommonGround</PageTitle>
+
+<div class="cg-auth-heading">
+    <h1>CommonGround Resident Registration</h1>
+    <p>Create your verified Resident identity and receive your permanent Resident Account Number.</p>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(_error))
+{
+    <div role="alert" class="cg-auth-error">@_error</div>
+}
+
+@if (_result is not null && _result.Succeeded)
+{
+    <div class="cg-auth-note" role="status" aria-live="polite" style="border-left: 3px solid var(--color-success); padding: 1rem;">
+        <div style="font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary);">Permanent Resident Account Number</div>
+        <div class="mono" style="font-size: 1.35rem; font-weight: 700; color: var(--accent-primary); margin: 0.25rem 0;">@_result.ResidentAccountNumber</div>
+        <p style="margin: 0.35rem 0; font-size: 0.85rem;">@_result.StatusMessage</p>
+        @if (_result.IsAutoApproved)
+        {
+            <div style="margin-top: 0.75rem;">
+                <a class="cg-btn cg-btn-primary cg-btn-block" href="/login">Sign in to CommonGround</a>
+            </div>
+        }
+        else
+        {
+            <div style="margin-top: 0.75rem; font-size: 0.78rem; color: var(--text-secondary);">
+                Your registration request is queued for Management Firm verification. Save your Resident Account Number (<strong class="mono">@_result.ResidentAccountNumber</strong>) for your records.
+            </div>
+            <div style="margin-top: 0.75rem;">
+                <a class="cg-btn cg-btn-block" href="/login">Return to Sign In</a>
+            </div>
+        }
+    </div>
+}
+else if (_loading)
+{
+    <p role="status" aria-live="polite">Validating registration token...</p>
+}
+else if (_validation is null || !_validation.IsValid)
+{
+    <div class="cg-auth-note" role="status" aria-live="polite">
+        <p>@(_validation?.StatusMessage ?? "Enter your secure CommonGround registration token to proceed.")</p>
+    </div>
+    <form class="cg-form-stack" @onsubmit="OnVerifyTokenAsync" @onsubmit:preventDefault="true">
+        <div>
+            <label for="rr-token">Registration Token</label>
+            <input id="rr-token" @bind="_tokenInput" class="mono" autocomplete="off" placeholder="REG-..." required />
+        </div>
+        <button type="submit" class="cg-btn cg-btn-primary cg-btn-block" disabled="@_isBusy">Verify Registration Link</button>
+    </form>
+    <div class="cg-auth-links">
+        <a href="/login">Already have an account? Sign in</a>
+    </div>
+}
+else
+{
+    <div class="cg-auth-note" role="status" aria-live="polite">
+        <strong>Verified CommonGround Registration Link</strong>
+        <div style="font-size: 0.76rem; color: var(--text-secondary); margin-top: 0.2rem;">
+            Zero-disclosure privacy protection active. Property and unit details are never exposed on public links.
+            @(_validation.ApprovalMode == RegistrationApprovalMode.AutomaticAuthorized
+                ? " Mode A: Automatic authorized activation upon completion."
+                : " Mode B: Reviewed and approved by Management Firm administration.")
+        </div>
+    </div>
+
+    <form class="cg-form-stack" @onsubmit="OnSubmitRegistrationAsync" @onsubmit:preventDefault="true">
+        <div class="cg-grid-2">
+            <div>
+                <label for="rr-first">First Name</label>
+                <input id="rr-first" @bind="_firstName" required autocomplete="given-name" />
+            </div>
+            <div>
+                <label for="rr-last">Last Name</label>
+                <input id="rr-last" @bind="_lastName" required autocomplete="family-name" />
+            </div>
+        </div>
+        <div>
+            <label for="rr-email">Email Address</label>
+            <input id="rr-email" type="email" @bind="_email" required autocomplete="email" />
+        </div>
+        <div class="cg-grid-2">
+            <div>
+                <label for="rr-phone">Phone Number</label>
+                <input id="rr-phone" type="tel" @bind="_phone" autocomplete="tel" placeholder="+48 500 100 200" />
+            </div>
+            <div>
+                <label for="rr-lang">Preferred Language</label>
+                <select id="rr-lang" @bind="_preferredLanguage">
+                    <option value="EN">English (EN)</option>
+                    <option value="PL">Polski (PL)</option>
+                    <option value="DE">Deutsch (DE)</option>
+                    <option value="ES">Español (ES)</option>
+                    <option value="FR">Français (FR)</option>
+                </select>
+            </div>
+        </div>
+        <div>
+            <label for="rr-pass">Account Password (min. 8 characters)</label>
+            <input id="rr-pass" type="password" @bind="_password" required minlength="8" autocomplete="new-password" />
+        </div>
+        <div class="cg-grid-2">
+            <div>
+                <label for="rr-em-name">Emergency Contact Name (Optional)</label>
+                <input id="rr-em-name" @bind="_emergencyName" />
+            </div>
+            <div>
+                <label for="rr-em-phone">Emergency Contact Phone (Optional)</label>
+                <input id="rr-em-phone" @bind="_emergencyPhone" />
+            </div>
+        </div>
+        <div>
+            <label for="rr-notes">Registration Note for Management (Optional)</label>
+            <input id="rr-notes" @bind="_notes" placeholder="Move-in date or reference note" />
+        </div>
+        <button type="submit" class="cg-btn cg-btn-primary cg-btn-block" disabled="@_isBusy">
+            @(_isBusy ? "Submitting Registration..." : "Complete Resident Registration")
+        </button>
+    </form>
+
+    <div class="cg-auth-links">
+        <a href="/login">Already registered? Sign in</a>
+    </div>
+}
+
+@code {
+    [Parameter] public string? Token { get; set; }
+    [SupplyParameterFromQuery(Name = "token")] public string? QueryToken { get; set; }
+
+    private string _tokenInput = string.Empty;
+    private string _effectiveToken = string.Empty;
+    private bool _loading = true;
+    private bool _isBusy;
+    private string _error = string.Empty;
+    private PublicRegistrationTokenValidation? _validation;
+    private PublicResidentRegistrationResult? _result;
+
+    private string _firstName = string.Empty;
+    private string _lastName = string.Empty;
+    private string _email = string.Empty;
+    private string _phone = string.Empty;
+    private string _password = string.Empty;
+    private string _preferredLanguage = "EN";
+    private string _emergencyName = string.Empty;
+    private string _emergencyPhone = string.Empty;
+    private string _notes = string.Empty;
+
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+        _tokenInput = !string.IsNullOrWhiteSpace(Token) ? Token! : (QueryToken ?? string.Empty);
+        _effectiveToken = _tokenInput.Trim();
+        await ValidateTokenNowAsync();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var candidate = !string.IsNullOrWhiteSpace(Token) ? Token! : (QueryToken ?? string.Empty);
+        if (!string.IsNullOrWhiteSpace(candidate) && !string.Equals(candidate.Trim(), _effectiveToken, StringComparison.Ordinal))
+        {
+            _tokenInput = candidate.Trim();
+            _effectiveToken = _tokenInput;
+            await ValidateTokenNowAsync();
+        }
+    }
+
+    private async Task OnVerifyTokenAsync()
+    {
+        _effectiveToken = (_tokenInput ?? string.Empty).Trim();
+        await ValidateTokenNowAsync();
+    }
+
+    private async Task ValidateTokenNowAsync()
+    {
+        _loading = true;
+        _error = string.Empty;
+        try
+        {
+            if (string.IsNullOrWhiteSpace(_effectiveToken))
+            {
+                _validation = null;
+            }
+            else
+            {
+                _validation = await Workspace.ValidateRegistrationTokenMinimalAsync(_effectiveToken);
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            _validation = null;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OnSubmitRegistrationAsync()
+    {
+        _error = string.Empty;
+        _isBusy = true;
+        try
+        {
+            var input = new PublicResidentRegistrationInput(
+                _effectiveToken,
+                _firstName,
+                _lastName,
+                _email,
+                _phone,
+                _password,
+                _preferredLanguage,
+                _emergencyName,
+                _emergencyPhone,
+                _notes);
+            _result = await Workspace.SubmitPublicResidentRegistrationAsync(input);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+    }
+}

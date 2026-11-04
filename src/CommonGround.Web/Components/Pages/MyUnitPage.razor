@@ -1,0 +1,283 @@
+@page "/my-unit"
+@using Microsoft.EntityFrameworkCore
+@using CommonGround.Application.Persistence
+@using CommonGround.Application.Services
+@attribute [Authorize(Policy = "WorkspaceMember")]
+@inject WorkspaceLocalization Loc
+@inject WorkspaceAccessService Access
+@inject IAppDbContextFactory DbFactory
+@inject CommonGroundWorkspaceService Workspace
+@implements IDisposable
+
+<PageTitle>My unit &amp; residency — CommonGround</PageTitle>
+
+<div class="cg-page-header">
+    <div>
+        <h1>My Unit &amp; Community Residency</h1>
+        <p class="cg-page-lead">Resident Account Number, Community Account Number, balance, meter readings, fault reports, voting, community contacts, and announcements.</p>
+    </div>
+</div>
+
+@if (!_loaded)
+{
+    <p role="status" aria-live="polite">Loading.</p>
+}
+else if (_unit is null)
+{
+    <div class="cg-card">
+        <p class="cg-empty-text">No linked unit found for the active membership.</p>
+        @if (_residentDossier is not null)
+        {
+            <p style="font-size: 0.82rem; color: var(--text-secondary); margin-top: 0.35rem;">
+                Your permanent Resident Account Number (<strong class="mono">@_residentDossier.Profile.ResidentAccountNumber</strong>) is active. Historical assignments (<span class="num">@_residentDossier.PastAssignments.Count</span>) remain preserved.
+            </p>
+        }
+    </div>
+}
+else
+{
+    <div class="cg-grid-4">
+        <div class="cg-card">
+            <div class="kpi-label">Resident Account No.</div>
+            <div class="kpi-value mono">@(_residentDossier?.Profile.ResidentAccountNumber ?? "RES-00001001")</div>
+            <div class="kpi-sub">Community <span class="cg-badge mono">@_communityAccountNumber</span></div>
+        </div>
+        <div class="cg-card">
+            <div class="kpi-label">Current balance</div>
+            <div class="kpi-value num">@_unit.CurrentBalance.ToString("N2") @_currency</div>
+            <div class="kpi-sub">Stage <span class="cg-badge">@_unit.ArrearsStage</span></div>
+        </div>
+        <div class="cg-card">
+            <div class="kpi-label">Unit</div>
+            <div class="kpi-value num">@_unit.UnitNumber</div>
+            <div class="kpi-sub">Stack <span class="mono">@_unit.VerticalStackCode</span> · <span class="num">@_unit.FloorAreaM2.ToString("F1") m²</span></div>
+        </div>
+        <div class="cg-card">
+            <div class="kpi-label">Meters</div>
+            <div class="kpi-value num">@_unit.Meters.Count</div>
+            <div class="kpi-sub">Managed by photo or voice reading</div>
+        </div>
+    </div>
+    <div class="cg-grid-2" style="margin-block-start: 0.75rem;">
+        <div class="cg-card">
+            <div class="cg-section-header"><h2>Meter reading</h2></div>
+            <div>
+                <label for="my-meter">Meter</label>
+                <select id="my-meter" value="@_meterId" @onchange="OnSelectMeter">
+                    @foreach (var m in _unit.Meters)
+                    {
+                        <option value="@m.Id" @key="m.Id" selected="@(_meterId == m.Id)">@m.Kind (@m.SerialNumber)</option>
+                    }
+                </select>
+            </div>
+            <div style="margin-block-start: 0.5rem;">
+                <label for="my-reading">Reading value</label>
+                <input id="my-reading" type="number" step="0.001" @bind="_reading" />
+            </div>
+            <div class="cg-toolbar"><button type="button" class="cg-btn cg-btn-primary" disabled="@(_isBusy || _meterId == Guid.Empty)" @onclick="OnSubmitReading">Submit reading</button></div>
+        </div>
+        <div class="cg-card">
+            <div class="cg-section-header"><h2>Report fault</h2></div>
+            <div>
+                <label for="my-fault">Fault description</label>
+                <textarea id="my-fault" rows="3" @bind="_fault"></textarea>
+            </div>
+            <div class="cg-toolbar"><button type="button" class="cg-btn cg-btn-primary" disabled="@(_isBusy || string.IsNullOrWhiteSpace(_fault))" @onclick="OnSubmitFault">Report fault</button></div>
+        </div>
+    </div>
+    <div class="cg-card" style="margin-block-start: 0.75rem;">
+        <div class="cg-section-header"><h2>Active resolutions</h2><span class="cg-badge">@_resolutions.Count open</span></div>
+        <div class="cg-table-wrap"><table class="cg-table"><thead><tr><th>Resolution</th><th>Majority</th><th>Your vote</th><th>Actions</th></tr></thead><tbody>
+        @foreach (var r in _resolutions)
+        {
+            var vote = r.Votes.FirstOrDefault(v => v.UnitId == _unit.Id);
+            <tr @key="r.Id">
+                <td><strong class="mono">@r.Number</strong> <strong>@r.Title</strong></td>
+                <td><span class="cg-badge">@r.MajorityRule</span></td>
+                <td>@(vote is null ? "No vote" : vote.Choice.ToString())</td>
+                <td><div style="display: flex; gap: 0.375rem; flex-wrap: wrap;">
+                    <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => OnVote(r.Id, VoteChoice.For)">Vote for</button>
+                    <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => OnVote(r.Id, VoteChoice.Against)">Vote against</button>
+                    <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => OnVote(r.Id, VoteChoice.Abstain)">Abstain</button>
+                </div></td>
+            </tr>
+        }
+        </tbody></table></div>
+    </div>
+    <div class="cg-grid-2" style="margin-block-start: 0.75rem;">
+        <div class="cg-card">
+            <div class="cg-section-header"><h2>Community contacts (@_communityName · @_communityAccountNumber)</h2><span class="cg-badge">@_contacts.Count contacts</span></div>
+            @foreach (var c in _contacts)
+            {
+                <div @key="c.Id" class="cg-subcard" style="margin-block-end: 0.5rem;">
+                    <div style="display: flex; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap;">
+                        <strong>@c.ContactName</strong>
+                        <span class="cg-badge">@c.Category</span>
+                    </div>
+                    <div style="font-size: 0.78rem; color: var(--text-secondary);">@c.RoleTitle · @c.OfficeHours</div>
+                    <div class="mono" style="font-size: 0.76rem; margin-top: 0.15rem;">@c.Phone · @c.Email</div>
+                </div>
+            }
+        </div>
+        <div class="cg-card">
+            <div class="cg-section-header"><h2>Property announcements</h2><span class="cg-badge">@_announcements.Count items</span></div>
+            @foreach (var a in _announcements)
+            {
+                <div @key="a.Id" class="cg-subcard" style="margin-block-end: 0.5rem;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap;">
+                        <strong>@a.Title</strong>
+                        <span class="cg-badge">@a.Category</span>
+                    </div>
+                    <div style="font-size: 0.78125rem; margin-block-start: 0.25rem;">@a.Body</div>
+                    <div class="mono" style="font-size: 0.72rem; color: var(--color-text-secondary); margin-block-start: 0.2rem;">@a.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm")</div>
+                </div>
+            }
+        </div>
+    </div>
+}
+@if (!string.IsNullOrWhiteSpace(_message))
+{
+    <div role="status" aria-live="polite" class="cg-callout" style="margin-block-start: 0.75rem;">@_message</div>
+}
+
+@code {
+    private Unit? _unit;
+    private ResidentFullDossier? _residentDossier;
+    private Guid _communityId = Guid.Empty;
+    private string _communityName = string.Empty;
+    private string _communityAccountNumber = "COM-00001001";
+    private string _currency = string.Empty;
+    private List<Resolution> _resolutions = new();
+    private List<PropertyAnnouncement> _announcements = new();
+    private IReadOnlyList<CommunityContact> _contacts = [];
+    private Guid _meterId = Guid.Empty;
+    private decimal _reading;
+    private string _fault = string.Empty;
+    private bool _loaded;
+    private bool _isBusy;
+    private string _message = string.Empty;
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+        try
+        {
+            var account = await Access.GetAccountAsync();
+            var linked = await Access.GetLinkedUnitAsync();
+            await using var db = await DbFactory.CreateDbContextAsync();
+            Unit? unit = null;
+            if (!string.IsNullOrWhiteSpace(linked))
+            {
+                var normalized = linked.Trim();
+                unit = await db.Units.AsNoTracking().FirstOrDefaultAsync(u => u.UnitNumber == normalized);
+            }
+            if (unit is null)
+            {
+                var membershipId = await Access.GetActiveMembershipIdAsync();
+                if (membershipId.HasValue)
+                {
+                    var link = await db.MembershipUnitLinks.AsNoTracking()
+                        .Where(l => l.FirmMembershipId == membershipId.Value)
+                        .OrderBy(l => l.UnitId)
+                        .FirstOrDefaultAsync();
+                    if (link is not null)
+                        unit = await db.Units.AsNoTracking().Include(u => u.Meters).FirstOrDefaultAsync(u => u.Id == link.UnitId);
+                }
+            }
+            else
+            {
+                unit = await db.Units.AsNoTracking().Include(u => u.Meters).FirstOrDefaultAsync(u => u.Id == unit.Id);
+            }
+
+            _residentDossier = await Workspace.GetResidentFullDossierByUserAsync(account?.Id, account?.Email, unit?.CommunityId);
+            if (unit is null && _residentDossier?.ActiveAssignments.Count > 0)
+            {
+                var firstActiveUnitId = _residentDossier.ActiveAssignments[0].Assignment.UnitId;
+                unit = await db.Units.AsNoTracking().Include(u => u.Meters).FirstOrDefaultAsync(u => u.Id == firstActiveUnitId);
+            }
+
+            _unit = unit;
+            if (_unit is not null)
+            {
+                _communityId = _unit.CommunityId;
+                var community = await db.Communities.AsNoTracking().FirstOrDefaultAsync(c => c.Id == _communityId);
+                _communityName = community?.Name ?? "Community";
+                _communityAccountNumber = community?.CommunityAccountNumber ?? "COM-00001001";
+                _currency = community?.CurrencyCode ?? string.Empty;
+                _resolutions = await db.Resolutions.AsNoTracking().Include(r => r.Votes).Where(r => r.CommunityId == _communityId).OrderBy(r => r.Number).ToListAsync();
+                _announcements = await db.PropertyAnnouncements.AsNoTracking().Where(a => a.CommunityId == _communityId).OrderByDescending(a => a.IsPinned).ThenByDescending(a => a.CreatedAtUtc).Take(20).ToListAsync();
+                var allContacts = await Workspace.GetCommunityContactsAsync(_communityId);
+                _contacts = allContacts.Where(c => c.IsVisibleToResidents).ToList();
+                var meter = _unit.Meters.FirstOrDefault();
+                if (meter is not null)
+                {
+                    _meterId = meter.Id;
+                    _reading = meter.LastReadingValue;
+                }
+            }
+        }
+        catch (Exception ex) { _message = ex.Message; }
+        finally { _loaded = true; }
+    }
+
+    private Task OnSelectMeter(ChangeEventArgs e)
+    {
+        if (Guid.TryParse(e.Value?.ToString(), out var meterId))
+        {
+            _meterId = meterId;
+            var meter = _unit?.Meters.FirstOrDefault(m => m.Id == meterId);
+            if (meter is not null) _reading = meter.LastReadingValue;
+        }
+        return Task.CompletedTask;
+    }
+
+    private async Task OnSubmitReading()
+    {
+        if (_meterId == Guid.Empty || _communityId == Guid.Empty) return;
+        _isBusy = true;
+        try
+        {
+            var result = await Workspace.SubmitPhotoOrVoiceMeterReadingAsync(_communityId, _meterId, _reading);
+            _message = result.IsAnomaly ? $"Reading recorded. Anomaly: {result.AnomalyReason}" : $"Reading {result.ReadingValue:N3} recorded.";
+        }
+        catch (Exception ex) { _message = ex.Message; }
+        finally { _isBusy = false; }
+    }
+
+    private async Task OnSubmitFault()
+    {
+        if (_unit is null || _communityId == Guid.Empty || string.IsNullOrWhiteSpace(_fault)) return;
+        _isBusy = true;
+        try
+        {
+            var order = await Workspace.SubmitOmnichannelResidentRequestAsync(_communityId, _unit.Id, _fault.Trim(), "EN");
+            _fault = string.Empty;
+            _message = $"Fault reported: {order.Title}.";
+        }
+        catch (Exception ex) { _message = ex.Message; }
+        finally { _isBusy = false; }
+    }
+
+    private async Task OnVote(Guid resolutionId, VoteChoice choice)
+    {
+        if (_unit is null || _communityId == Guid.Empty) return;
+        _isBusy = true;
+        try
+        {
+            await Workspace.CastVoteAsync(_communityId, resolutionId, _unit.Id, choice);
+            await using var db = await DbFactory.CreateDbContextAsync();
+            _resolutions = await db.Resolutions.AsNoTracking().Include(r => r.Votes).Where(r => r.CommunityId == _communityId).OrderBy(r => r.Number).ToListAsync();
+            _message = "Vote recorded.";
+        }
+        catch (Exception ex) { _message = ex.Message; }
+        finally { _isBusy = false; }
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+    }
+}

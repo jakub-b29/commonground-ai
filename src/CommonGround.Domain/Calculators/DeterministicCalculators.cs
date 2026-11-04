@@ -637,3 +637,88 @@ public static partial class DataSecurityAndPrivacyGuard
         }
     }
 }
+
+public static class AccountNumberGenerator
+{
+    public const string CommunityPrefix = "COM-";
+    public const string ResidentPrefix = "RES-";
+    private static long _communityCounter = 1280;
+    private static long _residentCounter = 1280;
+
+    public static string FormatCommunityAccountNumber(long sequence)
+    {
+        if (sequence < 1) sequence = 1;
+        return $"{CommunityPrefix}{sequence:D8}";
+    }
+
+    public static string FormatResidentAccountNumber(long sequence)
+    {
+        if (sequence < 1) sequence = 1;
+        return $"{ResidentPrefix}{sequence:D8}";
+    }
+
+    public static string NewCommunityAccountNumber()
+    {
+        var next = Interlocked.Increment(ref _communityCounter);
+        return FormatCommunityAccountNumber(next);
+    }
+
+    public static string NewResidentAccountNumber()
+    {
+        var next = Interlocked.Increment(ref _residentCounter);
+        return FormatResidentAccountNumber(next);
+    }
+
+    public static string NextCommunityAccountNumber(IEnumerable<string?> existingNumbers)
+    {
+        long max = 1280;
+        foreach (var existing in existingNumbers)
+        {
+            if (TryParseSequence(existing, CommunityPrefix, out var seq) && seq > max)
+            {
+                max = seq;
+            }
+        }
+        var currentCounter = Interlocked.Read(ref _communityCounter);
+        var next = Math.Max(max, currentCounter) + 1;
+        Interlocked.Exchange(ref _communityCounter, next);
+        return FormatCommunityAccountNumber(next);
+    }
+
+    public static string NextResidentAccountNumber(IEnumerable<string?> existingNumbers)
+    {
+        long max = 1280;
+        foreach (var existing in existingNumbers)
+        {
+            if (TryParseSequence(existing, ResidentPrefix, out var seq) && seq > max)
+            {
+                max = seq;
+            }
+        }
+        var currentCounter = Interlocked.Read(ref _residentCounter);
+        var next = Math.Max(max, currentCounter) + 1;
+        Interlocked.Exchange(ref _residentCounter, next);
+        return FormatResidentAccountNumber(next);
+    }
+
+    public static bool IsValidCommunityAccountNumber(string? value)
+        => TryParseSequence(value, CommunityPrefix, out var seq) && seq > 0;
+
+    public static bool IsValidResidentAccountNumber(string? value)
+        => TryParseSequence(value, ResidentPrefix, out var seq) && seq > 0;
+
+    public static bool TryParseSequence(string? value, string prefix, out long sequence)
+    {
+        sequence = 0;
+        if (string.IsNullOrWhiteSpace(value)) return false;
+        var trimmed = value.Trim();
+        if (!trimmed.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return false;
+        var digits = trimmed[prefix.Length..];
+        if (digits.Length < 4 || digits.Length > 12) return false;
+        for (var i = 0; i < digits.Length; i++)
+        {
+            if (!char.IsAsciiDigit(digits[i])) return false;
+        }
+        return long.TryParse(digits, System.Globalization.CultureInfo.InvariantCulture, out sequence) && sequence > 0;
+    }
+}

@@ -64,7 +64,7 @@
         try
         {
             _account = await Access.GetAccountAsync();
-            _role = await Access.GetRoleAsync();
+            _role = await Access.GetRoleAsync() ?? WorkspaceSecurityRole.Resident;
             if (_account is not null)
             {
                 _fullName = _account.FullName;

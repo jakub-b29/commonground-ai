@@ -1,0 +1,134 @@
+@page "/properties/{id:guid}/team"
+@attribute [Authorize(Policy = "WorkspaceMember")]
+@using Microsoft.EntityFrameworkCore
+@using CommonGround.Application.Persistence
+@inject WorkspaceLocalization Loc
+@inject WorkspaceAccessService Access
+@inject IAppDbContextFactory DbFactory
+@implements IDisposable
+
+<PageTitle>Property team — CommonGround</PageTitle>
+
+<PageHeader Category="Community Roster & Access"
+            ContextCode="@($"{_rows.Count} members")"
+            Title="Property team & assigned members"
+            Subtitle="Assigned property managers, accounting auditors, maintenance dispatchers, contractors, and verified unit residents.">
+    <Actions>
+        <a class="cg-btn cg-btn-sm cg-btn-primary" href="/admin/residents">Residents &amp; Registrations</a>
+        <a class="cg-btn cg-btn-sm" href="@($"/properties/{Id}/units")">Units &amp; Occupancy</a>
+        <a class="cg-btn cg-btn-sm" href="/admin/members">Manage members &amp; invitations</a>
+    </Actions>
+</PageHeader>
+
+<RequirePropertyAccess PropertyId="Id">
+    @if (!_loaded)
+    {
+        <p role="status" aria-live="polite">Loading.</p>
+    }
+    else
+    {
+        <div class="bento-card">
+            <div class="bento-card-header">
+                <div class="cg-panel-title">
+                    <span>Assigned members</span>
+                    <span class="cg-badge cg-badge-info">@_rows.Count members</span>
+                </div>
+            </div>
+            <div class="bento-card-body" style="padding: 0;">
+                <div class="cg-table-wrap">
+                    <table class="cg-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Email</th>
+                                <th>Role</th>
+                                <th>Linked unit</th>
+                                <th>Primary manager</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in _rows)
+                            {
+                                <tr @key="row.MembershipId">
+                                    <td><strong>@row.FullName</strong></td>
+                                    <td class="mono">@row.Email</td>
+                                    <td><span class="cg-badge cg-badge-neutral">@row.Role</span></td>
+                                    <td class="mono">@(string.IsNullOrWhiteSpace(row.UnitNumber) ? "—" : row.UnitNumber)</td>
+                                    <td>
+                                        @if (row.IsPrimaryManager)
+                                        {
+                                            <span class="cg-badge cg-badge-ok">Primary manager</span>
+                                        }
+                                        else
+                                        {
+                                            <span style="color: var(--text-muted);">No</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    }
+    @if (!string.IsNullOrWhiteSpace(_message))
+    {
+        <div role="status" aria-live="polite" class="cg-callout" style="margin-block-start: 0.75rem;">@_message</div>
+    }
+</RequirePropertyAccess>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    private List<TeamRow> _rows = new();
+    private bool _loaded;
+    private string _message = string.Empty;
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var accesses = await db.MembershipPropertyAccesses.AsNoTracking()
+                .Where(a => a.CommunityId == Id)
+                .ToListAsync();
+            var membershipIds = accesses.Select(a => a.FirmMembershipId).Distinct().ToList();
+            if (membershipIds.Count > 0)
+            {
+                var memberships = await db.FirmMemberships.AsNoTracking()
+                    .Where(m => membershipIds.Contains(m.Id))
+                    .ToListAsync();
+                var users = await db.Users.AsNoTracking()
+                    .Where(u => memberships.Select(m => m.UserId).Distinct().Contains(u.Id))
+                    .ToListAsync();
+                var links = await db.MembershipUnitLinks.AsNoTracking()
+                    .Where(l => l.CommunityId == Id && membershipIds.Contains(l.FirmMembershipId))
+                    .ToListAsync();
+                var units = await db.Units.AsNoTracking()
+                    .Where(u => u.CommunityId == Id)
+                    .ToListAsync();
+                _rows = (from m in memberships
+                         join u in users on m.UserId equals u.Id into joined
+                         from user in joined.DefaultIfEmpty()
+                         let access = accesses.FirstOrDefault(a => a.FirmMembershipId == m.Id)
+                         let link = links.FirstOrDefault(l => l.FirmMembershipId == m.Id)
+                         let unit = link is null ? null : units.FirstOrDefault(x => x.Id == link.UnitId)
+                         orderby m.Role.ToString(), user?.FullName
+                         select new TeamRow(m.Id, user?.FullName ?? "Member", user?.Email ?? string.Empty, m.Role.ToString(), unit?.UnitNumber ?? string.Empty, access?.IsPrimaryManager == true)).ToList();
+            }
+        }
+        catch (Exception ex) { _message = ex.Message; }
+        finally { _loaded = true; }
+    }
+
+    private sealed record TeamRow(Guid MembershipId, string FullName, string Email, string Role, string UnitNumber, bool IsPrimaryManager);
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+    }
+}

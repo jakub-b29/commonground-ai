@@ -1,0 +1,183 @@
+@page "/admin/audit"
+@using CommonGround.Application.Persistence
+@using Microsoft.EntityFrameworkCore
+@inject WorkspaceAccessService Access
+@inject IAppDbContextFactory DbFactory
+@inject NavigationManager Nav
+
+<PageTitle>Security audit trail — CommonGround</PageTitle>
+
+<PageHeader Category="Firm Administration · Governance & Security"
+            Title="Security audit trail & execution log"
+            Subtitle="Tamper-evident SHA-256 hash-chained security events and Meta AI service execution telemetry across the firm portfolio.">
+    <Badges>
+        <StatusBadge Text="SHA-256 Verified Chain" Variant="ok" />
+        <AIBadge Label="APM Telemetry" Model="Meta Models" />
+    </Badges>
+    <Actions>
+        <a class="cg-btn" href="/admin">Back to overview</a>
+    </Actions>
+</PageHeader>
+
+@if (!_loaded)
+{
+    <p role="status" aria-live="polite">Loading audit trail.</p>
+}
+else if (!_isAuthorized)
+{
+    <div class="cg-card"><p class="cg-empty-text">Access denied. Firm manager permission is required.</p></div>
+}
+else
+{
+    <div class="bento-card" style="margin-bottom: 1rem;">
+        <div class="bento-card-header">
+            <div class="cg-panel-title">
+                <span>SHA-256 security audit events</span>
+                <span class="cg-badge cg-badge-ok">@_events.Count shown</span>
+            </div>
+        </div>
+        <div class="bento-card-body" style="padding: 0;">
+            <div class="cg-table-wrap" style="max-height: 420px; overflow-y: auto;">
+                <table class="cg-table">
+                    <thead>
+                        <tr>
+                            <th>Occurred (UTC)</th>
+                            <th>Category</th>
+                            <th>Severity</th>
+                            <th>Summary</th>
+                            <th>Chain hash</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (_events.Count == 0)
+                        {
+                            <tr><td colspan="5" style="color: var(--text-secondary);">No audit events recorded yet.</td></tr>
+                        }
+                        @foreach (var audit in _events)
+                        {
+                            <tr @key="audit.Id">
+                                <td class="mono num">@audit.OccurredAtUtc.ToString("yyyy-MM-dd HH:mm")</td>
+                                <td><span class="cg-badge cg-badge-neutral">@audit.ActionCategory</span></td>
+                                <td><span class="cg-badge @(audit.Severity.Contains("High", StringComparison.OrdinalIgnoreCase) || audit.Severity.Contains("Crit", StringComparison.OrdinalIgnoreCase) ? "cg-badge-err" : "cg-badge-info")">@audit.Severity</span></td>
+                                <td style="font-size: 0.78rem;">@audit.Summary<div style="font-size: 0.72rem; color: var(--text-secondary);">@audit.ResourceDescriptor</div></td>
+                                <td class="mono num" style="font-size: 0.72rem; color: var(--accent-ai-light);">@ShortHash(audit.EntrySha256Hash)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="bento-card bento-card-ai">
+        <div class="bento-card-header">
+            <div class="cg-panel-title">
+                <span class="ai-dot" aria-hidden="true"></span>
+                <span>Service execution log</span>
+                <span class="cg-badge cg-badge-ai">@_runs.Count runs</span>
+            </div>
+        </div>
+        <div class="bento-card-body" style="padding: 0;">
+            <div class="cg-table-wrap" style="max-height: 420px; overflow-y: auto;">
+                <table class="cg-table">
+                    <thead>
+                        <tr>
+                            <th>Started (UTC)</th>
+                            <th>Agent</th>
+                            <th>Model provenance</th>
+                            <th class="num">Latency</th>
+                            <th class="num">Tokens</th>
+                            <th>Trigger</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (_runs.Count == 0)
+                        {
+                            <tr><td colspan="6" style="color: var(--text-secondary);">No agent runs recorded yet.</td></tr>
+                        }
+                        @foreach (var run in _runs)
+                        {
+                            <tr @key="run.Id">
+                                <td class="mono num">@run.StartedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                                <td><strong>@run.AgentName</strong></td>
+                                <td><AIBadge Label="Meta AI" Model="@run.ModelName" ShowPulseDot="false" /></td>
+                                <td class="num">@run.TotalLatencyMs.ToString("N0") ms</td>
+                                <td class="num">@run.TotalTokens.ToString("N0")</td>
+                                <td style="font-size: 0.78rem;">@run.TriggerSummary</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(_message))
+        {
+            <div class="bento-card-footer">
+                <div role="status" aria-live="polite" class="cg-callout" style="width: 100%;">@_message</div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private bool _loaded;
+    private bool _isAuthorized;
+    private List<SecurityAuditEvent> _events = new();
+    private List<AgentRun> _runs = new();
+    private string _message = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var firmId = await Access.GetFirmIdAsync();
+            if (firmId is null)
+            {
+                _loaded = true;
+                return;
+            }
+            var role = await Access.GetRoleAsync();
+            var hasAdmin = role == WorkspaceSecurityRole.FirmManager
+                || await Access.HasPermissionAsync(WorkspacePermissionFlags.FirmFullAdministration);
+            if (!hasAdmin)
+            {
+                Nav.NavigateTo("/no-access", forceLoad: false);
+                return;
+            }
+            _isAuthorized = true;
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var propertyIds = await db.Communities.AsNoTracking()
+                .Where(c => c.ManagementFirmId == firmId.Value)
+                .Select(c => c.Id)
+                .ToListAsync();
+            _events = await db.SecurityAuditEvents.AsNoTracking()
+                .Where(e => propertyIds.Contains(e.CommunityId))
+                .OrderByDescending(e => e.OccurredAtUtc)
+                .Take(200)
+                .ToListAsync();
+            _runs = await db.AgentRuns.AsNoTracking()
+                .Where(r => propertyIds.Contains(r.CommunityId))
+                .OrderByDescending(r => r.StartedAt)
+                .Take(100)
+                .ToListAsync();
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+        }
+        finally
+        {
+            _loaded = true;
+        }
+    }
+
+    private static string ShortHash(string hash)
+    {
+        if (string.IsNullOrWhiteSpace(hash))
+        {
+            return string.Empty;
+        }
+        var trimmed = hash.Trim();
+        return trimmed.Length <= 16 ? trimmed : trimmed.Substring(0, 16);
+    }
+}

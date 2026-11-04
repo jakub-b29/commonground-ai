@@ -38,6 +38,30 @@ public sealed class WorkOrder : ICommunityScoped
     public bool IsSamVerified { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public List<VendorQuote> Quotes { get; set; } = [];
+    public List<WorkOrderMessage> Messages { get; set; } = [];
+}
+
+public sealed class WorkOrderMessage
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid WorkOrderId { get; set; }
+    public Guid? SenderMembershipId { get; set; }
+    public string Body { get; set; } = string.Empty;
+    public string? AttachmentDataUrl { get; set; }
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+    public WorkOrder? WorkOrder { get; set; }
+}
+
+public sealed class PropertyAnnouncement : ICommunityScoped
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid CommunityId { get; set; }
+    public Guid? AuthorMembershipId { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public string Body { get; set; } = string.Empty;
+    public PropertyAnnouncementCategory Category { get; set; } = PropertyAnnouncementCategory.General;
+    public bool IsPinned { get; set; }
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 }
 
 public sealed class VendorQuote
@@ -274,6 +298,7 @@ public sealed class SecurityAuditEvent : ICommunityScoped
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid CommunityId { get; set; }
     public WorkspaceSecurityRole ActorRole { get; set; } = WorkspaceSecurityRole.PropertyManager;
+    public Guid? ActorMembershipId { get; set; }
     public string ActionCategory { get; set; } = string.Empty;
     public string Severity { get; set; } = "Info";
     public string ResourceDescriptor { get; set; } = string.Empty;
@@ -283,10 +308,11 @@ public sealed class SecurityAuditEvent : ICommunityScoped
     public DateTime OccurredAtUtc { get; set; } = DateTime.UtcNow;
 }
 
-public sealed class WorkspaceUserAccount : ICommunityScoped
+// Legacy compat for persistence migration wave. Use User and FirmMembership instead.
+public sealed class WorkspaceUserAccount
 {
     public Guid Id { get; set; } = Guid.NewGuid();
-    public Guid CommunityId { get; set; }
+    public Guid? CommunityId { get; set; }
     public Guid? ManagementFirmId { get; set; }
     public string FirmGroupCode { get; set; } = "CG-FIRM-2026";
     public string FullName { get; set; } = string.Empty;
@@ -304,37 +330,32 @@ public sealed class WorkspaceUserAccount : ICommunityScoped
     public bool GrantedByPropertyManager { get; set; } = true;
     public bool MfaVerified { get; set; } = true;
     public DateTime LastLoginAtUtc { get; set; } = DateTime.UtcNow;
+    public WorkspaceAccountKind AccountKind { get; set; } = WorkspaceAccountKind.RegularAccount;
+    public bool EmailConfirmed { get; set; } = true;
+    public string? EmailConfirmationTokenHash { get; set; }
+    public DateTime? AcceptedAtUtc { get; set; }
+    public List<WorkspaceAccountMembership> Memberships { get; set; } = [];
 }
 
-public sealed class FirmManagerGroup
+// Legacy compat for persistence migration wave. Use FirmMembership instead.
+public sealed class WorkspaceAccountMembership
 {
     public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid UserAccountId { get; set; }
     public Guid ManagementFirmId { get; set; }
-    public string Code { get; set; } = string.Empty;
-    public string Name { get; set; } = string.Empty;
-    public string Topic { get; set; } = string.Empty;
+    public string AllowedCommunityIdsCsv { get; set; } = string.Empty;
+    public WorkspaceSecurityRole Role { get; set; } = WorkspaceSecurityRole.Resident;
+    public WorkspaceMembershipStatus ApprovalStatus { get; set; } = WorkspaceMembershipStatus.PendingApproval;
+    public WorkspacePermissionFlags GrantedPermissions { get; set; }
+    public string LinkedUnitNumbersCsv { get; set; } = string.Empty;
+    public string? ContractorCompanyOrTrade { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
-    public List<FirmManagerMessage> Messages { get; set; } = [];
+    public DateTime? DecidedAtUtc { get; set; }
+    public WorkspaceUserAccount? UserAccount { get; set; }
+    public ManagementFirm? ManagementFirm { get; set; }
 }
 
-public sealed class FirmManagerMessage
-{
-    public Guid Id { get; set; } = Guid.NewGuid();
-    public Guid ManagementFirmId { get; set; }
-    public Guid FirmManagerGroupId { get; set; }
-    public string GroupName { get; set; } = string.Empty;
-    public Guid? SenderUserId { get; set; }
-    public string SenderName { get; set; } = string.Empty;
-    public WorkspaceSecurityRole SenderRole { get; set; } = WorkspaceSecurityRole.FirmManager;
-    public string SenderEmail { get; set; } = string.Empty;
-    public string SenderPhone { get; set; } = string.Empty;
-    public string PropertyScopeName { get; set; } = "All Firm Properties";
-    public string Subject { get; set; } = string.Empty;
-    public string Body { get; set; } = string.Empty;
-    public bool IsPriorityNotice { get; set; }
-    public DateTime SentAtUtc { get; set; } = DateTime.UtcNow;
-}
-
+// Legacy compat for persistence migration wave. Use Invitation instead.
 public sealed class WorkspaceInvitation
 {
     public Guid Id { get; set; } = Guid.NewGuid();
@@ -349,6 +370,9 @@ public sealed class WorkspaceInvitation
     public InvitationAssignmentMode AssignmentMode { get; set; } = InvitationAssignmentMode.AutoAssignSpecificProperty;
     public Guid? TargetCommunityId { get; set; }
     public string TargetCommunityName { get; set; } = string.Empty;
+    public string TargetCommunityIdsCsv { get; set; } = string.Empty;
+    public WorkspacePermissionFlags PreAssignedPermissions { get; set; }
+    public bool RequiresManagerApproval { get; set; } = true;
     public string? TargetUnitNumber { get; set; }
     public string? ContractorCompanyOrTrade { get; set; }
     public WorkspaceInvitationStatus Status { get; set; } = WorkspaceInvitationStatus.Pending;
@@ -422,5 +446,34 @@ public sealed class ResidentDirectMessage : ICommunityScoped
     public string Subject { get; set; } = string.Empty;
     public string Body { get; set; } = string.Empty;
     public bool IsReadByRecipient { get; set; }
+    public DateTime SentAtUtc { get; set; } = DateTime.UtcNow;
+}
+
+public sealed class FirmManagerGroup
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid ManagementFirmId { get; set; }
+    public string Code { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public string Topic { get; set; } = string.Empty;
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+    public List<FirmManagerMessage> Messages { get; set; } = [];
+}
+
+public sealed class FirmManagerMessage
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid ManagementFirmId { get; set; }
+    public Guid FirmManagerGroupId { get; set; }
+    public string GroupName { get; set; } = string.Empty;
+    public Guid? SenderUserId { get; set; }
+    public string SenderName { get; set; } = string.Empty;
+    public WorkspaceSecurityRole SenderRole { get; set; } = WorkspaceSecurityRole.FirmManager;
+    public string SenderEmail { get; set; } = string.Empty;
+    public string SenderPhone { get; set; } = string.Empty;
+    public string PropertyScopeName { get; set; } = "All Firm Properties";
+    public string Subject { get; set; } = string.Empty;
+    public string Body { get; set; } = string.Empty;
+    public bool IsPriorityNotice { get; set; }
     public DateTime SentAtUtc { get; set; } = DateTime.UtcNow;
 }

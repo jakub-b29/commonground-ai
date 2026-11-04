@@ -1,114 +1,147 @@
 @inject WorkspaceUiState UiState
 @inject WorkspaceLocalization Loc
-@inject WorkspaceAccessService Access
+@inject NavigationManager Nav
 @implements IDisposable
 
 <AuthorizeView>
-    <Authorized Context="auth">
-        <header class="cg-topbar" role="banner">
-            <div class="cg-topbar-group">
-                <span class="cg-badge" title="@_firmName">@_firmName</span>
-                <div class="cg-topbar-field">
-                    <label for="community-select">@Loc.T("form.community")</label>
-                    <select id="community-select" value="@UiState.SelectedCommunityId" @onchange="OnCommunityChanged">
-                        <option value="">@Loc.T("firm.selectProperty")</option>
-                        @foreach (var c in _communities)
-                        {
-                            <option value="@c.Id" selected="@(UiState.SelectedCommunityId == c.Id)">@c.Name</option>
-                        }
-                    </select>
-                </div>
+    <Authorized>
+        <header class="cg-top-header" role="banner">
+            <div class="cg-header-left">
+                <nav class="cg-breadcrumb-trail" aria-label="Breadcrumb">
+                    <span class="mono" style="color: var(--accent-ai-light); font-weight: 600;">CommonGround</span>
+                    <span class="cg-breadcrumb-sep">/</span>
+                    <span class="cg-breadcrumb-current">@GetCurrentRouteLabel()</span>
+                </nav>
+                <span style="width: 1px; height: 18px; background: var(--border-default); margin-inline: 0.25rem;" aria-hidden="true"></span>
+                <FirmSwitcher />
+                <PropertySwitcher />
             </div>
-            <div class="cg-topbar-group">
+            <div class="cg-header-right">
+                <ThemeSwitcher Compact="false" />
                 <div class="cg-topbar-field">
-                    <label for="lang-select">@Loc.T("form.language")</label>
-                    <select id="lang-select" value="@Loc.CurrentLanguage" @onchange="OnLanguageChanged">
+                    <label for="lang-select" class="visually-hidden">Language</label>
+                    <select id="lang-select" value="@Loc.CurrentLanguage" @onchange="OnLanguageChanged" disabled="@_isBusy" title="Interface language" style="min-width: 64px;">
                         @foreach (var lang in Loc.SupportedLanguages)
                         {
-                            <option value="@lang" selected="@(Loc.CurrentLanguage == lang)">@lang.ToUpperInvariant()</option>
+                            <option value="@lang" selected="@(Loc.CurrentLanguage == lang)" @key="lang">@lang.ToUpperInvariant()</option>
                         }
                     </select>
                 </div>
                 <div class="cg-topbar-actions">
-                    <button type="button" class="cg-btn" @onclick="OnToggleQuery" title="@Loc.T("action.portfolioQuery")">@Loc.T("action.portfolioQuery")</button>
-                    <button type="button" class="cg-btn" @onclick="OnToggleEmergency" title="@Loc.T("shell.emergencyContacts")">@Loc.T("shell.emergencyContacts")</button>
-                    <span class="cg-badge cg-badge-ok">@auth.User.Identity?.Name · @WorkspaceClaims.GetRole(auth.User)</span>
+                    <button type="button" class="cg-btn cg-btn-ai cg-btn-sm" disabled="@_isBusy" @onclick="OnToggleQuery" title="Portfolio query (muse-spark-1.3)">
+                        <span class="ai-dot" aria-hidden="true"></span>
+                        <span>Portfolio query</span>
+                    </button>
+                    <button type="button" class="cg-btn cg-btn-sm @(UiState.IsEmergencyDrawerOpen ? "cg-btn-danger" : "")" disabled="@_isBusy" @onclick="OnToggleEmergency" title="Emergency contacts">
+                        <span>Emergency contacts</span>
+                    </button>
                     <form method="post" action="/auth/logout" class="cg-inline-form">
-                        <button type="submit" class="cg-btn">@Loc.T("nav.signOut")</button>
+                        <button type="submit" class="cg-btn cg-btn-sm cg-btn-ghost">Sign out</button>
                     </form>
                 </div>
             </div>
         </header>
-        <div class="cg-topbar-sub">
-            <span class="cg-badge">@UiState.CurrentTerminology</span>
-        </div>
     </Authorized>
 </AuthorizeView>
 
 @code {
     private Action? _stateHandler;
     private Action? _locHandler;
-    private List<Community> _communities = new();
-    private string _firmName = string.Empty;
+    private EventHandler<Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs>? _navHandler;
+    private bool _isBusy;
 
     protected override async Task OnInitializedAsync()
     {
-        _stateHandler = () => InvokeAsync(ReloadAsync);
+        _stateHandler = () => InvokeAsync(StateHasChanged);
         UiState.OnChange += _stateHandler;
         _locHandler = () => InvokeAsync(StateHasChanged);
         Loc.OnChange += _locHandler;
+        _navHandler = (_, _) => InvokeAsync(StateHasChanged);
+        Nav.LocationChanged += _navHandler;
         await Loc.EnsureLoadedAsync();
-        await ReloadAsync();
     }
 
-    private async Task ReloadAsync()
+    private string GetCurrentRouteLabel()
     {
-        try
+        var relative = Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0].Trim('/');
+        if (string.IsNullOrEmpty(relative)) return "Workspace Hub";
+        if (relative.Equals("admin", StringComparison.OrdinalIgnoreCase)) return "Firm Administration · Overview";
+        if (relative.Equals("admin/members", StringComparison.OrdinalIgnoreCase)) return "Firm Administration · Members & Approvals";
+        if (relative.Equals("admin/properties", StringComparison.OrdinalIgnoreCase)) return "Firm Administration · Properties Registry";
+        if (relative.Equals("admin/properties/new", StringComparison.OrdinalIgnoreCase)) return "Firm Administration · New Property Wizard";
+        if (relative.Equals("admin/contacts", StringComparison.OrdinalIgnoreCase)) return "Firm Administration · Contacts";
+        if (relative.Equals("admin/audit", StringComparison.OrdinalIgnoreCase)) return "Firm Administration · Security Audit Trail";
+        if (relative.StartsWith("properties/", StringComparison.OrdinalIgnoreCase))
         {
-            var firm = await Access.GetFirmAsync();
-            _firmName = firm?.Name ?? string.Empty;
-            _communities = (await Access.GetAllowedCommunitiesAsync()).ToList();
-            if (UiState.SelectedCommunityId is null && _communities.Count > 0)
+            var segments = relative.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            var section = segments.Length >= 3 ? segments[2] : "overview";
+            return section.ToLowerInvariant() switch
             {
-                var first = _communities[0];
-                UiState.SelectCommunity(first.Id, first.OperatingMode == SystemOperatingMode.UsHoa ? "US HOA & Condo Mode" : "Housing Association Mode");
-            }
-            else if (UiState.SelectedCommunityId.HasValue && !_communities.Any(c => c.Id == UiState.SelectedCommunityId.Value))
-            {
-                UiState.SelectedCommunityId = null;
-            }
+                "overview" => "Property Workspace · Overview",
+                "units" => "Property Workspace · Units & Riser Matrix",
+                "infrastructure" => "Property Workspace · Infrastructure & Permits",
+                "maintenance" => "Property Workspace · Work Orders & SAM 3.1",
+                "financials" => "Property Workspace · Accounting & Utilities",
+                "governance" => "Property Workspace · Governance & Voting",
+                "team" => "Property Workspace · Community Team",
+                "settings" => "Property Workspace · Property Settings",
+                _ => "Property Workspace"
+            };
         }
-        catch
+        return relative.ToLowerInvariant() switch
         {
-        }
-        StateHasChanged();
-    }
-
-    private Task OnCommunityChanged(ChangeEventArgs e)
-    {
-        if (Guid.TryParse(e.Value?.ToString(), out var id))
-        {
-            var selected = _communities.FirstOrDefault(c => c.Id == id);
-            if (selected is not null)
-            {
-                UiState.SelectCommunity(id, selected.OperatingMode == SystemOperatingMode.UsHoa ? "US HOA & Condo Mode" : "Housing Association Mode");
-            }
-        }
-        return Task.CompletedTask;
+            "my-unit" => "Personal · My Unit Dossier",
+            "account" => "Personal · Account & Profile",
+            "pending" => "Personal · Pending Membership Status",
+            "choose-membership" => "Personal · Switch Membership",
+            _ => "Workspace"
+        };
     }
 
     private async Task OnLanguageChanged(ChangeEventArgs e)
     {
-        await Loc.SetLanguageAsync(e.Value?.ToString() ?? "en");
-        UiState.NotifyChanged();
+        if (_isBusy)
+        {
+            return;
+        }
+
+        _isBusy = true;
+        try
+        {
+            await Loc.SetLanguageAsync(e.Value?.ToString() ?? "en");
+            UiState.NotifyChanged();
+        }
+        finally
+        {
+            _isBusy = false;
+        }
     }
 
-    private void OnToggleQuery() => UiState.TogglePortfolioQuery();
-    private void OnToggleEmergency() => UiState.ToggleEmergencyDrawer();
+    private void OnToggleQuery()
+    {
+        UiState.TogglePortfolioQuery();
+    }
+
+    private void OnToggleEmergency()
+    {
+        UiState.ToggleEmergencyDrawer();
+    }
 
     public void Dispose()
     {
-        if (_stateHandler is not null) UiState.OnChange -= _stateHandler;
-        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+        if (_stateHandler is not null)
+        {
+            UiState.OnChange -= _stateHandler;
+        }
+
+        if (_locHandler is not null)
+        {
+            Loc.OnChange -= _locHandler;
+        }
+
+        if (_navHandler is not null)
+        {
+            Nav.LocationChanged -= _navHandler;
+        }
     }
 }

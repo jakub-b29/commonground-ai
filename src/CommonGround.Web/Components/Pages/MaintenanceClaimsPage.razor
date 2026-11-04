@@ -1,37 +1,17 @@
 @page "/maintenance/claims"
 @attribute [Authorize(Policy = "ManagersOnly")]
-@using CommonGround.Web.Components.Shared.Maintenance
-@inject WorkspaceLocalization Loc
-@implements IDisposable
+@inject NavigationManager Nav
+@inject WorkspaceAccessService Access
 
-<PageTitle>@Loc.T("panel.insurance") - CommonGround</PageTitle>
+<PageTitle>Moved - CommonGround</PageTitle>
 
-<div class="cg-page-header">
-    <div>
-        <h1>@Loc.T("panel.insurance")</h1>
-        <p class="cg-page-lead">@Loc.T("page.walkthroughLead")</p>
-    </div>
-    <a class="cg-btn" href="/maintenance/walkthroughs">@Loc.T("panel.walkthrough")</a>
-</div>
-
-<ScopedCommunityPage>
-    <ChildContent>
-        <InsuranceClaimDossierPanel WorkOrders="context.Community.WorkOrders" CommunityId="context.Community.Id" />
-    </ChildContent>
-</ScopedCommunityPage>
+<p role="status" aria-live="polite">Maintenance has moved to the property workspace. Redirecting.</p>
 
 @code {
-    private Action? _locHandler;
-
     protected override async Task OnInitializedAsync()
     {
-        _locHandler = () => InvokeAsync(StateHasChanged);
-        Loc.OnChange += _locHandler;
-        await Loc.EnsureLoadedAsync();
-    }
-
-    public void Dispose()
-    {
-        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+        var communities = await Access.GetAllowedCommunitiesAsync();
+        var first = communities.FirstOrDefault();
+        Nav.NavigateTo(first is null ? "/admin" : $"/properties/{first.Id}/maintenance", forceLoad: false);
     }
 }

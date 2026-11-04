@@ -2,46 +2,53 @@
 @inject WorkspaceLocalization Loc
 @implements IDisposable
 
-<div class="cg-card">
-    <div class="cg-section-header">
-        <h2>@Loc.T("panel.utilitySources")</h2>
-        <span class="cg-badge">@Sources.Count @Loc.T("utility.providersMonitored")</span>
+<div class="bento-card" style="height: 100%;">
+    <div class="bento-card-header">
+        <div>
+            <div class="cg-panel-title">
+                <span>@Loc.T("panel.utilitySources")</span>
+                <span class="cg-badge cg-badge-info">@Sources.Count @Loc.T("utility.providersMonitored")</span>
+            </div>
+            <div style="font-size: 0.74rem; color: var(--text-secondary); margin-top: 0.15rem;">Live tariff feeds, municipal outage bulletins, and 24/7 dispatch endpoints</div>
+        </div>
+        <div style="display: flex; gap: 0.4rem; flex-wrap: wrap;">
+            <button type="button" class="cg-btn cg-btn-sm cg-btn-primary" @onclick="OnScanNow">@Loc.T("action.scanNow")</button>
+            <button type="button" class="cg-btn cg-btn-sm" @onclick="OnRefreshSources">@Loc.T("action.refreshSources")</button>
+        </div>
     </div>
-    <div class="cg-table-wrap">
-        <table class="cg-table">
-            <thead>
-                <tr>
-                    <th>@Loc.T("table.operator")</th>
-                    <th>@Loc.T("table.links")</th>
-                    <th class="num">@Loc.T("table.tariff")</th>
-                    <th>@Loc.T("table.dispatch")</th>
-                    <th>@Loc.T("table.status")</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var src in Sources)
-                {
-                    <tr @key="src.Id">
-                        <td>
-                            <strong>@src.ProviderName</strong>
-                            <div style="font-size: 0.72rem; color: var(--color-text-secondary);">@src.UtilityKind</div>
-                        </td>
-                        <td>
-                            <a href="@src.OutageBulletinUrl" target="_blank" rel="noopener">@Loc.T("utility.bulletin")</a>
-                            <span> · </span>
-                            <a href="@src.LiveFaultMapUrl" target="_blank" rel="noopener">@Loc.T("utility.faultMap")</a>
-                        </td>
-                        <td class="num">@src.CurrentUnitTariff.ToString("N2") @src.TariffUnit</td>
-                        <td class="mono">@src.EmergencyPhone</td>
-                        <td><span class="cg-badge cg-badge-ok">@src.HealthStatus</span></td>
+    <div class="bento-card-body" style="padding: 0;">
+        <div class="cg-table-wrap">
+            <table class="cg-table">
+                <thead>
+                    <tr>
+                        <th>@Loc.T("table.operator")</th>
+                        <th>@Loc.T("table.links")</th>
+                        <th class="num">@Loc.T("table.tariff")</th>
+                        <th>@Loc.T("table.dispatch")</th>
+                        <th>@Loc.T("table.status")</th>
                     </tr>
-                }
-            </tbody>
-        </table>
-    </div>
-    <div class="cg-toolbar">
-        <button type="button" class="cg-btn cg-btn-primary" @onclick="OnScanNow">@Loc.T("action.scanNow")</button>
-        <button type="button" class="cg-btn" @onclick="OnRefreshSources">@Loc.T("action.refreshSources")</button>
+                </thead>
+                <tbody>
+                    @foreach (var src in Sources)
+                    {
+                        <tr @key="src.Id">
+                            <td>
+                                <strong>@src.ProviderName</strong>
+                                <div style="font-size: 0.72rem; color: var(--text-secondary);">@src.UtilityKind</div>
+                            </td>
+                            <td>
+                                <a href="@src.OutageBulletinUrl" target="_blank" rel="noopener">@Loc.T("utility.bulletin")</a>
+                                <span style="color: var(--text-muted);"> · </span>
+                                <a href="@src.LiveFaultMapUrl" target="_blank" rel="noopener">@Loc.T("utility.faultMap")</a>
+                            </td>
+                            <td class="num">@src.CurrentUnitTariff.ToString("N2") @src.TariffUnit</td>
+                            <td class="mono">@src.EmergencyPhone</td>
+                            <td><span class="cg-badge cg-badge-ok">@src.HealthStatus</span></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
 

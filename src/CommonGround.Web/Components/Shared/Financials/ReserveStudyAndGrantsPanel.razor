@@ -6,15 +6,38 @@
 <div class="cg-card">
     <div class="cg-section-header">
         <h2>@Loc.T("panel.reserve")</h2>
-        <button type="button" class="cg-btn cg-btn-primary" @onclick="OnProject">@Loc.T("action.projectReserve")</button>
+        <button type="button" class="cg-btn cg-btn-sm cg-btn-primary" @onclick="OnProject">@Loc.T("action.projectReserve")</button>
     </div>
     @if (_result is not null)
     {
-        <div class="cg-callout" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;">
+        var maxBalance = _result.Years.Count > 0
+            ? Math.Max(1m, _result.Years.Max(y => Math.Max(Math.Abs(y.EndingBalance), y.StartingBalance)))
+            : 1m;
+
+        <div class="ai-callout" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.85rem;">
             <span>@Loc.T("reserve.percentFunded") <strong class="num">@_result.PercentFunded.ToString("N2") %</strong></span>
             <span>@Loc.T("reserve.minRate") <strong class="num">@_result.MinimumMonthlyRatePerM2ToAvoidDeficit.ToString("N2") / m²</strong></span>
         </div>
-        <div class="cg-table-wrap" style="max-height: 200px; overflow-y: auto;">
+
+        <div style="margin-bottom: 0.85rem;">
+            <div style="display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--text-secondary); margin-bottom: 0.25rem;">
+                <span>10-Year Reserve Ending Balance Trajectory</span>
+                <span class="mono">@Snapshot.Community.CurrencyCode</span>
+            </div>
+            <div class="cg-bar-chart" role="img" aria-label="10-year reserve cashflow bar chart">
+                @foreach (var y in _result.Years)
+                {
+                    var pct = Math.Clamp((double)(Math.Max(0m, y.EndingBalance) / maxBalance) * 100.0, 6.0, 100.0);
+                    var barClass = y.EndingBalance < 0 ? "cg-bar-fill cg-bar-fill-danger" : (y.AnnualCapexOutflow > 0 ? "cg-bar-fill cg-bar-fill-warn" : "cg-bar-fill");
+                    <div class="cg-bar-col" @key="y.Year" title="@($"{y.Year}: Ending {y.EndingBalance:N0} {Snapshot.Community.CurrencyCode}")">
+                        <div class="@barClass" style="height: @(pct.ToString("F0", System.Globalization.CultureInfo.InvariantCulture))%;"></div>
+                        <span class="mono" style="font-size: 0.65rem; color: var(--text-muted);">@y.Year.ToString().Substring(2)</span>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div class="cg-table-wrap" style="max-height: 200px; overflow-y: auto; margin-bottom: 0.85rem;">
             <table class="cg-table">
                 <thead>
                     <tr>
@@ -41,7 +64,7 @@
         </div>
     }
 
-    <h3>@Loc.T("reserve.matchedTitle")</h3>
+    <h3 style="font-size: 0.85rem; margin-bottom: 0.45rem;">@Loc.T("reserve.matchedTitle")</h3>
     <div class="cg-table-wrap">
         <table class="cg-table">
             <thead>
@@ -59,7 +82,7 @@
                     <tr @key="g.Id">
                         <td>
                             <strong>@g.ProgramName</strong>
-                            <div style="font-size: 0.72rem; color: var(--color-text-secondary);">@g.UpgradeScope</div>
+                            <div style="font-size: 0.72rem; color: var(--text-secondary);">@g.UpgradeScope</div>
                         </td>
                         <td class="num">@g.EstimatedGrossCapex.ToString("N0")</td>
                         <td class="num">@g.GrantSubsidyAmount.ToString("N0") (@g.GrantSubsidyPercent.ToString("N0")%)</td>

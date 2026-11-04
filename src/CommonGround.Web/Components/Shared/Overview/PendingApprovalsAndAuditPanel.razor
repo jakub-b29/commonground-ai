@@ -6,128 +6,186 @@
 @inject WorkspaceLocalization Loc
 @implements IDisposable
 
-<div class="cg-grid-2">
-    <div class="cg-card">
-        <div class="cg-section-header">
-            <h2>@Loc.T("panel.pendingApprovals")</h2>
+<BentoGrid>
+    <BentoCard Span="6"
+               IsAi="true"
+               Title="@Loc.T("panel.pendingApprovals")"
+               Subtitle="Human-in-the-loop gate for proposed ledger, maintenance, and governance actions"
+               BadgeText="@($"{Snapshot.PendingActions.Count} queued")"
+               BadgeVariant="ai">
+        <HeaderActions>
             @if (Snapshot.PendingActions.Count > 0)
             {
-                <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="ApproveAllAsync">@Loc.T("action.approveAll") (@Snapshot.PendingActions.Count)</button>
+                <button type="button" class="cg-btn cg-btn-sm cg-btn-primary" disabled="@_isBusy" @onclick="ApproveAllAsync">@Loc.T("action.approveAll") (@Snapshot.PendingActions.Count)</button>
             }
-        </div>
-        @if (Snapshot.PendingActions.Count == 0)
-        {
-            <p style="color: var(--color-text-secondary);">@Loc.T("msg.noPendingActions")</p>
-        }
-        else
-        {
-            <div style="display: flex; flex-direction: column; gap: 0.625rem;">
-                @foreach (var action in Snapshot.PendingActions)
-                {
-                    <div @key="action.Id" class="cg-subcard">
-                        <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 0.5rem;">
-                            <strong>@action.Title</strong>
-                            <span class="cg-badge mono">@action.Confidence.ToString("P0")</span>
-                        </div>
-                        <div style="font-size: 0.72rem; color: var(--color-text-secondary); margin-block: 0.2rem 0.35rem;">
-                            <span>@action.TargetEntitySummary</span>
-                        </div>
-                        <div style="font-size: 0.78125rem; color: var(--color-text-primary);">@action.Rationale</div>
-                        <div class="cg-toolbar" style="margin-block-start: 0.5rem;">
-                            <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => DecideAsync(action.Id, true)">@Loc.T("action.approve")</button>
-                            <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => DecideAsync(action.Id, false)">@Loc.T("action.reject")</button>
-                        </div>
-                    </div>
-                }
-            </div>
-        }
-        @if (!string.IsNullOrWhiteSpace(_message))
-        {
-            <div role="status" aria-live="polite" class="cg-callout">@_message</div>
-        }
-    </div>
-
-    <div class="cg-card">
-        <div class="cg-section-header">
-            <h2>@Loc.T("panel.membershipQueue")</h2>
-            <a class="cg-btn" href="/residents/approvals">@Loc.T("action.openResidentPortal")</a>
-        </div>
-        <h3 style="margin-block-start: 0 !important;">@Loc.T("panel.membershipQueue")</h3>
-        @{
-            var pendingMembers = Snapshot.Community.ResidentMemberships
-                .Where(m => m.Status == ResidentMembershipStatus.PendingApproval)
-                .OrderByDescending(m => m.SubmittedAtUtc)
-                .ToList();
-        }
-        @if (pendingMembers.Count == 0)
-        {
-            <div class="cg-subcard">
-                <span class="cg-badge cg-badge-ok">@Loc.T("msg.allVerified")</span>
-                <span style="margin-inline-start: 0.375rem;">@Loc.T("msg.allVerifiedFor") @Snapshot.Community.Name.</span>
-            </div>
-        }
-        else
-        {
-            <div style="display: flex; flex-direction: column; gap: 0.5rem;">
-                @foreach (var app in pendingMembers)
-                {
-                    <div @key="app.Id" class="cg-subcard">
-                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap;">
-                            <div>
-                                <strong>@app.ApplicantFullName</strong>
-                                <span class="cg-badge mono" style="margin-inline-start: 0.35rem;">@Loc.T("form.unit") @app.UnitNumber</span>
-                                <span class="cg-badge" style="margin-inline-start: 0.25rem;">@app.Provider</span>
-                            </div>
-                            <span class="cg-badge cg-badge-warn">@Loc.T("msg.pendingApproval")</span>
-                        </div>
-                        <div style="font-size: 0.75rem; color: var(--color-text-secondary); margin-block-start: 0.25rem;">
-                            @Loc.T("form.proof"): @app.OwnershipOrLeaseProofSummary
-                        </div>
-                        <div style="font-size: 0.72rem; color: var(--color-text-secondary); margin-block-start: 0.15rem;">
-                            @Loc.T("table.groups"): @app.AssignedGroupsSummary
-                        </div>
-                        <div class="cg-toolbar" style="margin-block-start: 0.45rem;">
-                            <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => DecideResidentAsync(app.Id, true)">@Loc.T("action.approveResident")</button>
-                            <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => DecideResidentAsync(app.Id, false)">@Loc.T("action.reject")</button>
-                        </div>
-                    </div>
-                }
-            </div>
-        }
-
-        <h3>@Loc.T("panel.groupMessages")</h3>
-        <div class="cg-table-wrap">
-            <table class="cg-table">
-                <thead>
-                    <tr>
-                        <th>@Loc.T("table.group")</th>
-                        <th>@Loc.T("table.sender")</th>
-                        <th>@Loc.T("table.subject")</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var msg in Snapshot.Community.CommunityMessages.OrderByDescending(m => m.SentAtUtc).Take(4))
+        </HeaderActions>
+        <ChildContent>
+            @if (Snapshot.PendingActions.Count == 0)
+            {
+                <EmptyState Title="@Loc.T("msg.noPendingActions")" Description="All proposed CommonGround agent actions have been reviewed and committed." />
+            }
+            else
+            {
+                <div style="display: flex; flex-direction: column; gap: 0.65rem;">
+                    @foreach (var action in Snapshot.PendingActions)
                     {
-                        <tr @key="msg.Id">
-                            <td><span class="cg-badge">@msg.GroupName</span></td>
-                            <td>
-                                <strong>@msg.SenderName</strong>
-                                <div style="font-size: 0.72rem; color: var(--color-text-secondary);">@msg.SenderUnitOrRole</div>
-                            </td>
-                            <td>
-                                @if (msg.IsPinnedAnnouncement)
-                                {
-                                    <span class="cg-badge cg-badge-ok" style="margin-inline-end: 0.25rem;">@Loc.T("msg.pinned")</span>
-                                }
-                                <span>@msg.Subject</span>
-                            </td>
-                        </tr>
+                        <div @key="action.Id" class="cg-subcard" style="border-inline-start: 3px solid var(--accent-ai);">
+                            <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap;">
+                                <strong>@action.Title</strong>
+                                <div style="display: inline-flex; align-items: center; gap: 0.35rem;">
+                                    <AIBadge Label="@action.AgentName" Model="@action.ModelUsed" ShowPulseDot="false" />
+                                    <span class="cg-badge cg-badge-ok mono">@action.Confidence.ToString("P0")</span>
+                                </div>
+                            </div>
+                            <div style="font-size: 0.73rem; color: var(--text-secondary); margin-block: 0.25rem 0.4rem;">
+                                <span>@action.TargetEntitySummary</span>
+                            </div>
+                            <div style="font-size: 0.8rem; color: var(--text-primary); line-height: 1.45;">@action.Rationale</div>
+                            <div class="ai-progress-track" style="margin-top: 0.5rem;">
+                                <div class="ai-progress-fill" style="width: @((action.Confidence * 100).ToString("F0", System.Globalization.CultureInfo.InvariantCulture))%;"></div>
+                            </div>
+                            <div class="cg-toolbar" style="margin-block-start: 0.55rem;">
+                                <button type="button" class="cg-btn cg-btn-sm cg-btn-primary" disabled="@_isBusy" @onclick="() => DecideAsync(action.Id, true)">@Loc.T("action.approve")</button>
+                                <button type="button" class="cg-btn cg-btn-sm" disabled="@_isBusy" @onclick="() => DecideAsync(action.Id, false)">@Loc.T("action.reject")</button>
+                            </div>
+                        </div>
                     }
-                </tbody>
-            </table>
-        </div>
-    </div>
-</div>
+                </div>
+            }
+            @if (!string.IsNullOrWhiteSpace(_message))
+            {
+                <div role="status" aria-live="polite" class="ai-callout" style="margin-top: 0.65rem;">@_message</div>
+            }
+        </ChildContent>
+    </BentoCard>
+
+    <BentoCard Span="6"
+               Title="@Loc.T("panel.membershipQueue")"
+               Subtitle="Resident onboarding verification and community bulletin feed"
+               BadgeText="Community Portal"
+               BadgeVariant="neutral">
+        <HeaderActions>
+            <a class="cg-btn cg-btn-sm" href="/admin/members">@Loc.T("action.openResidentPortal")</a>
+        </HeaderActions>
+        <ChildContent>
+            @{
+                var pendingMembers = Snapshot.Community.ResidentMemberships
+                    .Where(m => m.Status == ResidentMembershipStatus.PendingApproval)
+                    .OrderByDescending(m => m.SubmittedAtUtc)
+                    .ToList();
+            }
+            @if (pendingMembers.Count == 0)
+            {
+                <div class="cg-subcard" style="margin-bottom: 0.85rem;">
+                    <span class="cg-badge cg-badge-ok">@Loc.T("msg.allVerified")</span>
+                    <span style="margin-inline-start: 0.375rem; font-size: 0.8rem; color: var(--text-secondary);">@Loc.T("msg.allVerifiedFor") @Snapshot.Community.Name.</span>
+                </div>
+            }
+            else
+            {
+                <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.85rem;">
+                    @foreach (var app in pendingMembers)
+                    {
+                        <div @key="app.Id" class="cg-subcard">
+                            <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap;">
+                                <div>
+                                    <strong>@app.ApplicantFullName</strong>
+                                    <span class="cg-badge mono" style="margin-inline-start: 0.35rem;">@Loc.T("form.unit") @app.UnitNumber</span>
+                                    <span class="cg-badge" style="margin-inline-start: 0.25rem;">@app.Provider</span>
+                                </div>
+                                <span class="cg-badge cg-badge-warn">@Loc.T("msg.pendingApproval")</span>
+                            </div>
+                            <div style="font-size: 0.75rem; color: var(--text-secondary); margin-block-start: 0.25rem;">
+                                @Loc.T("form.proof"): @app.OwnershipOrLeaseProofSummary
+                            </div>
+                            <div style="font-size: 0.72rem; color: var(--text-secondary); margin-block-start: 0.15rem;">
+                                @Loc.T("table.groups"): @app.AssignedGroupsSummary
+                            </div>
+                            <div class="cg-toolbar" style="margin-block-start: 0.45rem;">
+                                <button type="button" class="cg-btn cg-btn-sm cg-btn-primary" disabled="@_isBusy" @onclick="() => DecideResidentAsync(app.Id, true)">@Loc.T("action.approveResident")</button>
+                                <button type="button" class="cg-btn cg-btn-sm" disabled="@_isBusy" @onclick="() => DecideResidentAsync(app.Id, false)">@Loc.T("action.reject")</button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+
+            <div style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-secondary); margin-bottom: 0.4rem;">
+                @Loc.T("panel.groupMessages")
+            </div>
+            <div class="cg-table-wrap">
+                <table class="cg-table">
+                    <thead>
+                        <tr>
+                            <th>@Loc.T("table.group")</th>
+                            <th>@Loc.T("table.sender")</th>
+                            <th>@Loc.T("table.subject")</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var msg in Snapshot.Community.CommunityMessages.OrderByDescending(m => m.SentAtUtc).Take(4))
+                        {
+                            <tr @key="msg.Id">
+                                <td><span class="cg-badge cg-badge-neutral">@msg.GroupName</span></td>
+                                <td>
+                                    <strong>@msg.SenderName</strong>
+                                    <div style="font-size: 0.72rem; color: var(--text-secondary);">@msg.SenderUnitOrRole</div>
+                                </td>
+                                <td>
+                                    @if (msg.IsPinnedAnnouncement)
+                                    {
+                                        <span class="cg-badge cg-badge-ok" style="margin-inline-end: 0.25rem;">@Loc.T("msg.pinned")</span>
+                                    }
+                                    <span>@msg.Subject</span>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </ChildContent>
+    </BentoCard>
+
+    @if (Snapshot.RecentAgentRuns.Count > 0)
+    {
+        <BentoCard Span="12"
+                   Title="Service execution log"
+                   Subtitle="Real-time telemetry across CommonGround agents, model provenance, latency, and token metrics"
+                   BadgeText="@($"{Snapshot.RecentAgentRuns.Count} recent runs")"
+                   BadgeVariant="ai"
+                   BodyStyle="padding: 0;">
+            <ChildContent>
+                <div class="cg-table-wrap">
+                    <table class="cg-table">
+                        <thead>
+                            <tr>
+                                <th>Agent</th>
+                                <th>Trigger</th>
+                                <th>Model provenance</th>
+                                <th class="num">Latency</th>
+                                <th class="num">Tokens</th>
+                                <th class="num">Timestamp (UTC)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var run in Snapshot.RecentAgentRuns.Take(6))
+                            {
+                                <tr @key="run.Id">
+                                    <td><strong>@run.AgentName</strong></td>
+                                    <td style="color: var(--text-secondary);">@run.TriggerSummary</td>
+                                    <td><AIBadge Label="Meta AI" Model="@run.ModelName" ShowPulseDot="false" /></td>
+                                    <td class="num">@run.TotalLatencyMs ms</td>
+                                    <td class="num">@run.TotalTokens.ToString("N0")</td>
+                                    <td class="num">@run.StartedAt.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </ChildContent>
+        </BentoCard>
+    }
+</BentoGrid>
 
 @code {
     [Parameter, EditorRequired] public CommunityWorkspaceSnapshot Snapshot { get; set; } = default!;
@@ -148,7 +206,7 @@
         _isBusy = true;
         try
         {
-            var role = await Access.GetRoleAsync();
+            var role = await Access.GetRoleAsync() ?? WorkspaceSecurityRole.PropertyManager;
             await Workspace.DecideAiActionAsync(Snapshot.Community.Id, id, approve, role);
             await OnChanged.InvokeAsync();
         }
@@ -178,7 +236,7 @@
         _isBusy = true;
         try
         {
-            var role = await Access.GetRoleAsync();
+            var role = await Access.GetRoleAsync() ?? WorkspaceSecurityRole.PropertyManager;
             var res = await Workspace.DecideResidentMembershipAsync(Snapshot.Community.Id, appId, approve, role);
             _message = res.DecisionNote ?? Loc.T("msg.membershipUpdated");
             await OnChanged.InvokeAsync();

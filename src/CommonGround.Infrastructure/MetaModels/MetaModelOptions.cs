@@ -14,6 +14,9 @@ public sealed class MetaModelOptions
     public bool UseSearchGrounding { get; set; } = true;
     public string ReasoningEffort { get; set; } = "medium";
     public int MaxOutputTokens { get; set; } = 32000;
-    public double Temperature { get; set; } = 1;
-    public double TopP { get; set; } = 1;
+    public double Temperature { get; set; } = 0.1;
+    public double TopP { get; set; } = 0.95;
+    public int TotalRequestTimeoutMinutes { get; set; } = 10;
+    public int AttemptTimeoutMinutes { get; set; } = 5;
+    public int DiscoveryMaxRetryAttempts { get; set; } = 2;
 }

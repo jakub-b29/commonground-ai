@@ -1,0 +1,40 @@
+<div class="cg-kpi-card @(IsAi ? "cg-kpi-card-ai" : "") @CssClass">
+    <div class="cg-kpi-label">
+        <span>@Label</span>
+        @if (!string.IsNullOrWhiteSpace(BadgeText))
+        {
+            <span class="cg-badge cg-badge-@StatusVariant">@BadgeText</span>
+        }
+        else if (IsAi)
+        {
+            <span class="ai-dot" title="CommonGround Intelligence" aria-hidden="true"></span>
+        }
+    </div>
+    <div class="cg-kpi-value" style="@ValueStyle">@Value</div>
+    @if (!string.IsNullOrWhiteSpace(Subtitle) || SubContent is not null)
+    {
+        <div class="cg-kpi-sub">
+            @if (!string.IsNullOrWhiteSpace(Subtitle))
+            {
+                <span>@Subtitle</span>
+            }
+            @if (SubContent is not null)
+            {
+                @SubContent
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string Value { get; set; } = string.Empty;
+    [Parameter] public string? Subtitle { get; set; }
+    [Parameter] public string? BadgeText { get; set; }
+    [Parameter] public string StatusVariant { get; set; } = "neutral";
+    [Parameter] public bool IsAi { get; set; }
+    [Parameter] public string? ValueStyle { get; set; }
+    [Parameter] public string? CssClass { get; set; }
+    [Parameter] public RenderFragment? SubContent { get; set; }
+}
+

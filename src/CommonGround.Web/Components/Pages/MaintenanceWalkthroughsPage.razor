@@ -1,44 +1,18 @@
 @page "/maintenance/walkthroughs"
 @page "/walkthrough-claims"
 @attribute [Authorize(Policy = "ManagersOnly")]
-@using CommonGround.Web.Components.Shared.Maintenance
-@inject WorkspaceLocalization Loc
-@implements IDisposable
+@inject NavigationManager Nav
+@inject WorkspaceAccessService Access
 
-<PageTitle>@Loc.T("panel.walkthrough") - CommonGround</PageTitle>
+<PageTitle>Moved - CommonGround</PageTitle>
 
-<div class="cg-page-header">
-    <div>
-        <h1>@Loc.T("page.walkthroughTitle")</h1>
-        <p class="cg-page-lead">@Loc.T("page.walkthroughLead")</p>
-    </div>
-    <a class="cg-btn" href="/maintenance/claims">@Loc.T("panel.insurance")</a>
-</div>
-
-<ScopedCommunityPage @ref="_loader">
-    <ChildContent>
-        <VideoWalkthroughAndSafetyPanel CommunityId="context.Community.Id" OnChanged="OnReload" />
-    </ChildContent>
-</ScopedCommunityPage>
+<p role="status" aria-live="polite">Maintenance has moved to the property workspace. Redirecting.</p>
 
 @code {
-    private ScopedCommunityPage? _loader;
-    private Action? _locHandler;
-
     protected override async Task OnInitializedAsync()
     {
-        _locHandler = () => InvokeAsync(StateHasChanged);
-        Loc.OnChange += _locHandler;
-        await Loc.EnsureLoadedAsync();
-    }
-
-    private async Task OnReload()
-    {
-        if (_loader is not null) await _loader.ReloadAsync();
-    }
-
-    public void Dispose()
-    {
-        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+        var communities = await Access.GetAllowedCommunitiesAsync();
+        var first = communities.FirstOrDefault();
+        Nav.NavigateTo(first is null ? "/admin" : $"/properties/{first.Id}/maintenance", forceLoad: false);
     }
 }

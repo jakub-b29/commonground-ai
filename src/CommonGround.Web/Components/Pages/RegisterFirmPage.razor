@@ -37,13 +37,7 @@
         <label for="rf-office">@Loc.T("settings.firmOffice")</label>
         <input id="rf-office" name="officeAddress" autocomplete="street-address" />
     </div>
-    <div>
-        <label for="rf-mode">@Loc.T("firm.operatingMode")</label>
-        <select id="rf-mode" name="mode">
-            <option value="HousingAssociation">Housing Association</option>
-            <option value="UsHoa">US HOA</option>
-        </select>
-    </div>
+    <input type="hidden" name="mode" value="HousingAssociation" />
     <div>
         <label for="rf-name">@Loc.T("firm.managerName")</label>
         <input id="rf-name" name="managerName" required autocomplete="name" />
@@ -59,6 +53,10 @@
     <div>
         <label for="rf-pass">@Loc.T("form.password")</label>
         <input id="rf-pass" name="password" type="password" required minlength="8" autocomplete="new-password" />
+    </div>
+    <div class="cg-check-row">
+        <input id="rf-require-confirm" name="requireEmailConfirmation" type="checkbox" value="true" />
+        <label for="rf-require-confirm">Require email confirmation before firm activation</label>
     </div>
     <button type="submit" class="cg-btn cg-btn-primary cg-btn-block">@Loc.T("firm.registerFirm")</button>
 </form>

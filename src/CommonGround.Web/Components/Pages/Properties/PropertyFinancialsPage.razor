@@ -1,0 +1,97 @@
+@page "/properties/{id:guid}/financials"
+@attribute [Authorize(Policy = "WorkspaceMember")]
+@using CommonGround.Web.Components.Shared.Financials
+@inject WorkspaceLocalization Loc
+@inject CommonGroundWorkspaceService Workspace
+@implements IDisposable
+
+<PageTitle>Property financials — CommonGround</PageTitle>
+
+<RequirePropertyAccess PropertyId="Id">
+    @if (!_loaded)
+    {
+        <p role="status" aria-live="polite">Loading.</p>
+    }
+    else if (_snapshot is null)
+    {
+        <div class="cg-card"><p class="cg-empty-text">Property not found.</p></div>
+    }
+    else
+    {
+        <PageHeader Category="Accounting & Utilities"
+                    ContextCode="@_snapshot.Community.CurrencyCode"
+                    Title="@($"{_snapshot.Community.Name} · Financial operations")"
+                    Subtitle="Fund accounting ledgers, bulk-to-sub-meter utility reconciliation, tariff inflation simulation, 10-year reserve study, and arrears dossiers.">
+            <Badges>
+                <StatusBadge Text="Deterministic Ledger Math" Variant="ok" />
+                <AIBadge Label="Invoice & Bank Audit" Model="muse-spark-1.3" />
+            </Badges>
+            <Actions>
+                <a class="cg-btn cg-btn-sm" href="@($"/properties/{Id}/overview")">Back to overview</a>
+            </Actions>
+        </PageHeader>
+
+        <div class="cg-grid-4" style="margin-bottom: 1rem;">
+            <MetricCard Label="Operating fund balance"
+                        Value="@($"{_snapshot.OperatingCash:N2} {_snapshot.Community.CurrencyCode}")"
+                        Subtitle="@($"Rate: {_snapshot.Community.OperatingRatePerM2:N2} / m²")"
+                        BadgeText="100-OP"
+                        StatusVariant="ok" />
+            <MetricCard Label="Repair reserve fund"
+                        Value="@($"{_snapshot.ReserveCash:N2} {_snapshot.Community.CurrencyCode}")"
+                        Subtitle="@($"Rate: {_snapshot.Community.RepairFundRatePerM2:N2} / m²")"
+                        BadgeText="200-RF"
+                        StatusVariant="info" />
+            <MetricCard Label="Delinquency ratio"
+                        Value="@($"{_snapshot.DelinquencyRate:N2} %")"
+                        Subtitle="@($"{_snapshot.ArrearsUnits} units in arrears")"
+                        BadgeText="@(_snapshot.DelinquencyRate > 5m ? "Collection active" : "On target")"
+                        StatusVariant="@(_snapshot.DelinquencyRate > 5m ? "warn" : "ok")" />
+            <MetricCard Label="Commercial revenue offsets"
+                        Value="@_snapshot.Community.CommercialContracts.Count.ToString()"
+                        Subtitle="Active ancillary leases"
+                        BadgeText="Ancillary"
+                        StatusVariant="ai"
+                        IsAi="true" />
+        </div>
+
+        <FundLedgerAndAncillaryPanel Snapshot="_snapshot" />
+        <div style="margin-block-start: 1rem;">
+            <UtilityReconciliationAndPowerPanel CommunityId="_snapshot.Community.Id" />
+        </div>
+        <div class="cg-grid-2" style="margin-block-start: 1rem;">
+            <TariffInflationSimulatorPanel CommunityId="_snapshot.Community.Id" />
+            <ReserveStudyAndGrantsPanel Snapshot="_snapshot" />
+        </div>
+        <div style="margin-block-start: 1rem;">
+            <ArrearsAndLegalDossierTable Snapshot="_snapshot" />
+        </div>
+    }
+    @if (!string.IsNullOrWhiteSpace(_message))
+    {
+        <div role="status" aria-live="polite" class="cg-callout" style="margin-block-start: 0.75rem;">@_message</div>
+    }
+</RequirePropertyAccess>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    private CommunityWorkspaceSnapshot? _snapshot;
+    private bool _loaded;
+    private string _message = string.Empty;
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+        try { _snapshot = await Workspace.GetSnapshotAsync(Id); }
+        catch (Exception ex) { _message = ex.Message; }
+        finally { _loaded = true; }
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+    }
+}

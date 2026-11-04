@@ -1,0 +1,47 @@
+<div class="ai-card @CssClass" style="padding: 0.9rem 1rem; @Style">
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.5rem;">
+        <div style="display: inline-flex; align-items: center; gap: 0.45rem; font-weight: 600; font-size: 0.85rem; color: var(--text-primary);">
+            <span class="ai-dot" aria-hidden="true"></span>
+            <span>@Title</span>
+        </div>
+        <div style="display: inline-flex; align-items: center; gap: 0.4rem;">
+            @if (!string.IsNullOrWhiteSpace(Model))
+            {
+                <AIBadge Label="@BadgeLabel" Model="@Model" ShowPulseDot="false" />
+            }
+            @if (ConfidencePercent.HasValue)
+            {
+                <span class="cg-badge cg-badge-ok mono">@ConfidencePercent.Value.ToString("N0")% confidence</span>
+            }
+        </div>
+    </div>
+    @if (!string.IsNullOrWhiteSpace(Summary))
+    {
+        <p style="font-size: 0.82rem; color: var(--text-secondary); margin-bottom: @(ChildContent is not null || Actions is not null ? "0.65rem" : "0");">
+            @Summary
+        </p>
+    }
+    @if (ChildContent is not null)
+    {
+        <div>@ChildContent</div>
+    }
+    @if (Actions is not null)
+    {
+        <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.65rem; padding-top: 0.65rem; border-top: 1px solid var(--accent-ai-border);">
+            @Actions
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+    [Parameter] public string? Summary { get; set; }
+    [Parameter] public string BadgeLabel { get; set; } = "AI Analysis";
+    [Parameter] public string? Model { get; set; }
+    [Parameter] public double? ConfidencePercent { get; set; }
+    [Parameter] public string? CssClass { get; set; }
+    [Parameter] public string? Style { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public RenderFragment? Actions { get; set; }
+}
+

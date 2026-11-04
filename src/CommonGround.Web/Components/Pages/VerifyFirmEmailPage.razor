@@ -1,0 +1,106 @@
+@page "/verify-firm-email"
+@layout Layout.AuthLayout
+@attribute [AllowAnonymous]
+@inject CommonGroundWorkspaceService Workspace
+
+<PageTitle>Verify firm email - CommonGround</PageTitle>
+
+<div class="cg-auth-heading">
+    <h1>Verify firm email</h1>
+    <p>Enter the confirmation token sent to the firm manager email to activate the firm.</p>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(ErrorCode))
+{
+    <div role="alert" class="cg-auth-error">Verification failed. Check the token and try again.</div>
+}
+@if (!string.IsNullOrWhiteSpace(SuccessMessage))
+{
+    <div role="status" aria-live="polite" class="cg-auth-note">@SuccessMessage</div>
+}
+
+@if (_loading)
+{
+    <p role="status" aria-live="polite">Loading.</p>
+}
+else if (_preview is not null)
+{
+    <div class="cg-auth-note" role="status" aria-live="polite">
+        <strong>@_preview.FirmName</strong> · @_preview.FirmGroupCode
+        <div>@_preview.ManagerEmail · Status: @(_preview.IsEmailConfirmed ? "Confirmed" : "Pending confirmation")</div>
+    </div>
+}
+else if (!string.IsNullOrWhiteSpace(FirmIdRaw))
+{
+    <div class="cg-auth-note" role="status" aria-live="polite">
+        <p>Firm record was not found for the supplied identifier.</p>
+    </div>
+}
+
+<form method="post" action="/auth/verify-firm-email" class="cg-form-stack">
+    <div>
+        <label for="vfe-token">Confirmation token</label>
+        <input id="vfe-token" name="token" value="@_tokenInput" required autocomplete="off" placeholder="Paste confirmation token" />
+    </div>
+    <button type="submit" class="cg-btn cg-btn-primary cg-btn-block">Verify firm email</button>
+</form>
+
+<div class="cg-auth-links">
+    <a href="/login">Sign in</a>
+    <a href="/register-firm">Register a new firm</a>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "firmId")] public string? FirmIdRaw { get; set; }
+    [SupplyParameterFromQuery(Name = "token")] public string? Token { get; set; }
+    [SupplyParameterFromQuery(Name = "error")] public string? ErrorCode { get; set; }
+
+    private CommonGroundWorkspaceService.FirmEmailConfirmationPreview? _preview;
+    private bool _loading = true;
+    private string _tokenInput = string.Empty;
+    private string SuccessMessage = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _tokenInput = Token?.Trim() ?? string.Empty;
+        await ReloadAsync();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var incomingToken = Token?.Trim() ?? string.Empty;
+        if (!string.Equals(_tokenInput, incomingToken, StringComparison.Ordinal) && string.IsNullOrWhiteSpace(_tokenInput))
+        {
+            _tokenInput = incomingToken;
+        }
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        _loading = true;
+        try
+        {
+            if (Guid.TryParse(FirmIdRaw?.Trim(), out var firmId) && firmId != Guid.Empty)
+            {
+                _preview = await Workspace.GetFirmEmailConfirmationPreviewAsync(firmId);
+                if (_preview is not null && _preview.IsEmailConfirmed)
+                {
+                    SuccessMessage = "Firm email is confirmed. You can sign in.";
+                }
+            }
+            else
+            {
+                _preview = null;
+            }
+        }
+        catch
+        {
+            _preview = null;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

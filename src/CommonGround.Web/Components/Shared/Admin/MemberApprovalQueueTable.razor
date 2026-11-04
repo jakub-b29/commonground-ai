@@ -1,0 +1,276 @@
+@using CommonGround.Application.Interfaces
+@using CommonGround.Application.Persistence
+@using Microsoft.EntityFrameworkCore
+@inject IMembershipService MembershipService
+@inject IAppDbContextFactory DbFactory
+
+<div class="cg-card">
+    <div class="cg-section-header">
+        <h2>Pending approvals</h2>
+        <span class="cg-badge">@Pending.Count pending</span>
+    </div>
+    <p style="color: var(--color-text-secondary); font-size: 0.78125rem;">Review join requests and invitation acceptances. Assign a role, permission flags, properties and an optional unit before approval.</p>
+    @if (Pending.Count == 0)
+    {
+        <p class="cg-empty-text">No pending approvals.</p>
+    }
+    else
+    {
+        <div class="cg-table-wrap" style="max-height: 520px; overflow-y: auto;">
+            <table class="cg-table">
+                <thead>
+                    <tr>
+                        <th>Member</th>
+                        <th>Role</th>
+                        <th>Properties</th>
+                        <th>Permissions</th>
+                        <th>Unit</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var membership in Pending)
+                    {
+                        var editor = GetEditor(membership);
+                        var userName = Users.TryGetValue(membership.UserId, out var account) ? account.FullName : "Member";
+                        var userEmail = Users.TryGetValue(membership.UserId, out var mail) ? mail.Email : string.Empty;
+                        var requestNote = JoinRequests.TryGetValue(membership.Id, out var join) ? join.ProofOrCompanyNote : string.Empty;
+                        <tr @key="membership.Id">
+                            <td>
+                                <strong>@userName</strong>
+                                <div style="font-size: 0.72rem; color: var(--color-text-secondary);">@userEmail</div>
+                                @if (!string.IsNullOrWhiteSpace(requestNote))
+                                {
+                                    <div style="font-size: 0.72rem; color: var(--color-text-secondary);">Note: @requestNote</div>
+                                }
+                            </td>
+                            <td>
+                                <label for="ap-role-@membership.Id" style="font-size: 0.72rem;">Role</label>
+                                <select id="ap-role-@membership.Id" value="@editor.Role" @onchange="(e) => OnRoleChanged(editor, e.Value?.ToString())">
+                                    @foreach (var role in AssignableRoles)
+                                    {
+                                        <option value="@role" @key="role">@role</option>
+                                    }
+                                </select>
+                            </td>
+                            <td>
+                                <fieldset style="border: 0; padding: 0; margin: 0;">
+                                    <legend style="font-size: 0.72rem; font-weight: 600;">Properties</legend>
+                                    @foreach (var property in Properties)
+                                    {
+                                        <label style="display: flex; align-items: center; gap: 0.375rem; font-weight: 400; font-size: 0.75rem; margin-block-end: 0.125rem;" @key="property.Id">
+                                            <input type="checkbox" checked="@editor.SelectedPropertyIds.Contains(property.Id)" @onchange="(e) => OnPropertyToggled(editor, property.Id, (bool?)e.Value == true)" />
+                                            <span>@property.Name</span>
+                                        </label>
+                                    }
+                                </fieldset>
+                            </td>
+                            <td>
+                                <fieldset style="border: 0; padding: 0; margin: 0;">
+                                    <legend style="font-size: 0.72rem; font-weight: 600;">Permissions</legend>
+                                    @foreach (var flag in RelevantFlags(editor.Role))
+                                    {
+                                        <label style="display: flex; align-items: center; gap: 0.375rem; font-weight: 400; font-size: 0.75rem; margin-block-end: 0.125rem;" @key="flag">
+                                            <input type="checkbox" checked="@editor.Granted.HasFlag(flag)" @onchange="(e) => OnPermissionToggled(editor, flag, (bool?)e.Value == true)" />
+                                            <span>@PermissionLabel(flag)</span>
+                                        </label>
+                                    }
+                                </fieldset>
+                            </td>
+                            <td>
+                                <label for="ap-unit-@membership.Id" style="font-size: 0.72rem;">Unit link</label>
+                                <select id="ap-unit-@membership.Id" @bind="editor.UnitIdString">
+                                    <option value="">No unit</option>
+                                    @foreach (var unit in FilteredUnits(editor))
+                                    {
+                                        <option value="@unit.Id" @key="unit.Id">@unit.UnitNumber</option>
+                                    }
+                                </select>
+                            </td>
+                            <td>
+                                <div style="display: flex; gap: 0.375rem; flex-wrap: wrap;">
+                                    <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="() => OnApproveAsync(membership.Id)">Approve</button>
+                                    <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => OnRevokeAsync(membership.Id)">Revoke</button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    @if (!string.IsNullOrWhiteSpace(_message))
+    {
+        <div role="status" aria-live="polite" class="cg-callout" style="margin-block-start: 0.5rem;">@_message</div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Guid FirmId { get; set; }
+    [Parameter, EditorRequired] public Guid ActorMembershipId { get; set; }
+    [Parameter, EditorRequired] public IReadOnlyList<FirmMembership> Pending { get; set; } = [];
+    [Parameter, EditorRequired] public IReadOnlyList<PropertyListItem> Properties { get; set; } = [];
+    [Parameter, EditorRequired] public IReadOnlyList<Unit> Units { get; set; } = [];
+    [Parameter, EditorRequired] public IReadOnlyDictionary<Guid, User> Users { get; set; } = new Dictionary<Guid, User>();
+    [Parameter, EditorRequired] public IReadOnlyDictionary<Guid, JoinRequest> JoinRequests { get; set; } = new Dictionary<Guid, JoinRequest>();
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private static readonly WorkspaceSecurityRole[] AssignableRoles =
+    [
+        WorkspaceSecurityRole.PropertyManager,
+        WorkspaceSecurityRole.Accountant,
+        WorkspaceSecurityRole.MaintenanceDispatcher,
+        WorkspaceSecurityRole.BoardMemberReadOnly,
+        WorkspaceSecurityRole.Resident,
+        WorkspaceSecurityRole.Contractor,
+        WorkspaceSecurityRole.ExternalAuditorView
+    ];
+
+    private readonly Dictionary<Guid, ApprovalEditor> _editors = new();
+    private bool _isBusy;
+    private string _message = string.Empty;
+
+    private ApprovalEditor GetEditor(FirmMembership membership)
+    {
+        if (!_editors.TryGetValue(membership.Id, out var editor))
+        {
+            editor = new ApprovalEditor
+            {
+                Role = membership.Role,
+                Granted = membership.GrantedPermissions != 0
+                    ? membership.GrantedPermissions
+                    : WorkspacePermissionPresets.DefaultForRole(membership.Role),
+                SelectedPropertyIds = new HashSet<Guid>(),
+                UnitIdString = string.Empty
+            };
+            _editors[membership.Id] = editor;
+        }
+        return editor;
+    }
+
+    private IReadOnlyList<Unit> FilteredUnits(ApprovalEditor editor)
+    {
+        if (editor.SelectedPropertyIds.Count == 0)
+        {
+            return Units.Take(100).ToList();
+        }
+        return Units.Where(u => editor.SelectedPropertyIds.Contains(u.CommunityId)).Take(100).ToList();
+    }
+
+    private static IReadOnlyList<WorkspacePermissionFlags> RelevantFlags(WorkspaceSecurityRole role) =>
+        Enum.GetValues<WorkspacePermissionFlags>()
+            .Where(f => f != 0 && WorkspacePermissionPresets.DefaultForRole(role).HasFlag(f))
+            .ToList();
+
+    private static string PermissionLabel(WorkspacePermissionFlags flag)
+    {
+        var raw = flag.ToString();
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return string.Empty;
+        }
+        var builder = new System.Text.StringBuilder();
+        for (var i = 0; i < raw.Length; i++)
+        {
+            var c = raw[i];
+            if (i > 0 && char.IsUpper(c) && !char.IsUpper(raw[i - 1]))
+            {
+                builder.Append(' ');
+            }
+            builder.Append(i == 0 ? c : char.ToLowerInvariant(c));
+        }
+        return builder.ToString();
+    }
+
+    private void OnRoleChanged(ApprovalEditor editor, string? raw)
+    {
+        if (Enum.TryParse<WorkspaceSecurityRole>(raw, out var parsed))
+        {
+            editor.Role = parsed;
+            editor.Granted = WorkspacePermissionPresets.DefaultForRole(parsed);
+        }
+    }
+
+    private void OnPropertyToggled(ApprovalEditor editor, Guid propertyId, bool isChecked)
+    {
+        if (isChecked)
+        {
+            editor.SelectedPropertyIds.Add(propertyId);
+        }
+        else
+        {
+            editor.SelectedPropertyIds.Remove(propertyId);
+        }
+    }
+
+    private static void OnPermissionToggled(ApprovalEditor editor, WorkspacePermissionFlags flag, bool isChecked)
+    {
+        if (isChecked)
+        {
+            editor.Granted |= flag;
+        }
+        else
+        {
+            editor.Granted &= ~flag;
+        }
+    }
+
+    private async Task OnApproveAsync(Guid membershipId)
+    {
+        if (!_editors.TryGetValue(membershipId, out var editor))
+        {
+            return;
+        }
+        _isBusy = true;
+        try
+        {
+            Guid? unitId = Guid.TryParse(editor.UnitIdString, out var parsed) && parsed != Guid.Empty ? parsed : null;
+            await MembershipService.ApproveMembershipAsync(
+                ActorMembershipId,
+                membershipId,
+                editor.Role,
+                editor.Granted,
+                editor.SelectedPropertyIds.ToList(),
+                unitId);
+            _editors.Remove(membershipId);
+            _message = "Membership approved.";
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task OnRevokeAsync(Guid membershipId)
+    {
+        _isBusy = true;
+        try
+        {
+            await MembershipService.RevokeMembershipAsync(ActorMembershipId, membershipId);
+            _editors.Remove(membershipId);
+            _message = "Membership revoked.";
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private sealed class ApprovalEditor
+    {
+        public WorkspaceSecurityRole Role { get; set; } = WorkspaceSecurityRole.Resident;
+        public WorkspacePermissionFlags Granted { get; set; }
+        public HashSet<Guid> SelectedPropertyIds { get; set; } = new();
+        public string UnitIdString { get; set; } = string.Empty;
+    }
+}

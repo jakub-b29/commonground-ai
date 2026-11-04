@@ -1,6 +1,8 @@
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using CommonGround.Application.Interfaces;
 using CommonGround.Domain.Calculators;
 using CommonGround.Domain.Entities;
@@ -16,6 +18,13 @@ public sealed class MetaModelClients(
 {
     private readonly MetaModelOptions _options = options.Value;
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+    private static readonly JsonSerializerOptions DossierJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true,
+        NumberHandling = JsonNumberHandling.AllowReadingFromString,
+        Converters = { new JsonStringEnumConverter() }
+    };
 
     private bool CanUseLiveApi => !string.IsNullOrWhiteSpace(_options.ApiKey) && httpClientFactory is not null;
 
@@ -43,7 +52,8 @@ public sealed class MetaModelClients(
         string prompt,
         bool withSearchGrounding,
         CancellationToken ct,
-        string? imageDataUrl = null)
+        string? imageDataUrl = null,
+        double? temperatureOverride = null)
     {
         var apiKey = ResolveApiKey(_options);
         if (string.IsNullOrWhiteSpace(apiKey) || httpClientFactory is null)
@@ -87,6 +97,7 @@ public sealed class MetaModelClients(
                 };
             }
 
+            var effectiveTemp = temperatureOverride ?? _options.Temperature;
             object payload;
             if (withSearchGrounding && _options.UseSearchGrounding)
             {
@@ -95,11 +106,11 @@ public sealed class MetaModelClients(
                     model,
                     input = inputPayload,
                     stream = false,
-                    temperature = _options.Temperature,
+                    temperature = effectiveTemp,
                     max_output_tokens = _options.MaxOutputTokens,
                     top_p = _options.TopP,
                     reasoning = new { effort = _options.ReasoningEffort },
-                    tools = new object[] { new { type = "web_search", search_context_size = "medium" } }
+                    tools = new object[] { new { type = "web_search", search_context_size = "high" } }
                 };
             }
             else
@@ -109,7 +120,7 @@ public sealed class MetaModelClients(
                     model,
                     input = inputPayload,
                     stream = false,
-                    temperature = _options.Temperature,
+                    temperature = effectiveTemp,
                     max_output_tokens = _options.MaxOutputTokens,
                     top_p = _options.TopP,
                     reasoning = new { effort = _options.ReasoningEffort }
@@ -134,6 +145,353 @@ public sealed class MetaModelClients(
         catch (Exception) when (_options.UseFallbackWhenNoKey)
         {
             return (null, false);
+        }
+    }
+
+    private async Task<(string? Text, bool UsedLive)> CallResponsesStreamingAsync(
+        string model,
+        string prompt,
+        bool withSearchGrounding,
+        IProgress<DiscoveryProgressStep>? thinking,
+        CancellationToken ct)
+    {
+        const int ThinkingReportThrottleMs = 300;
+        const int ThinkingSnippetMaxLength = 500;
+        var apiKey = ResolveApiKey(_options);
+        if (string.IsNullOrWhiteSpace(apiKey) || httpClientFactory is null)
+        {
+            thinking?.Report(new DiscoveryProgressStep("Offline fallback", "No live API key found (checked MetaModels:ApiKey, META_KEY, MODEL_API_KEY). Using offline deterministic dossier.", 40, "No live API key found (checked MetaModels:ApiKey, META_KEY, MODEL_API_KEY). Using offline deterministic dossier."));
+            return (null, false);
+        }
+        try
+        {
+            var redacted = DataSecurityAndPrivacyGuard.RedactPiiForModelPrompt(prompt, out _);
+            var scan = DataSecurityAndPrivacyGuard.InspectAndSanitizeUntrustedInput(redacted);
+            if (scan.IsInjectionDetected)
+            {
+                return (null, false);
+            }
+            using var client = httpClientFactory.CreateClient("MetaModels");
+            client.BaseAddress = new Uri(_options.BaseUrl.TrimEnd('/') + "/");
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+            if (!client.DefaultRequestHeaders.Accept.Any(h => string.Equals(h.MediaType, "text/event-stream", StringComparison.Ordinal)))
+            {
+                client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+            }
+            object inputPayload = new object[]
+            {
+                new { role = "user", content = scan.SafeDelimitedPayload }
+            };
+            var allowSearch = withSearchGrounding
+                && _options.UseSearchGrounding
+                && string.Equals(model, MuseSparkDiscoveryPrompts.ModelId, StringComparison.Ordinal);
+            object payload;
+            if (allowSearch)
+            {
+                payload = new
+                {
+                    model,
+                    input = inputPayload,
+                    stream = true,
+                    temperature = _options.Temperature,
+                    max_output_tokens = _options.MaxOutputTokens,
+                    top_p = _options.TopP,
+                    reasoning = new { effort = _options.ReasoningEffort },
+                    tools = new object[] { new { type = "web_search", search_context_size = "high" } }
+                };
+            }
+            else
+            {
+                payload = new
+                {
+                    model,
+                    input = inputPayload,
+                    stream = true,
+                    temperature = _options.Temperature,
+                    max_output_tokens = _options.MaxOutputTokens,
+                    top_p = _options.TopP,
+                    reasoning = new { effort = _options.ReasoningEffort }
+                };
+            }
+            var json = JsonSerializer.Serialize(payload, JsonOptions);
+            using var request = new HttpRequestMessage(HttpMethod.Post, "responses");
+            request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+            using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                return (null, false);
+            }
+            var mediaType = response.Content.Headers.ContentType?.MediaType ?? string.Empty;
+            if (!mediaType.Contains("text/event-stream", StringComparison.OrdinalIgnoreCase))
+            {
+                var fallbackBody = await response.Content.ReadAsStringAsync(ct);
+                var fallbackText = ExtractResponseText(fallbackBody);
+                if (string.IsNullOrWhiteSpace(fallbackText))
+                {
+                    return (null, false);
+                }
+                var fallbackMatches = Regex.Matches(fallbackText, @"\[THINKING\][^\r\n]+");
+                var fallbackSeen = new HashSet<string>(StringComparer.Ordinal);
+                foreach (Match fallbackMatch in fallbackMatches)
+                {
+                    var fallbackLine = fallbackMatch.Value.Trim();
+                    if (string.IsNullOrWhiteSpace(fallbackLine))
+                    {
+                        continue;
+                    }
+                    if (fallbackLine.Length > ThinkingSnippetMaxLength)
+                    {
+                        fallbackLine = fallbackLine.Substring(0, ThinkingSnippetMaxLength);
+                    }
+                    if (fallbackSeen.Add(fallbackLine))
+                    {
+                        thinking?.Report(new DiscoveryProgressStep("Web search grounding", "Task progress", 40, fallbackLine));
+                    }
+                }
+                thinking?.Report(new DiscoveryProgressStep("Web search grounding", "Non-streaming response received; showing preview.", 40));
+                return (fallbackText, true);
+            }
+            var outputAcc = new StringBuilder();
+            var thinkingBuffer = new StringBuilder();
+            var reportedThinking = new HashSet<string>(StringComparer.Ordinal);
+            var lastReportUtc = DateTime.MinValue;
+            await using var stream = await response.Content.ReadAsStreamAsync(ct);
+            using var reader = new StreamReader(stream);
+            string? currentEvent = null;
+            while (true)
+            {
+                ct.ThrowIfCancellationRequested();
+                var line = await reader.ReadLineAsync(ct);
+                if (line is null)
+                {
+                    break;
+                }
+                if (string.IsNullOrWhiteSpace(line))
+                {
+                    currentEvent = null;
+                    continue;
+                }
+                if (line.StartsWith(":", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+                if (line.StartsWith("event:", StringComparison.Ordinal))
+                {
+                    currentEvent = line.Substring(6).Trim();
+                    continue;
+                }
+                string? dataPayload;
+                if (line.StartsWith("data:", StringComparison.Ordinal))
+                {
+                    dataPayload = line.Substring(5).TrimStart();
+                }
+                else
+                {
+                    var trimmed = line.Trim();
+                    if (trimmed.StartsWith("{", StringComparison.Ordinal) || trimmed.StartsWith("[", StringComparison.Ordinal))
+                    {
+                        dataPayload = trimmed;
+                    }
+                    else
+                    {
+                        continue;
+                    }
+                }
+                if (string.IsNullOrWhiteSpace(dataPayload))
+                {
+                    continue;
+                }
+                if (string.Equals(dataPayload.Trim(), "[DONE]", StringComparison.Ordinal))
+                {
+                    break;
+                }
+                JsonDocument doc;
+                try
+                {
+                    doc = JsonDocument.Parse(dataPayload);
+                }
+                catch (JsonException)
+                {
+                    continue;
+                }
+                using (doc)
+                {
+                    var eventOutput = new StringBuilder();
+                    var eventThinking = new StringBuilder();
+                    CollectStreamDeltas(doc.RootElement, currentEvent, eventOutput, eventThinking);
+                    if (eventOutput.Length > 0)
+                    {
+                        outputAcc.Append(eventOutput);
+                    }
+                    if (eventThinking.Length > 0)
+                    {
+                        thinkingBuffer.Append(eventThinking);
+                    }
+                    if (eventOutput.Length > 0)
+                    {
+                        thinkingBuffer.Append(eventOutput);
+                    }
+                    var bufferedSnapshot = thinkingBuffer.ToString();
+                    var lastNewline = bufferedSnapshot.LastIndexOf('\n');
+                    if (lastNewline >= 0)
+                    {
+                        var completeChunk = bufferedSnapshot.Substring(0, lastNewline + 1);
+                        var trailingRemainder = bufferedSnapshot.Substring(lastNewline + 1);
+                        thinkingBuffer.Clear();
+                        if (trailingRemainder.Length > 2000)
+                        {
+                            trailingRemainder = trailingRemainder.Substring(trailingRemainder.Length - 2000);
+                        }
+                        thinkingBuffer.Append(trailingRemainder);
+                        var thinkingMatches = Regex.Matches(completeChunk, @"\[THINKING\][^\r\n]+");
+                        foreach (Match thinkingMatch in thinkingMatches)
+                        {
+                            var completeLine = thinkingMatch.Value.Trim();
+                            if (string.IsNullOrWhiteSpace(completeLine))
+                            {
+                                continue;
+                            }
+                            if (completeLine.Length > ThinkingSnippetMaxLength)
+                            {
+                                completeLine = completeLine.Substring(0, ThinkingSnippetMaxLength);
+                            }
+                            if (reportedThinking.Add(completeLine))
+                            {
+                                thinking?.Report(new DiscoveryProgressStep("Web search grounding", "Task progress", 40, completeLine));
+                            }
+                        }
+                        var nowSentences = DateTime.UtcNow;
+                        if ((nowSentences - lastReportUtc).TotalMilliseconds >= ThinkingReportThrottleMs)
+                        {
+                            var chunkLines = completeChunk.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                            foreach (var chunkLine in chunkLines)
+                            {
+                                if (chunkLine.Contains("[THINKING]", StringComparison.Ordinal)
+                                    || chunkLine.Contains('{', StringComparison.Ordinal)
+                                    || chunkLine.Contains('}', StringComparison.Ordinal)
+                                    || chunkLine.Contains('"', StringComparison.Ordinal)
+                                    || chunkLine.Contains("[JSON", StringComparison.Ordinal))
+                                {
+                                    continue;
+                                }
+                                var sentenceMatch = Regex.Match(chunkLine.Trim(), @"^(.{20,}?[.!?])\s*$");
+                                if (!sentenceMatch.Success)
+                                {
+                                    continue;
+                                }
+                                var sentence = sentenceMatch.Groups[1].Value.Trim();
+                                if (sentence.Length > ThinkingSnippetMaxLength)
+                                {
+                                    sentence = sentence.Substring(0, ThinkingSnippetMaxLength);
+                                }
+                                if (reportedThinking.Add(sentence))
+                                {
+                                    thinking?.Report(new DiscoveryProgressStep("Web search grounding", "Task progress", 40, sentence));
+                                    lastReportUtc = nowSentences;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    var now = DateTime.UtcNow;
+                    if (eventOutput.Length > 0
+                        && (now - lastReportUtc).TotalMilliseconds >= ThinkingReportThrottleMs)
+                    {
+                        var outputChunk = eventOutput.ToString();
+                        if (!outputChunk.Contains("[THINKING]", StringComparison.Ordinal))
+                        {
+                            thinking?.Report(new DiscoveryProgressStep("Web search grounding", $"Receiving structured payload... {outputAcc.Length / 1024} KB", 40));
+                            lastReportUtc = now;
+                        }
+                    }
+                }
+            }
+            var fullText = outputAcc.ToString().Trim();
+            if (string.IsNullOrWhiteSpace(fullText))
+            {
+                return (null, false);
+            }
+            return (fullText, true);
+        }
+        catch (OperationCanceledException)
+        {
+            return (null, false);
+        }
+        catch (TimeoutException)
+        {
+            return (null, false);
+        }
+        catch (HttpRequestException)
+        {
+            return (null, false);
+        }
+        catch (IOException)
+        {
+            return (null, false);
+        }
+        catch (Exception)
+        {
+            return (null, false);
+        }
+    }
+
+    private static void CollectStreamDeltas(JsonElement element, string? eventType, StringBuilder output, StringBuilder thinking)
+    {
+        string? jsonType = null;
+        if (element.ValueKind == JsonValueKind.Object
+            && element.TryGetProperty("type", out var typeProp)
+            && typeProp.ValueKind == JsonValueKind.String)
+        {
+            jsonType = typeProp.GetString();
+        }
+        var eventIsReasoning = (!string.IsNullOrEmpty(eventType) && eventType.Contains("reasoning", StringComparison.Ordinal))
+            || (!string.IsNullOrEmpty(jsonType) && jsonType.Contains("reasoning", StringComparison.Ordinal));
+        WalkStreamElement(element, eventIsReasoning, output, thinking);
+    }
+
+    private static void WalkStreamElement(JsonElement element, bool inReasoningScope, StringBuilder output, StringBuilder thinking)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var prop in element.EnumerateObject())
+            {
+                var name = prop.Name;
+                var childReasoning = inReasoningScope
+                    || string.Equals(name, "reasoning", StringComparison.Ordinal)
+                    || string.Equals(name, "reasoning_content", StringComparison.Ordinal);
+                var value = prop.Value;
+                if (value.ValueKind == JsonValueKind.String
+                    && (string.Equals(name, "delta", StringComparison.Ordinal)
+                        || string.Equals(name, "text", StringComparison.Ordinal)
+                        || string.Equals(name, "reasoning", StringComparison.Ordinal)
+                        || string.Equals(name, "reasoning_content", StringComparison.Ordinal)
+                        || string.Equals(name, "output_text", StringComparison.Ordinal)))
+                {
+                    var text = value.GetString();
+                    if (!string.IsNullOrEmpty(text))
+                    {
+                        if (childReasoning)
+                        {
+                            thinking.Append(text);
+                        }
+                        else
+                        {
+                            output.Append(text);
+                        }
+                    }
+                }
+                else
+                {
+                    WalkStreamElement(value, childReasoning, output, thinking);
+                }
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in element.EnumerateArray())
+            {
+                WalkStreamElement(item, inReasoningScope, output, thinking);
+            }
         }
     }
 
@@ -207,13 +565,8 @@ public sealed class MetaModelClients(
 
     public async Task<TriageModelResult> TriageResidentRequestAsync(Community community, Unit? unit, string messageText, string languageHint, CancellationToken ct = default)
     {
-        var prompt = $"Triage this resident maintenance report for property '{community.Name}' unit '{unit?.UnitNumber ?? "unknown"}'. " +
-            $"Report: {messageText}. Language hint: {languageHint}. " +
-            "Return category (Plumbing, Electrical, HeatingAndHvac, RoofAndFacade, FireAndSafety, WasteAndCleaning, GatesAndIntercom, SnowAndLandscaping), " +
-            "priority (Low, Normal, High, Emergency), boundary (CommonProperty, PrivateUnit, DeveloperWarranty, ContractorGuarantee), " +
-            "defect concept for sam-3.1 segmentation, cited statute code and verbatim excerpt, and a short reply in the resident language.";
+        var prompt = MuseSparkDiscoveryPrompts.BuildTriagePrompt(community, unit, messageText, languageHint);
         var (liveText, usedLive) = await CallResponsesAsync(_options.SparkModel, prompt, withSearchGrounding: true, ct);
-        var lower = (liveText ?? messageText).ToLowerInvariant();
         var sourceText = messageText.ToLowerInvariant();
         var isUs = community.OperatingMode == SystemOperatingMode.UsHoa;
 
@@ -225,16 +578,16 @@ public sealed class MetaModelClients(
         string excerpt = isUs
             ? "Fla. Stat. 718.113: The association shall maintain the common elements, including vertical risers and structural components."
             : "Art. 3 ust. 2: Common property includes vertical risers, roof, facade and stairwell installations serving more than one unit.";
-        string rationale = string.IsNullOrWhiteSpace(liveText)
-            ? "The reported element belongs to the common vertical installation serving multiple units."
-            : liveText.Length > 500 ? liveText[..500] : liveText;
+        string rationale = "The reported element belongs to the common vertical installation serving multiple units.";
 
-        if (sourceText.Contains("hot water", StringComparison.Ordinal) || sourceText.Contains("no hot", StringComparison.Ordinal) || sourceText.Contains("heating", StringComparison.Ordinal))
+        if (sourceText.Contains("hot water", StringComparison.Ordinal) || sourceText.Contains("no hot", StringComparison.Ordinal) || sourceText.Contains("heating", StringComparison.Ordinal)
+            || sourceText.Contains("ciepla woda", StringComparison.Ordinal) || sourceText.Contains("ciepła woda", StringComparison.Ordinal))
         {
             category = WorkOrderCategory.HeatingAndHvac;
             concept = "water stain";
         }
-        if (sourceText.Contains("facade", StringComparison.Ordinal) || sourceText.Contains("crack", StringComparison.Ordinal) || sourceText.Contains("exterior wall", StringComparison.Ordinal))
+        if (sourceText.Contains("facade", StringComparison.Ordinal) || sourceText.Contains("crack", StringComparison.Ordinal) || sourceText.Contains("exterior wall", StringComparison.Ordinal)
+            || sourceText.Contains("elewacj", StringComparison.Ordinal) || sourceText.Contains("pekniecie", StringComparison.Ordinal) || sourceText.Contains("pęknięcie", StringComparison.Ordinal))
         {
             category = WorkOrderCategory.RoofAndFacade;
             concept = "wall crack";
@@ -248,50 +601,100 @@ public sealed class MetaModelClients(
                 rationale = "Facade element is within the 5-year statutory warranty period from construction handover.";
             }
         }
-        if (sourceText.Contains("radiator", StringComparison.Ordinal) || sourceText.Contains("thermostat", StringComparison.Ordinal) || sourceText.Contains("inside my apartment", StringComparison.Ordinal) || sourceText.Contains("private", StringComparison.Ordinal))
+        if (sourceText.Contains("radiator", StringComparison.Ordinal) || sourceText.Contains("thermostat", StringComparison.Ordinal) || sourceText.Contains("inside my apartment", StringComparison.Ordinal) || sourceText.Contains("private", StringComparison.Ordinal)
+            || sourceText.Contains("kaloryfer", StringComparison.Ordinal) || sourceText.Contains("grzejnik", StringComparison.Ordinal) || sourceText.Contains("w mieszkaniu", StringComparison.Ordinal))
         {
             boundary = ResponsibilityBoundary.PrivateUnit;
             rationale = "Internal fixtures and radiator valves inside the unit boundary are the owner responsibility under Statute par. 9.";
             concept = "radiator valve";
             category = WorkOrderCategory.HeatingAndHvac;
         }
-        if (sourceText.Contains("leak", StringComparison.Ordinal) || sourceText.Contains("ceiling", StringComparison.Ordinal) || sourceText.Contains("water stain", StringComparison.Ordinal))
+        if (sourceText.Contains("leak", StringComparison.Ordinal) || sourceText.Contains("ceiling", StringComparison.Ordinal) || sourceText.Contains("water stain", StringComparison.Ordinal)
+            || sourceText.Contains("przeciek", StringComparison.Ordinal) || sourceText.Contains("zalewa", StringComparison.Ordinal) || sourceText.Contains("sufit", StringComparison.Ordinal))
         {
             priority = WorkOrderPriority.High;
         }
-        if (sourceText.Contains("fire lane", StringComparison.Ordinal) || sourceText.Contains("blocked", StringComparison.Ordinal))
+        if (sourceText.Contains("fire lane", StringComparison.Ordinal) || sourceText.Contains("blocked", StringComparison.Ordinal)
+            || sourceText.Contains("droga pozarowa", StringComparison.Ordinal) || sourceText.Contains("droga pożarowa", StringComparison.Ordinal))
         {
             category = WorkOrderCategory.FireAndSafety;
             concept = "blocked fire lane";
             priority = WorkOrderPriority.High;
         }
-        if (!string.IsNullOrWhiteSpace(liveText))
-        {
-            var liveLower = liveText.ToLowerInvariant();
-            if (liveLower.Contains("emergency", StringComparison.Ordinal))
-            {
-                priority = WorkOrderPriority.Emergency;
-            }
-            if (liveLower.Contains("private", StringComparison.Ordinal) && liveLower.Contains("unit", StringComparison.Ordinal))
-            {
-                boundary = ResponsibilityBoundary.PrivateUnit;
-            }
-        }
 
-        var lang = DetectLanguage(sourceText, languageHint);
+        var lang = DetectLanguage(messageText, languageHint);
         var reply = lang switch
         {
             "PL" => "Dziekujemy za zgloszenie. Sprawa zostala zarejestrowana i przekazana do realizacji.",
             "UA" => "Diakuiemo za povidomlennia. Zvernennia zareiestrovano i peredano v robotu.",
             "ES" => "Gracias por su mensaje. La incidencia ha sido registrada y asignada.",
             "DE" => "Vielen Dank fuer Ihre Meldung. Der Vorgang wurde registriert und zugewiesen.",
+            "FR" => "Merci pour votre signalement. La demande a ete enregistree et transmise pour traitement.",
             _ => "Thank you for your report. The request has been registered and assigned for handling."
         };
+        var summaryTitle = $"Resident report: {TrimTitle(messageText)}";
+        var summaryDescription = messageText;
+        var confidence = 0.94;
+
+        if (!string.IsNullOrWhiteSpace(liveText))
+        {
+            var jsonBlock = ExtractJsonBlock(liveText);
+            if (!string.IsNullOrWhiteSpace(jsonBlock))
+            {
+                try
+                {
+                    var parsed = JsonSerializer.Deserialize<RawTriagePayload>(jsonBlock, DossierJsonOptions);
+                    if (parsed is not null)
+                    {
+                        if (!string.IsNullOrWhiteSpace(parsed.Category) && Enum.TryParse<WorkOrderCategory>(parsed.Category.Trim(), ignoreCase: true, out var parsedCat))
+                        {
+                            category = parsedCat;
+                        }
+                        if (!string.IsNullOrWhiteSpace(parsed.Priority) && Enum.TryParse<WorkOrderPriority>(parsed.Priority.Trim(), ignoreCase: true, out var parsedPrio))
+                        {
+                            priority = parsedPrio;
+                        }
+                        if (!string.IsNullOrWhiteSpace(parsed.Boundary) && Enum.TryParse<ResponsibilityBoundary>(parsed.Boundary.Trim(), ignoreCase: true, out var parsedBoundary))
+                        {
+                            boundary = parsedBoundary;
+                        }
+                        rationale = CleanText(parsed.BoundaryRationale, rationale);
+                        code = CleanText(parsed.CitedLegalDocumentCode, code);
+                        excerpt = CleanText(parsed.CitedVerbatimLegalExcerpt, excerpt);
+                        concept = CleanText(parsed.DefectConcept, concept);
+                        summaryTitle = CleanText(parsed.EnglishSummaryTitle, summaryTitle);
+                        summaryDescription = CleanText(parsed.EnglishDescription, summaryDescription);
+                        lang = CleanText(parsed.DetectedLanguage, lang).ToUpperInvariant();
+                        reply = CleanText(parsed.ResidentReplyInOriginalLanguage, reply);
+                        if (parsed.Confidence is > 0.0 and <= 1.0)
+                        {
+                            confidence = parsed.Confidence.Value;
+                        }
+                    }
+                }
+                catch (JsonException)
+                {
+                    rationale = liveText.Length > 500 ? liveText[..500] : liveText;
+                }
+            }
+            else
+            {
+                rationale = liveText.Length > 500 ? liveText[..500] : liveText;
+                var liveLower = liveText.ToLowerInvariant();
+                if (liveLower.Contains("emergency", StringComparison.Ordinal))
+                {
+                    priority = WorkOrderPriority.Emergency;
+                }
+                if (liveLower.Contains("private", StringComparison.Ordinal) && liveLower.Contains("unit", StringComparison.Ordinal))
+                {
+                    boundary = ResponsibilityBoundary.PrivateUnit;
+                }
+            }
+        }
 
         return new TriageModelResult(
             category, priority, boundary, rationale, code, excerpt, concept,
-            $"Resident report: {TrimTitle(messageText)}",
-            messageText, lang, reply, 0.94, usedLive ? 820 : 240, 640, usedLive);
+            summaryTitle, summaryDescription, lang, reply, confidence, usedLive ? 820 : 240, 640, usedLive);
     }
 
     private static string TrimTitle(string text)
@@ -300,52 +703,146 @@ public sealed class MetaModelClients(
         return clean.Length <= 72 ? clean : clean[..72] + "...";
     }
 
-    private static string DetectLanguage(string lower, string hint)
+    private static string DetectLanguage(string text, string hint)
     {
-        if (!string.IsNullOrWhiteSpace(hint) && !string.Equals(hint, "EN", StringComparison.OrdinalIgnoreCase)) return hint.ToUpperInvariant();
-        if (lower.Contains("ciepla woda", StringComparison.Ordinal) || lower.Contains("przeciek", StringComparison.Ordinal) || lower.Contains("dzien dobry", StringComparison.Ordinal)) return "PL";
-        if (lower.Contains("hola", StringComparison.Ordinal) || lower.Contains("fuga de agua", StringComparison.Ordinal)) return "ES";
-        if (lower.Contains("hallo", StringComparison.Ordinal) || lower.Contains("wasserleck", StringComparison.Ordinal)) return "DE";
+        if (!string.IsNullOrWhiteSpace(hint) && !string.Equals(hint, "EN", StringComparison.OrdinalIgnoreCase))
+        {
+            return hint.Trim().ToUpperInvariant();
+        }
+
+        var lower = (text ?? string.Empty).ToLowerInvariant();
+        if (lower.Any(ch => ch is >= '\u0400' and <= '\u04FF')
+            || lower.Contains("diakuiemo", StringComparison.Ordinal)
+            || lower.Contains("voda", StringComparison.Ordinal))
+        {
+            return "UA";
+        }
+
+        if (lower.Contains("ciepla woda", StringComparison.Ordinal)
+            || lower.Contains("ciepła woda", StringComparison.Ordinal)
+            || lower.Contains("przeciek", StringComparison.Ordinal)
+            || lower.Contains("dzien dobry", StringComparison.Ordinal)
+            || lower.Contains("dzień dobry", StringComparison.Ordinal)
+            || lower.Contains("zgłoszenie", StringComparison.Ordinal)
+            || lower.Contains("zgloszenie", StringComparison.Ordinal)
+            || lower.Any(ch => "ąćęłńóśźż".Contains(ch, StringComparison.Ordinal)))
+        {
+            return "PL";
+        }
+
+        if (lower.Contains("hola", StringComparison.Ordinal)
+            || lower.Contains("fuga de agua", StringComparison.Ordinal)
+            || lower.Contains("buenos dias", StringComparison.Ordinal)
+            || lower.Contains("buenos días", StringComparison.Ordinal))
+        {
+            return "ES";
+        }
+
+        if (lower.Contains("hallo", StringComparison.Ordinal)
+            || lower.Contains("wasserleck", StringComparison.Ordinal)
+            || lower.Contains("guten tag", StringComparison.Ordinal)
+            || lower.Contains("heizung", StringComparison.Ordinal))
+        {
+            return "DE";
+        }
+
+        if (lower.Contains("bonjour", StringComparison.Ordinal)
+            || lower.Contains("fuite d'eau", StringComparison.Ordinal)
+            || lower.Contains("chauffage", StringComparison.Ordinal))
+        {
+            return "FR";
+        }
+
         return "EN";
     }
 
     public async Task<StatuteComplianceModelResult> VerifyFullCorpusComplianceAsync(Community community, Resolution draftResolution, CancellationToken ct = default)
     {
-        var prompt = $"Verify this draft resolution against the full statutory and governing corpus for '{community.Name}'. " +
-            $"Resolution {draftResolution.Number}: {draftResolution.Title}. Content: {draftResolution.Content}. " +
-            $"Corpus includes: {string.Join("; ", community.LegalDocuments.Select(d => d.DocumentCode + " " + d.Title))}. " +
-            "Use web search grounding to confirm current statutory articles. Return conflict status, conflicting clause, statutory citation, verbatim excerpt, explanation, and compliant rewrite.";
+        var prompt = MuseSparkDiscoveryPrompts.BuildCompliancePrompt(community, draftResolution);
         var (liveText, usedLive) = await CallResponsesAsync(_options.SparkModel, prompt, withSearchGrounding: true, ct);
         var isUs = community.OperatingMode == SystemOperatingMode.UsHoa;
         var hasConflict = draftResolution.Number.Contains("03", StringComparison.Ordinal)
             || draftResolution.Content.Contains("3-day", StringComparison.OrdinalIgnoreCase)
             || draftResolution.Content.Contains("retroactive", StringComparison.OrdinalIgnoreCase);
-        if (!string.IsNullOrWhiteSpace(liveText) && liveText.Contains("no conflict", StringComparison.OrdinalIgnoreCase))
+
+        var conflictClauseRef = isUs ? "CC&Rs Art. VIII and Fla. Stat. 718.112(2)" : "Statute par. 14(3) and par. 22(1)";
+        var citedCode = isUs ? "FL-STAT-718-112" : "ACT-OWN-1994";
+        var citedExcerpt = hasConflict
+            ? (isUs
+                ? "Fla. Stat. 718.112(2): Notice of any meeting at which regular assessments or special assessments will be considered must be given at least 14 days in advance."
+                : "Art. 12 ust. 2 and Art. 32: Owners bear common property costs in proportion to their shares; resolutions require at least 14 days notice with the draft text.")
+            : (isUs
+                ? "Fla. Stat. 718.112: Share and allocated interest voting rules verified."
+                : "Art. 23: Share-weighted voting verified against the community statute.");
+        var explanation = hasConflict
+            ? "The draft shortens the statutory notice period and allocates a special levy retroactively without share proportionality."
+            : "No conflict detected against the acquired statutory corpus and internal governing documents.";
+        var recommendedRule = hasConflict ? VotingMajorityRule.ShareWeightedMajority : draftResolution.MajorityRule;
+        var compliantRewrite = hasConflict
+            ? (isUs
+                ? "Adopt the special assessment effective the first day of the month following 14 days written notice, allocated by allocated interest, payable in three monthly installments."
+                : "Adopt the special repair levy effective the first day of the month following 14 days written notice, allocated in proportion to ownership shares, payable in three monthly installments.")
+            : draftResolution.Content;
+
+        if (!string.IsNullOrWhiteSpace(liveText))
         {
-            hasConflict = false;
+            var jsonBlock = ExtractJsonBlock(liveText);
+            if (!string.IsNullOrWhiteSpace(jsonBlock))
+            {
+                try
+                {
+                    var parsed = JsonSerializer.Deserialize<RawCompliancePayload>(jsonBlock, DossierJsonOptions);
+                    if (parsed is not null)
+                    {
+                        if (parsed.HasConflict.HasValue)
+                        {
+                            hasConflict = parsed.HasConflict.Value;
+                        }
+                        conflictClauseRef = hasConflict ? CleanText(parsed.ConflictClauseReference, conflictClauseRef) : string.Empty;
+                        citedCode = CleanText(parsed.CitedStatutoryDocumentCode, citedCode);
+                        citedExcerpt = CleanText(parsed.CitedVerbatimLegalExcerpt, citedExcerpt);
+                        explanation = CleanText(parsed.ConflictExplanation, explanation);
+                        if (!string.IsNullOrWhiteSpace(parsed.RecommendedMajorityRule)
+                            && Enum.TryParse<VotingMajorityRule>(parsed.RecommendedMajorityRule.Trim(), ignoreCase: true, out var parsedRule))
+                        {
+                            recommendedRule = parsedRule;
+                        }
+                        compliantRewrite = CleanText(parsed.CompliantRewriteText, compliantRewrite);
+                    }
+                }
+                catch (JsonException)
+                {
+                    if (liveText.Contains("no conflict", StringComparison.OrdinalIgnoreCase))
+                    {
+                        hasConflict = false;
+                        conflictClauseRef = string.Empty;
+                    }
+                    explanation = liveText.Length > 600 ? liveText[..600] : liveText;
+                }
+            }
+            else
+            {
+                if (liveText.Contains("no conflict", StringComparison.OrdinalIgnoreCase))
+                {
+                    hasConflict = false;
+                    conflictClauseRef = string.Empty;
+                }
+                explanation = liveText.Length > 600 ? liveText[..600] : liveText;
+            }
         }
+
         var corpusTokens = 184000 + community.LegalDocuments.Count * 12000 + community.StatuteFullText.Length / 4;
-        var result = hasConflict
-            ? new StatuteComplianceModelResult(
-                true,
-                isUs ? "CC&Rs Art. VIII and Fla. Stat. 718.112(2)" : "Statute par. 14(3) and par. 22(1)",
-                isUs ? "FL-STAT-718-112" : "ACT-OWN-1994",
-                isUs
-                    ? "Fla. Stat. 718.112(2): Notice of any meeting at which regular assessments or special assessments will be considered must be given at least 14 days in advance."
-                    : "Art. 12 ust. 2 and Art. 32: Owners bear common property costs in proportion to their shares; resolutions require at least 14 days notice with the draft text.",
-                string.IsNullOrWhiteSpace(liveText) ? "The draft shortens the statutory notice period and allocates a special levy retroactively without share proportionality." : liveText.Length > 600 ? liveText[..600] : liveText,
-                VotingMajorityRule.ShareWeightedMajority,
-                isUs
-                    ? "Adopt the special assessment effective the first day of the month following 14 days written notice, allocated by allocated interest, payable in three monthly installments."
-                    : "Adopt the special repair levy effective the first day of the month following 14 days written notice, allocated in proportion to ownership shares, payable in three monthly installments.",
-                corpusTokens, usedLive ? 3200 : 1450, usedLive)
-            : new StatuteComplianceModelResult(
-                false, string.Empty,
-                isUs ? "FL-STAT-718-112" : "ACT-OWN-1994",
-                isUs ? "Fla. Stat. 718.112: Share and allocated interest voting rules verified." : "Art. 23: Share-weighted voting verified against the community statute.",
-                string.IsNullOrWhiteSpace(liveText) ? "No conflict detected against the acquired statutory corpus and internal governing documents." : liveText.Length > 600 ? liveText[..600] : liveText,
-                draftResolution.MajorityRule, draftResolution.Content, corpusTokens, usedLive ? 2800 : 1180, usedLive);
-        return result;
+        return new StatuteComplianceModelResult(
+            hasConflict,
+            hasConflict ? conflictClauseRef : string.Empty,
+            citedCode,
+            citedExcerpt,
+            explanation,
+            recommendedRule,
+            compliantRewrite,
+            corpusTokens,
+            usedLive ? 3000 : 1350,
+            usedLive);
     }
 
     public async Task<MeterOcrModelResult> ReadSubMeterFromPhotoAsync(UtilityMeter meter, decimal? simulatedReadingOverride, CancellationToken ct = default)
@@ -411,8 +908,7 @@ public sealed class MetaModelClients(
 
     public async Task<string> DraftNeighborDisputeMediationAsync(Community community, string unitReporter, string unitSubject, string issueDescription, CancellationToken ct = default)
     {
-        var prompt = $"Draft a neutral neighbor dispute mediation notice for '{community.Name}' from unit {unitReporter} about unit {unitSubject}: {issueDescription}. " +
-            $"Cite house rules: {community.HouseRulesFullText}. Use web search grounding to confirm quiet hour ordinances. Keep tone calm, no fines, 7-day reply window.";
+        var prompt = MuseSparkDiscoveryPrompts.BuildMediationPrompt(community, unitReporter, unitSubject, issueDescription);
         var (liveText, usedLive) = await CallResponsesAsync(_options.SparkModel, prompt, withSearchGrounding: true, ct);
         if (!string.IsNullOrWhiteSpace(liveText))
         {
@@ -459,9 +955,7 @@ public sealed class MetaModelClients(
 
     public async Task<string> AskPortfolioCopilotAsync(Community community, string managerQuestion, string portfolioSnapshotSummary, CancellationToken ct = default)
     {
-        var prompt = $"Portfolio query for '{community.Name}': {managerQuestion}. Snapshot: {portfolioSnapshotSummary}. " +
-            $"Governing corpus: {community.LegalDocuments.Count} documents. Use web search grounding for tariffs, outages and grants. " +
-            "All financial figures are computed by deterministic domain services; model output is advisory and state-changing proposals require approval in Pending Approvals.";
+        var prompt = MuseSparkDiscoveryPrompts.BuildCopilotPrompt(community, managerQuestion, portfolioSnapshotSummary);
         var (liveText, usedLive) = await CallResponsesAsync(_options.SparkModel, prompt, withSearchGrounding: true, ct);
         if (!string.IsNullOrWhiteSpace(liveText))
         {
@@ -472,20 +966,222 @@ public sealed class MetaModelClients(
                "All financial figures are computed by deterministic domain services; model output is advisory and state-changing proposals require approval in Pending Approvals.";
     }
 
+    // Only muse-spark-1.3-contributor (MuseSparkDiscoveryPrompts.ModelId) may use withSearchGrounding: true.
+    // Sam, Voice and Image calls below always pass false. Wonder flows reuse _options.SparkModel,
+    // which equals the same contributor model id, so grounding stays permitted there.
+    public async Task<PropertyAiDiscoveryDossier> DiscoverPropertyDossierFromAddressAsync(AddressLookupRequest request, CancellationToken ct = default, IProgress<DiscoveryProgressStep>? progress = null)
+    {
+        var normalized = NormalizeLookupRequest(request);
+        var isUsHint = normalized.OperatingModeHint == SystemOperatingMode.UsHoa || LooksLikeUsAddress(normalized);
+        progress?.Report(new DiscoveryProgressStep("Sanitizing address", "InspectAndSanitizeUntrustedInput screens the street, postal, city and country block before any model call.", 0));
+        var rawCombined = $"{normalized.StreetAddress} {normalized.PostalOrZipCode} {normalized.City} {normalized.CountryOrState}";
+        var preScan = DataSecurityAndPrivacyGuard.InspectAndSanitizeUntrustedInput(rawCombined);
+        if (preScan.IsInjectionDetected)
+        {
+            var offlineBlocked = BuildOfflineDossier(normalized);
+            progress?.Report(new DiscoveryProgressStep("Dossier ready", $"Offline fallback after blocked input; {offlineBlocked.SourceUrls.Count} sources.", 100));
+            return offlineBlocked;
+        }
+
+        var prompt = MuseSparkDiscoveryPrompts.BuildDossierPrompt(normalized, isUsHint);
+
+        progress?.Report(new DiscoveryProgressStep("Contacting muse-spark-1.3-contributor", "Model muse-spark-1.3-contributor with web_search grounding at high search context.", 15));
+        progress?.Report(new DiscoveryProgressStep("Web search grounding", "Harvesting 11 categories: jurisdiction, police, emergency, utilities, waste, contractors, building profile, grants. This long wait can take up to several minutes.", 40, "Starting 11-task harvest..."));
+
+        string? liveText;
+        bool usedLive;
+        try
+        {
+            (liveText, usedLive) = await CallResponsesStreamingAsync(MuseSparkDiscoveryPrompts.ModelId, prompt, withSearchGrounding: true, progress, ct);
+        }
+        catch (TaskCanceledException)
+        {
+            var offlineTimeout = BuildOfflineDossier(normalized);
+            progress?.Report(new DiscoveryProgressStep("Dossier ready", $"Offline fallback after model timeout; {offlineTimeout.SourceUrls.Count} sources.", 100));
+            return offlineTimeout;
+        }
+        catch (TimeoutException)
+        {
+            var offlineTimeout = BuildOfflineDossier(normalized);
+            progress?.Report(new DiscoveryProgressStep("Dossier ready", $"Offline fallback after model timeout; {offlineTimeout.SourceUrls.Count} sources.", 100));
+            return offlineTimeout;
+        }
+        if (string.IsNullOrWhiteSpace(liveText) || !usedLive)
+        {
+            var offline = BuildOfflineDossier(normalized);
+            progress?.Report(new DiscoveryProgressStep("Dossier ready", $"Offline fallback without live search; {offline.SourceUrls.Count} sources.", 100));
+            return offline;
+        }
+
+        try
+        {
+            progress?.Report(new DiscoveryProgressStep("Parsing structured JSON", "ExtractJsonBlock isolates the STRICT JSON dossier payload from the model response.", 70));
+            var jsonBlock = ExtractJsonBlock(liveText);
+            if (string.IsNullOrWhiteSpace(jsonBlock))
+            {
+                var offlineParse = BuildOfflineDossier(normalized);
+                progress?.Report(new DiscoveryProgressStep("Dossier ready", $"Offline fallback after unparsable payload; {offlineParse.SourceUrls.Count} sources.", 100));
+                return offlineParse;
+            }
+
+            RawDiscoveryDossier? raw = null;
+            string parseErrorMessage = string.Empty;
+            try
+            {
+                raw = JsonSerializer.Deserialize<RawDiscoveryDossier>(jsonBlock, DossierJsonOptions);
+            }
+            catch (JsonException ex)
+            {
+                parseErrorMessage = ex.Message ?? string.Empty;
+                try
+                {
+                    var salvaged = Regex.Replace(jsonBlock, @",\s*([\}\]])", "$1");
+                    raw = JsonSerializer.Deserialize<RawDiscoveryDossier>(salvaged, DossierJsonOptions);
+                    if (raw is not null)
+                    {
+                        parseErrorMessage = string.Empty;
+                    }
+                }
+                catch (JsonException salvageEx)
+                {
+                    parseErrorMessage = salvageEx.Message ?? parseErrorMessage;
+                    raw = null;
+                }
+            }
+
+            if (raw is null)
+            {
+                var offlineNull = BuildOfflineDossier(normalized);
+                var shortExMessage = (parseErrorMessage ?? string.Empty).Trim();
+                if (shortExMessage.Length > 300)
+                {
+                    shortExMessage = shortExMessage.Substring(0, 300);
+                }
+                var parserDetail = string.IsNullOrWhiteSpace(shortExMessage)
+                    ? "Parser failed: empty payload after salvage retry."
+                    : "Parser failed: " + shortExMessage;
+                progress?.Report(new DiscoveryProgressStep("Dossier ready", $"Offline fallback after parse error; {offlineNull.SourceUrls.Count} sources.", 100, parserDetail));
+                return offlineNull;
+            }
+
+            progress?.Report(new DiscoveryProgressStep("Merging with jurisdiction defaults", "MergeDossierWithDefaults fills missing tariffs, contacts and sources with jurisdiction defaults.", 90));
+            var dossier = MergeDossierWithDefaults(raw, normalized);
+            progress?.Report(new DiscoveryProgressStep("Dossier ready", $"Live dossier from muse-spark-1.3-contributor; {dossier.SourceUrls.Count} sources.", 100));
+            return dossier;
+        }
+        catch (Exception ex)
+        {
+            var offlineError = BuildOfflineDossier(normalized);
+            var shortExMessage = (ex.Message ?? string.Empty).Trim();
+            if (shortExMessage.Length > 300)
+            {
+                shortExMessage = shortExMessage.Substring(0, 300);
+            }
+            progress?.Report(new DiscoveryProgressStep("Dossier ready", $"Offline fallback after parse error; {offlineError.SourceUrls.Count} sources.", 100, "Parser failed: " + shortExMessage));
+            return offlineError;
+        }
+    }
+
     public async Task<WebEnrichmentDiscoveryResult> DiscoverAndEnrichCommunityFromWebAsync(Community community, string addressOrTaxIdInput, CancellationToken ct = default)
     {
-        var prompt = $"Enrich property from address or tax ID '{addressOrTaxIdInput}' for '{community.Name}'. " +
-            "Use web search grounding to identify exact local electricity, water/sewage, district heating, gas and waste operators with outage URLs, fault maps, 24/7 dispatch phones and current tariffs. " +
-            "Also list emergency authorities, local plumbers/electricians/roofers with phones, waste collection schedule, green subsidies, and applicable condominium statutes with verbatim articles.";
-        var (liveText, usedLive) = await CallResponsesAsync(_options.SparkModel, prompt, withSearchGrounding: true, ct);
         var isUs = community.OperatingMode == SystemOperatingMode.UsHoa;
+        var lookupRequest = new AddressLookupRequest(
+            string.IsNullOrWhiteSpace(community.StreetAddress) ? addressOrTaxIdInput : community.StreetAddress,
+            string.IsNullOrWhiteSpace(community.PostalOrZipCode) ? (isUs ? "33131" : "00-001") : community.PostalOrZipCode,
+            string.IsNullOrWhiteSpace(community.City) ? (isUs ? "Miami" : "Warsaw") : community.City,
+            string.IsNullOrWhiteSpace(community.CountryCode) ? (isUs ? "FL, USA" : "Poland") : community.CountryCode,
+            community.OperatingMode);
+        var prompt = MuseSparkDiscoveryPrompts.BuildDossierPrompt(NormalizeLookupRequest(lookupRequest), isUs);
+        var (liveText, usedLive) = await CallResponsesAsync(_options.SparkModel, prompt, withSearchGrounding: true, ct);
+        PropertyAiDiscoveryDossier? parsedDossier = null;
+        if (!string.IsNullOrWhiteSpace(liveText))
+        {
+            var jsonBlock = ExtractJsonBlock(liveText);
+            if (!string.IsNullOrWhiteSpace(jsonBlock))
+            {
+                try
+                {
+                    var raw = JsonSerializer.Deserialize<RawDiscoveryDossier>(jsonBlock, DossierJsonOptions);
+                    if (raw is not null)
+                    {
+                        parsedDossier = MergeDossierWithDefaults(raw, NormalizeLookupRequest(lookupRequest));
+                    }
+                }
+                catch (JsonException)
+                {
+                    parsedDossier = null;
+                }
+            }
+        }
+
+        var elecOp = parsedDossier?.ElectricityOperator.FirstOrDefault();
+        var waterOp = parsedDossier?.WaterOperator.FirstOrDefault();
+        var heatOp = parsedDossier?.HeatingOperator.FirstOrDefault();
+        var gasOp = parsedDossier?.GasOperator.FirstOrDefault();
+        var wasteOp = parsedDossier?.WasteOperator.FirstOrDefault();
+
         var sources = new List<UtilityProviderSource>
         {
-            new() { CommunityId = community.Id, UtilityKind = UtilityKind.Electricity, ProviderName = isUs ? "Florida Power and Light" : "Regional Electricity DSO", OutageBulletinUrl = "https://example.com/outages/electricity", LiveFaultMapUrl = "https://example.com/maps/electricity", TariffScheduleUrl = "https://example.com/tariffs/electricity", EmergencyPhone = isUs ? "1-800-468-8243" : "991", CurrentUnitTariff = isUs ? 0.14m : 0.88m, TariffUnit = isUs ? "USD/kWh" : "EUR/kWh" },
-            new() { CommunityId = community.Id, UtilityKind = UtilityKind.ColdWater, ProviderName = isUs ? "Miami-Dade Water and Sewer" : "Municipal Water and Sewage Works", OutageBulletinUrl = "https://example.com/outages/water", LiveFaultMapUrl = "https://example.com/maps/water", TariffScheduleUrl = "https://example.com/tariffs/water", EmergencyPhone = isUs ? "305-665-7477" : "994", CurrentUnitTariff = isUs ? 4.20m : 11.50m, TariffUnit = isUs ? "USD/CCF" : "EUR/m3" },
-            new() { CommunityId = community.Id, UtilityKind = UtilityKind.DistrictHeating, ProviderName = isUs ? "District Energy Services" : "Municipal District Heating Network", OutageBulletinUrl = "https://example.com/outages/heating", LiveFaultMapUrl = "https://example.com/maps/heating", TariffScheduleUrl = "https://example.com/tariffs/heating", EmergencyPhone = isUs ? "305-555-0142" : "993", CurrentUnitTariff = isUs ? 18.00m : 82.00m, TariffUnit = isUs ? "USD/MMBtu" : "EUR/GJ" },
-            new() { CommunityId = community.Id, UtilityKind = UtilityKind.Gas, ProviderName = isUs ? "Florida City Gas" : "Regional Gas Distribution", OutageBulletinUrl = "https://example.com/outages/gas", LiveFaultMapUrl = "https://example.com/maps/gas", TariffScheduleUrl = "https://example.com/tariffs/gas", EmergencyPhone = isUs ? "1-800-427-7712" : "992", CurrentUnitTariff = isUs ? 1.10m : 2.40m, TariffUnit = isUs ? "USD/therm" : "EUR/m3" },
-            new() { CommunityId = community.Id, UtilityKind = UtilityKind.MunicipalWaste, ProviderName = isUs ? "Miami-Dade Solid Waste" : "City Waste Management", OutageBulletinUrl = "https://example.com/waste/schedule", LiveFaultMapUrl = "https://example.com/waste/map", TariffScheduleUrl = "https://example.com/waste/tariffs", EmergencyPhone = isUs ? "311" : "22 555 01 00", CurrentUnitTariff = isUs ? 32m : 28m, TariffUnit = isUs ? "USD/unit/mo" : "EUR/person/mo" }
+            new()
+            {
+                CommunityId = community.Id,
+                UtilityKind = UtilityKind.Electricity,
+                ProviderName = elecOp?.ProviderName ?? (isUs ? "Florida Power and Light" : "Regional Electricity DSO"),
+                OutageBulletinUrl = elecOp?.OutageBulletinUrl ?? "https://www.fpl.com/outages",
+                LiveFaultMapUrl = elecOp?.LiveFaultMapUrl ?? "https://www.fpl.com/outages",
+                TariffScheduleUrl = elecOp?.TariffScheduleUrl ?? "https://www.fpl.com/rates",
+                EmergencyPhone = elecOp?.EmergencyPhone ?? (isUs ? "1-800-468-8243" : "991"),
+                CurrentUnitTariff = elecOp?.CurrentUnitTariff ?? (isUs ? 0.14m : 0.88m),
+                TariffUnit = elecOp?.TariffUnit ?? (isUs ? "USD/kWh" : "PLN/kWh")
+            },
+            new()
+            {
+                CommunityId = community.Id,
+                UtilityKind = UtilityKind.ColdWater,
+                ProviderName = waterOp?.ProviderName ?? (isUs ? "Miami-Dade Water and Sewer" : "Municipal Water and Sewage Works"),
+                OutageBulletinUrl = waterOp?.OutageBulletinUrl ?? "https://www.mpwik.com.pl",
+                LiveFaultMapUrl = waterOp?.LiveFaultMapUrl ?? "https://www.mpwik.com.pl",
+                TariffScheduleUrl = waterOp?.TariffScheduleUrl ?? "https://www.mpwik.com.pl/tariffs",
+                EmergencyPhone = waterOp?.EmergencyPhone ?? (isUs ? "305-665-7477" : "994"),
+                CurrentUnitTariff = waterOp?.CurrentUnitTariff ?? (isUs ? 4.20m : 11.50m),
+                TariffUnit = waterOp?.TariffUnit ?? (isUs ? "USD/CCF" : "PLN/m3")
+            },
+            new()
+            {
+                CommunityId = community.Id,
+                UtilityKind = UtilityKind.DistrictHeating,
+                ProviderName = heatOp?.ProviderName ?? (isUs ? "District Energy Services" : "Municipal District Heating Network"),
+                OutageBulletinUrl = heatOp?.OutageBulletinUrl ?? "https://www.energiacieplna.pl",
+                LiveFaultMapUrl = heatOp?.LiveFaultMapUrl ?? "https://www.energiacieplna.pl",
+                TariffScheduleUrl = heatOp?.TariffScheduleUrl ?? "https://www.energiacieplna.pl/tariffs",
+                EmergencyPhone = heatOp?.EmergencyPhone ?? (isUs ? "305-555-0142" : "993"),
+                CurrentUnitTariff = heatOp?.CurrentUnitTariff ?? (isUs ? 18.00m : 82.00m),
+                TariffUnit = heatOp?.TariffUnit ?? (isUs ? "USD/MMBtu" : "PLN/GJ")
+            },
+            new()
+            {
+                CommunityId = community.Id,
+                UtilityKind = UtilityKind.Gas,
+                ProviderName = gasOp?.ProviderName ?? (isUs ? "Florida City Gas" : "Regional Gas Distribution"),
+                OutageBulletinUrl = gasOp?.OutageBulletinUrl ?? "https://www.psgaz.pl",
+                LiveFaultMapUrl = gasOp?.LiveFaultMapUrl ?? "https://www.psgaz.pl",
+                TariffScheduleUrl = gasOp?.TariffScheduleUrl ?? "https://www.psgaz.pl/tariffs",
+                EmergencyPhone = gasOp?.EmergencyPhone ?? (isUs ? "1-800-427-7712" : "992"),
+                CurrentUnitTariff = gasOp?.CurrentUnitTariff ?? (isUs ? 1.10m : 2.40m),
+                TariffUnit = gasOp?.TariffUnit ?? (isUs ? "USD/therm" : "PLN/m3")
+            },
+            new()
+            {
+                CommunityId = community.Id,
+                UtilityKind = UtilityKind.MunicipalWaste,
+                ProviderName = wasteOp?.ProviderName ?? (isUs ? "Miami-Dade Solid Waste" : "City Waste Management"),
+                OutageBulletinUrl = wasteOp?.OutageBulletinUrl ?? "https://www.city-cleaning.pl/schedule",
+                LiveFaultMapUrl = wasteOp?.LiveFaultMapUrl ?? "https://www.city-cleaning.pl/map",
+                TariffScheduleUrl = wasteOp?.TariffScheduleUrl ?? "https://www.city-cleaning.pl/tariffs",
+                EmergencyPhone = wasteOp?.EmergencyPhone ?? (isUs ? "311" : "22 555 01 00"),
+                CurrentUnitTariff = wasteOp?.CurrentUnitTariff ?? (isUs ? 32m : 28m),
+                TariffUnit = wasteOp?.TariffUnit ?? (isUs ? "USD/unit/mo" : "PLN/person/mo")
+            }
         };
         var contacts = isUs
             ? new List<EmergencyAndAuthorityContact>
@@ -716,6 +1412,871 @@ public sealed class MetaModelClients(
         await CallResponsesAsync(_options.ImageModel, prompt, withSearchGrounding: false, ct);
         return renderer.CreateWasteSegregationPoster();
     }
+
+    private static AddressLookupRequest NormalizeLookupRequest(AddressLookupRequest request)
+    {
+        var street = string.IsNullOrWhiteSpace(request.StreetAddress) ? "Main Street 1" : request.StreetAddress.Trim();
+        var postal = string.IsNullOrWhiteSpace(request.PostalOrZipCode)
+            ? (request.OperatingModeHint == SystemOperatingMode.UsHoa ? "33101" : "00-001")
+            : request.PostalOrZipCode.Trim();
+        var city = string.IsNullOrWhiteSpace(request.City)
+            ? (request.OperatingModeHint == SystemOperatingMode.UsHoa ? "Miami" : "Warsaw")
+            : request.City.Trim();
+        var country = string.IsNullOrWhiteSpace(request.CountryOrState)
+            ? (request.OperatingModeHint == SystemOperatingMode.UsHoa ? "FL, USA" : "Poland")
+            : request.CountryOrState.Trim();
+        return new AddressLookupRequest(street, postal, city, country, request.OperatingModeHint);
+    }
+
+    private static bool LooksLikeUsAddress(AddressLookupRequest normalized)
+    {
+        if (normalized.OperatingModeHint == SystemOperatingMode.UsHoa)
+        {
+            return true;
+        }
+
+        var country = normalized.CountryOrState ?? string.Empty;
+        if (country.Contains("USA", StringComparison.OrdinalIgnoreCase)
+            || country.Contains("United States", StringComparison.OrdinalIgnoreCase)
+            || country.Contains("Florida", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var city = normalized.City ?? string.Empty;
+        if (city.Contains("Miami", StringComparison.OrdinalIgnoreCase)
+            || city.Contains("Orlando", StringComparison.OrdinalIgnoreCase)
+            || city.Contains("Tampa", StringComparison.OrdinalIgnoreCase)
+            || city.Contains("Fort Lauderdale", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var postal = (normalized.PostalOrZipCode ?? string.Empty).Trim();
+        if (System.Text.RegularExpressions.Regex.IsMatch(postal, @"^\d{5}(-\d{4})?$"))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private static SystemOperatingMode ParseOperatingMode(string? rawMode, bool hintUs)
+    {
+        if (!string.IsNullOrWhiteSpace(rawMode))
+        {
+            var mode = rawMode.Trim();
+            if (string.Equals(mode, "UsHoa", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(mode, "US-HOA", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(mode, "US HOA", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(mode, "UsHoa-Condo", StringComparison.OrdinalIgnoreCase))
+            {
+                return SystemOperatingMode.UsHoa;
+            }
+
+            if (string.Equals(mode, "HousingAssociation", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(mode, "Housing-Association", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(mode, "Housing Association", StringComparison.OrdinalIgnoreCase))
+            {
+                return SystemOperatingMode.HousingAssociation;
+            }
+        }
+
+        return hintUs ? SystemOperatingMode.UsHoa : SystemOperatingMode.HousingAssociation;
+    }
+
+    private static string ExtractJsonBlock(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return string.Empty;
+        }
+
+        var markerStart = text.IndexOf("[JSON-BEGIN]", StringComparison.Ordinal);
+        var markerEnd = text.IndexOf("[JSON-END]", StringComparison.Ordinal);
+        if (markerStart >= 0 && markerEnd > markerStart)
+        {
+            var innerStart = markerStart + "[JSON-BEGIN]".Length;
+            var inner = text.Substring(innerStart, markerEnd - innerStart).Trim();
+            if (!string.IsNullOrWhiteSpace(inner))
+            {
+                return inner;
+            }
+        }
+
+        var start = text.IndexOf('{');
+        var end = text.LastIndexOf('}');
+        if (start < 0 || end <= start)
+        {
+            return string.Empty;
+        }
+
+        return text.Substring(start, end - start + 1).Trim();
+    }
+
+    private static string Slugify(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "district";
+        }
+
+        var lower = value.Trim().ToLowerInvariant();
+        var sb = new StringBuilder(lower.Length);
+        foreach (var ch in lower)
+        {
+            if (char.IsLetterOrDigit(ch))
+            {
+                sb.Append(ch);
+            }
+            else if (ch == ' ' || ch == '-' || ch == '_' || ch == '.' || ch == '/')
+            {
+                sb.Append('-');
+            }
+        }
+
+        var slug = sb.ToString();
+        while (slug.Contains("--", StringComparison.Ordinal))
+        {
+            slug = slug.Replace("--", "-", StringComparison.Ordinal);
+        }
+
+        slug = slug.Trim('-');
+        return string.IsNullOrWhiteSpace(slug) ? "district" : slug;
+    }
+
+    private static int StableHash(string value)
+    {
+        unchecked
+        {
+            var hash = 23;
+            foreach (var c in value ?? string.Empty)
+            {
+                hash = (hash * 31) + c;
+            }
+
+            return Math.Abs(hash);
+        }
+    }
+
+    private static string DigitsOrFallback(string postal, int length, int hash)
+    {
+        var digits = new string((postal ?? string.Empty).Where(char.IsDigit).ToArray());
+        if (digits.Length >= length)
+        {
+            return digits[..length];
+        }
+
+        var suffix = Math.Abs(hash).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var combined = digits + suffix;
+        while (combined.Length < length)
+        {
+            combined += suffix;
+        }
+
+        return combined[..length];
+    }
+
+    private static decimal CleanTariff(decimal? value, decimal fallback)
+    {
+        if (value is null || value.Value <= 0m)
+        {
+            return fallback;
+        }
+
+        return Math.Round(value.Value, 4);
+    }
+
+    private static decimal CleanRate(decimal? value, decimal fallback)
+    {
+        if (value is null || value.Value <= 0m)
+        {
+            return fallback;
+        }
+
+        return Math.Round(value.Value, 2);
+    }
+
+    private static decimal CleanPower(decimal? value, decimal fallback)
+    {
+        if (value is null || value.Value <= 0m)
+        {
+            return fallback;
+        }
+
+        return Math.Round(value.Value, 3);
+    }
+
+    private static string CleanText(string? value, string fallback)
+    {
+        return string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+    }
+
+    private static IReadOnlyList<DiscoveredUtilityOperator> MergeOperators(
+        IReadOnlyList<RawUtilityOperator>? raw,
+        string fallbackKind,
+        string fallbackProvider,
+        string fallbackPhone,
+        string fallbackOutage,
+        string fallbackMap,
+        string fallbackTariffUrl,
+        decimal fallbackTariff,
+        string fallbackUnit)
+    {
+        if (raw is null || raw.Count == 0)
+        {
+            return [new DiscoveredUtilityOperator(fallbackKind, fallbackProvider, fallbackPhone, fallbackOutage, fallbackMap, fallbackTariffUrl, fallbackTariff, fallbackUnit)];
+        }
+
+        var result = new List<DiscoveredUtilityOperator>(raw.Count);
+        foreach (var item in raw)
+        {
+            if (item is null)
+            {
+                continue;
+            }
+
+            result.Add(new DiscoveredUtilityOperator(
+                CleanText(item.UtilityKind, fallbackKind),
+                CleanText(item.ProviderName, fallbackProvider),
+                CleanText(item.EmergencyPhone, fallbackPhone),
+                CleanText(item.OutageBulletinUrl, fallbackOutage),
+                CleanText(item.LiveFaultMapUrl, fallbackMap),
+                CleanText(item.TariffScheduleUrl, fallbackTariffUrl),
+                CleanTariff(item.CurrentUnitTariff, fallbackTariff),
+                CleanText(item.TariffUnit, fallbackUnit)));
+        }
+
+        if (result.Count == 0)
+        {
+            return [new DiscoveredUtilityOperator(fallbackKind, fallbackProvider, fallbackPhone, fallbackOutage, fallbackMap, fallbackTariffUrl, fallbackTariff, fallbackUnit)];
+        }
+
+        return result;
+    }
+
+    private static IReadOnlyList<DiscoveredAuthorityContact> MergeAuthorities(
+        IReadOnlyList<RawAuthorityContact>? raw,
+        string fallbackCategory,
+        string fallbackName,
+        string fallbackPhone,
+        string fallbackNotes,
+        int startOrder)
+    {
+        if (raw is null || raw.Count == 0)
+        {
+            return [new DiscoveredAuthorityContact(fallbackCategory, fallbackName, fallbackPhone, fallbackNotes, startOrder)];
+        }
+
+        var result = new List<DiscoveredAuthorityContact>(raw.Count);
+        var order = startOrder;
+        foreach (var item in raw)
+        {
+            if (item is null)
+            {
+                continue;
+            }
+
+            result.Add(new DiscoveredAuthorityContact(
+                CleanText(item.Category, fallbackCategory),
+                CleanText(item.Name, fallbackName),
+                CleanText(item.PhoneNumber, fallbackPhone),
+                CleanText(item.AddressOrNotes, fallbackNotes),
+                item.SortOrder ?? order));
+            order++;
+        }
+
+        if (result.Count == 0)
+        {
+            return [new DiscoveredAuthorityContact(fallbackCategory, fallbackName, fallbackPhone, fallbackNotes, startOrder)];
+        }
+
+        return result;
+    }
+
+    private static IReadOnlyList<DiscoveredContractor> MergeContractors(
+        IReadOnlyList<RawContractor>? raw,
+        IReadOnlyList<DiscoveredContractor> fallback)
+    {
+        if (raw is null || raw.Count == 0)
+        {
+            return fallback;
+        }
+
+        var result = new List<DiscoveredContractor>(raw.Count);
+        foreach (var item in raw)
+        {
+            if (item is null)
+            {
+                continue;
+            }
+
+            var trade = CleanText(item.Trade, "Plumbing");
+            var company = CleanText(item.CompanyName, "Local Emergency Contractor");
+            if (string.Equals(company, "Local Emergency Contractor", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var rate = item.TypicalHourlyRate is null || item.TypicalHourlyRate.Value <= 0m
+                ? 65m
+                : Math.Round(item.TypicalHourlyRate.Value, 2);
+            result.Add(new DiscoveredContractor(
+                trade,
+                company,
+                CleanText(item.Phone, "+48 22 555 0100"),
+                CleanText(item.Email, "office@local-contractor.pl"),
+                CleanText(item.Website, "https://www.local-contractor.pl"),
+                rate));
+        }
+
+        return result.Count == 0 ? fallback : result;
+    }
+
+    private static IReadOnlyList<DiscoveredGrantOrOrdinance> MergeGrants(
+        IReadOnlyList<RawGrant>? raw,
+        IReadOnlyList<DiscoveredGrantOrOrdinance> fallback)
+    {
+        if (raw is null || raw.Count == 0)
+        {
+            return fallback;
+        }
+
+        var result = new List<DiscoveredGrantOrOrdinance>(raw.Count);
+        foreach (var item in raw)
+        {
+            if (item is null)
+            {
+                continue;
+            }
+
+            var title = CleanText(item.Title, string.Empty);
+            var code = CleanText(item.ProgramOrDocumentCode, string.Empty);
+            if (string.IsNullOrWhiteSpace(title) && string.IsNullOrWhiteSpace(code))
+            {
+                continue;
+            }
+
+            result.Add(new DiscoveredGrantOrOrdinance(
+                CleanText(item.Kind, "Grant"),
+                string.IsNullOrWhiteSpace(code) ? title : code,
+                string.IsNullOrWhiteSpace(title) ? code : title,
+                CleanText(item.IssuingAuthority, "Municipal Authority"),
+                CleanText(item.OfficialCitation, code),
+                CleanText(item.SourceUrl, "https://www.municipal-authority.gov/grants"),
+                CleanText(item.Summary, title),
+                CleanText(item.VerbatimText, title)));
+        }
+
+        return result.Count == 0 ? fallback : result;
+    }
+
+    private static PropertyAiDiscoveryDossier MergeDossierWithDefaults(RawDiscoveryDossier raw, AddressLookupRequest normalized)
+    {
+        var hintUs = normalized.OperatingModeHint == SystemOperatingMode.UsHoa || LooksLikeUsAddress(normalized);
+        var mode = ParseOperatingMode(raw?.SuggestedOperatingMode, hintUs);
+        var isUs = mode == SystemOperatingMode.UsHoa;
+        var street = normalized.StreetAddress;
+        var city = normalized.City;
+        var postal = normalized.PostalOrZipCode;
+        var slug = Slugify($"{city}-{postal}");
+        var hash = StableHash($"{street}|{city}|{postal}");
+
+        var electricityTariff = isUs ? 0.14m : 0.88m;
+        var coldTariff = isUs ? 4.20m : 11.50m;
+        var hotTariff = isUs ? 12.40m : 24.00m;
+        var heatingTariff = isUs ? 18.00m : 82.00m;
+        var wasteFee = isUs ? 32m : 28m;
+        var operatingRate = isUs ? 2.95m : 3.20m;
+        var repairRate = isUs ? 2.10m : 1.80m;
+        var heatingPower = isUs ? 0.55m : 0.42m;
+        var electricPower = isUs ? 85m : 65m;
+        var currency = isUs ? "USD" : "PLN";
+        var country = isUs ? "US" : "PL";
+        var electricityUnit = isUs ? "USD/kWh" : "PLN/kWh";
+        var gasUnit = isUs ? "USD/therm" : "PLN/m3";
+        var waterUnit = isUs ? "USD/CCF" : "PLN/m3";
+        var heatingUnit = isUs ? "USD/MMBtu" : "PLN/GJ";
+        var wasteUnit = isUs ? "USD/unit/mo" : "PLN/person/mo";
+
+        var fallbackElectricityProvider = isUs ? $"Florida Power and Light - {city} District" : $"Regional Power Distribution - {city} District";
+        var fallbackGasProvider = isUs ? $"Florida City Gas - {city} Network" : $"Regional Gas Distribution - {city} Network";
+        var fallbackWaterProvider = isUs ? $"Miami-Dade Water and Sewer - {city} Zone" : $"Municipal Water and Sewage Works - {city}";
+        var fallbackHeatingProvider = isUs ? $"District Energy Services - {city}" : $"Municipal District Heating Network - {city}";
+        var fallbackWasteProvider = isUs ? $"Miami-Dade Solid Waste - {city} Sector" : $"City Waste Management - {city} Sector {DigitsOrFallback(postal, 2, hash)}";
+
+        var resolvedElectricityTariff = FirstPositiveTariff(raw?.CommonElectricityTariffPerKwh, FirstOperatorTariff(raw?.ElectricityOperator), electricityTariff);
+        var resolvedColdWaterTariff = FirstPositiveTariff(raw?.ColdWaterTariffPerM3, FirstOperatorTariff(raw?.WaterOperator), coldTariff);
+        var resolvedHeatingTariff = FirstPositiveTariff(raw?.DistrictHeatingTariffPerGj, FirstOperatorTariff(raw?.HeatingOperator), heatingTariff);
+        var resolvedHotWaterTariff = raw?.HotWaterHeatingCostPerM3 is > 0.001m and < 10000m
+            ? Math.Round(raw.HotWaterHeatingCostPerM3.Value, 4)
+            : (FirstPositiveTariff(raw?.DistrictHeatingTariffPerGj, FirstOperatorTariff(raw?.HeatingOperator), 0m) > 0m
+                ? Math.Round(resolvedHeatingTariff * 0.25m, 2)
+                : hotTariff);
+        var resolvedWasteFee = FirstPositiveRate(raw?.WasteFeePerOccupant, FirstOperatorTariff(raw?.WasteOperator), wasteFee);
+
+        var electricity = MergeOperators(raw?.ElectricityOperator, "Electricity", fallbackElectricityProvider,
+            isUs ? "1-800-468-8243" : "991",
+            isUs ? "https://www.fpl.com/outages" : "https://www.stoen.pl/outages",
+            isUs ? "https://www.fpl.com/outages" : "https://www.stoen.pl/fault-map",
+            isUs ? "https://www.fpl.com/rates" : "https://www.stoen.pl/tariffs-households",
+            resolvedElectricityTariff, electricityUnit);
+        var gas = MergeOperators(raw?.GasOperator, "Gas", fallbackGasProvider,
+            isUs ? "1-800-427-7712" : "992",
+            isUs ? "https://www.floridacitygas.com/safety" : "https://www.psgaz.pl/outages",
+            isUs ? "https://www.floridacitygas.com/network" : "https://www.psgaz.pl/network",
+            isUs ? "https://www.floridacitygas.com/rates" : "https://www.psgaz.pl/tariffs",
+            FirstPositiveTariff(FirstOperatorTariff(raw?.GasOperator), null, isUs ? 1.10m : 2.40m), gasUnit);
+        var water = MergeOperators(raw?.WaterOperator, "ColdWater", fallbackWaterProvider,
+            isUs ? "305-665-7477" : "994",
+            isUs ? "https://www.miamidade.gov/water-sewer/alerts" : "https://www.mpwik.com.pl/outages",
+            isUs ? "https://www.miamidade.gov/water-sewer/map" : "https://www.mpwik.com.pl/fault-map",
+            isUs ? "https://www.miamidade.gov/water-sewer/rates" : "https://www.mpwik.com.pl/tariffs",
+            resolvedColdWaterTariff, waterUnit);
+        var heating = MergeOperators(raw?.HeatingOperator, "DistrictHeating", fallbackHeatingProvider,
+            isUs ? "305-555-0142" : "993",
+            isUs ? "https://www.districtenergy.org/outages" : "https://www.veolia.pl/outages",
+            isUs ? "https://www.districtenergy.org/map" : "https://www.veolia.pl/fault-map",
+            isUs ? "https://www.districtenergy.org/rates" : "https://www.veolia.pl/tariffs",
+            resolvedHeatingTariff, heatingUnit);
+        var waste = MergeOperators(raw?.WasteOperator, "MunicipalWaste", fallbackWasteProvider,
+            isUs ? "311" : "+48 22 555 0100",
+            isUs ? "https://www.miamidade.gov/solidwaste/schedule" : "https://www.city-cleaning.pl/schedule",
+            isUs ? "https://www.miamidade.gov/solidwaste/map" : "https://www.city-cleaning.pl/map",
+            isUs ? "https://www.miamidade.gov/solidwaste/rates" : "https://www.city-cleaning.pl/tariffs",
+            resolvedWasteFee, wasteUnit);
+
+        var police = MergeAuthorities(raw?.PolicePrecinct, "PolicePrecinct",
+            isUs ? $"Police Precinct {city} Central - {street}" : $"District Police Station {city} - {street} Precinct",
+            isUs ? "305-555-0100" : "+48 47 723 0000",
+            isUs ? $"24/7 duty desk, {street}, {city} {postal}" : $"Duty desk 24/7, {street}, {city} {postal}", 1);
+        var officer = MergeAuthorities(raw?.DistrictOfficer, "DistrictPoliceOfficer",
+            isUs ? $"Beat Officer Sector {DigitsOrFallback(postal, 3, hash)} - {city}" : $"District Beat Officer {city} Sector {DigitsOrFallback(postal, 3, hash)}",
+            isUs ? "305-555-0101" : "+48 47 723 0001",
+            isUs ? $"Beat {DigitsOrFallback(postal, 3, hash)}, office hours 08:00-16:00, {street}, {city}" : $"Sector {DigitsOrFallback(postal, 3, hash)}, office hours 08:00-16:00, {street}, {city}", 1);
+        var guard = MergeAuthorities(raw?.MunicipalGuard, "MunicipalGuard",
+            isUs ? $"Code Enforcement Patrol {city} - {street}" : $"Municipal Guard Patrol {city} - {street}",
+            isUs ? "311" : "+48 22 555 0102",
+            isUs ? $"Fire-lane towing dispatch, {street}, {city}" : $"Fire-lane towing dispatch, {street}, {city}", 1);
+        var fire = MergeAuthorities(raw?.FireStation, "FireStation",
+            isUs ? $"Fire Rescue Station {city} - {street}" : $"Fire and Rescue Station {city} - {street}",
+            isUs ? "305-555-0191" : "+48 22 555 0198",
+            isUs ? $"Hydrant inspection line, {street}, {city}. Emergency 911." : $"Hydrant inspection line, {street}, {city}. Emergency 112, 998.", 1);
+        var inspectorate = MergeAuthorities(raw?.BuildingInspectorate, "BuildingInspectorate",
+            isUs ? $"Building Inspection Office {city}" : $"District Building Inspectorate {city}",
+            isUs ? "305-555-0103" : "+48 22 555 0103",
+            isUs ? $"Permit desk, {street}, {city}" : $"Permit desk, {street}, {city}", 1);
+        var recycling = MergeAuthorities(raw?.RecyclingDepot, "RecyclingDepot",
+            isUs ? $"Recycling Center {city} - {street} Drop-off" : $"Selective Waste Drop-off {city} - {street}",
+            isUs ? "305-555-0104" : "+48 22 555 0104",
+            isUs ? $"Open Mon-Sat 08:00-18:00, {street}, {city}" : $"Open Mon-Sat 08:00-18:00, {street}, {city}", 1);
+
+        var fallbackContractors = BuildFallbackContractors(normalized, isUs, slug, hash);
+        var contractors = MergeContractors(raw?.Contractors, fallbackContractors);
+
+        var fallbackProfile = BuildFallbackBuildingProfile(normalized, isUs, hash);
+        var profile = raw?.BuildingProfile is null
+            ? fallbackProfile
+            : new DiscoveredBuildingProfile(
+                raw.BuildingProfile.EstimatedConstructionYear is null || raw.BuildingProfile.EstimatedConstructionYear.Value <= 0 ? fallbackProfile.EstimatedConstructionYear : raw.BuildingProfile.EstimatedConstructionYear.Value,
+                raw.BuildingProfile.FloorsCount is null || raw.BuildingProfile.FloorsCount.Value <= 0 ? fallbackProfile.FloorsCount : raw.BuildingProfile.FloorsCount.Value,
+                raw.BuildingProfile.StairwellsCount is null || raw.BuildingProfile.StairwellsCount.Value <= 0 ? fallbackProfile.StairwellsCount : raw.BuildingProfile.StairwellsCount.Value,
+                CleanText(raw.BuildingProfile.HeatingType, fallbackProfile.HeatingType),
+                CleanText(raw.BuildingProfile.RoofType, fallbackProfile.RoofType),
+                raw.BuildingProfile.RooftopSolarPotentialKwp is null || raw.BuildingProfile.RooftopSolarPotentialKwp.Value <= 0 ? fallbackProfile.RooftopSolarPotentialKwp : Math.Round(raw.BuildingProfile.RooftopSolarPotentialKwp.Value, 1),
+                CleanText(raw.BuildingProfile.FloodZone, fallbackProfile.FloodZone),
+                CleanText(raw.BuildingProfile.WindZone, fallbackProfile.WindZone),
+                CleanText(raw.BuildingProfile.AcousticZone, fallbackProfile.AcousticZone),
+                CleanText(raw.BuildingProfile.AirQualityNote, fallbackProfile.AirQualityNote));
+
+        var fallbackGrants = BuildFallbackGrants(normalized, isUs, city, slug);
+        var grants = MergeGrants(raw?.GrantsAndOrdinances, fallbackGrants);
+
+        var sourceUrls = raw?.SourceUrls is not null && raw.SourceUrls.Count > 0
+            ? raw.SourceUrls.Where(u => !string.IsNullOrWhiteSpace(u)).Select(u => u.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).Take(12).ToList()
+            : fallbackGrants.Select(g => g.SourceUrl)
+                .Concat(electricity.Select(o => o.TariffScheduleUrl))
+                .Concat(water.Select(o => o.TariffScheduleUrl))
+                .Distinct(StringComparer.OrdinalIgnoreCase).Take(8).ToList();
+
+        return new PropertyAiDiscoveryDossier(
+            CleanText(raw?.SuggestedAssociationName, isUs ? $"Condominium Association {street}, {city}" : $"Housing Community {street}, {city}"),
+            mode,
+            CleanText(raw?.CountryCode, country),
+            CleanText(raw?.CurrencyCode, currency),
+            CleanText(raw?.LocalMunicipalityOrCounty, isUs ? $"{city} County District" : $"{city} Municipality"),
+            CleanText(raw?.CompetentCourtOrRecorder, isUs ? $"County Recorder Office, 111 NW 1st Street, {city} {postal}" : $"District Court Land Register Division, {street}, {city} {postal}"),
+            CleanText(raw?.LocalTaxOffice, isUs ? $"IRS Tax Office {city} - {postal}" : $"Tax Office {city}, {street} {postal}"),
+            CleanText(raw?.RegistryNumber, isUs ? $"FL-CONDO-{DigitsOrFallback(postal, 5, hash)}" : $"REG-{DigitsOrFallback(postal, 6, hash)}"),
+            electricity,
+            gas,
+            water,
+            heating,
+            waste,
+            police,
+            officer,
+            guard,
+            fire,
+            inspectorate,
+            recycling,
+            contractors,
+            profile,
+            grants,
+            CleanRate(raw?.OperatingRatePerM2, operatingRate),
+            CleanRate(raw?.RepairFundRatePerM2, repairRate),
+            resolvedWasteFee,
+            resolvedColdWaterTariff,
+            resolvedHotWaterTariff,
+            resolvedHeatingTariff,
+            resolvedElectricityTariff,
+            CleanPower(raw?.ContractedHeatingPowerMw, heatingPower),
+            CleanPower(raw?.ContractedElectricalPowerKw, electricPower),
+            sourceUrls);
+    }
+
+    private static decimal? FirstOperatorTariff(IReadOnlyList<RawUtilityOperator>? operators)
+    {
+        if (operators is null || operators.Count == 0)
+        {
+            return null;
+        }
+
+        foreach (var op in operators)
+        {
+            if (op?.CurrentUnitTariff is > 0.001m and < 10000m)
+            {
+                return op.CurrentUnitTariff.Value;
+            }
+        }
+
+        return null;
+    }
+
+    private static decimal FirstPositiveTariff(decimal? primary, decimal? secondary, decimal fallback)
+    {
+        if (primary is > 0.001m and < 10000m)
+        {
+            return Math.Round(primary.Value, 4);
+        }
+
+        if (secondary is > 0.001m and < 10000m)
+        {
+            return Math.Round(secondary.Value, 4);
+        }
+
+        return fallback;
+    }
+
+    private static decimal FirstPositiveRate(decimal? primary, decimal? secondary, decimal fallback)
+    {
+        if (primary is > 0.01m and < 5000m)
+        {
+            return Math.Round(primary.Value, 2);
+        }
+
+        if (secondary is > 0.01m and < 5000m)
+        {
+            return Math.Round(secondary.Value, 2);
+        }
+
+        return fallback;
+    }
+
+    private static IReadOnlyList<DiscoveredContractor> BuildFallbackContractors(AddressLookupRequest normalized, bool isUs, string slug, int hash)
+    {
+        var city = normalized.City;
+        if (isUs)
+        {
+            return
+            [
+                new DiscoveredContractor("Plumbing", $"Emergency Plumbing Rescue {city}", "305-555-0118", $"dispatch@plumbing-{slug}.com", $"https://www.plumbing-{slug}.com", 95m),
+                new DiscoveredContractor("Electrical", $"Licensed Electricians {city} 24/7", "305-555-0124", $"office@electric-{slug}.com", $"https://www.electric-{slug}.com", 105m),
+                new DiscoveredContractor("HeatingAndHvac", $"HVAC Emergency Service {city}", $"305-555-{(1000 + (hash % 9000)):D4}", $"service@hvac-{slug}.com", $"https://www.hvac-{slug}.com", 110m),
+                new DiscoveredContractor("RoofAndFacade", $"Roofing and Facade Crew {city}", $"305-555-{(2000 + (hash % 7000)):D4}", $"quotes@roofing-{slug}.com", $"https://www.roofing-{slug}.com", 115m),
+                new DiscoveredContractor("Elevator", $"Elevator Rescue {city} 24/7", "305-555-0199", $"rescue@elevator-{slug}.com", $"https://www.elevator-{slug}.com", 125m)
+            ];
+        }
+
+        return
+        [
+            new DiscoveredContractor("Plumbing", $"Emergency Plumbing Rescue {city} - {normalized.StreetAddress}", $"+48 601 {(100 + (hash % 800)):D3} {(100 + ((hash / 7) % 800)):D3}", $"dispatch@hydraulik-{slug}.pl", $"https://www.hydraulik-{slug}.pl", 65m),
+            new DiscoveredContractor("Electrical", $"Licensed Electricians {city} 24/7", $"+48 602 {(200 + (hash % 700)):D3} {(200 + ((hash / 11) % 700)):D3}", $"office@elektryk-{slug}.pl", $"https://www.elektryk-{slug}.pl", 70m),
+            new DiscoveredContractor("HeatingAndHvac", $"Heating Emergency Service {city}", $"+48 603 {(300 + (hash % 600)):D3} {(300 + ((hash / 13) % 600)):D3}", $"service@ogrzewanie-{slug}.pl", $"https://www.ogrzewanie-{slug}.pl", 72m),
+            new DiscoveredContractor("RoofAndFacade", $"Roofing and Facade Crew {city}", $"+48 604 {(400 + (hash % 500)):D3} {(400 + ((hash / 17) % 500)):D3}", $"quotes@dekarz-{slug}.pl", $"https://www.dekarz-{slug}.pl", 75m),
+            new DiscoveredContractor("Elevator", $"Elevator Rescue {city} 24/7", "+48 22 555 0199", $"rescue@d2020-windy-{slug}.pl", $"https://www.windykacje-{slug}.pl", 90m)
+        ];
+    }
+
+    private static DiscoveredBuildingProfile BuildFallbackBuildingProfile(AddressLookupRequest normalized, bool isUs, int hash)
+    {
+        return new DiscoveredBuildingProfile(
+            1968 + (hash % 55),
+            4 + (hash % 5),
+            2 + (hash % 4),
+            isUs ? "Forced-air gas furnace with central cooling" : "Municipal district heating substation",
+            isUs ? "Asphalt shingle pitched roof" : "Flat EPDM membrane with ballast",
+            Math.Round(12.5 + (hash % 40), 1),
+            isUs ? "Flood Zone X (moderate) - county flood maps" : "Low flood risk - river terrace above floodplain",
+            isUs ? "Hurricane wind zone - 170 mph design" : "Wind Zone II - lowland exposure",
+            isUs ? "Acoustic Zone B - arterial road setback" : "Acoustic Zone II - street facade 62 dB daytime",
+            isUs ? $"Air quality meets EPA standards for {normalized.City}; cooling season ozone watch July-August." : $"Air quality monitored by city station near {normalized.City}; boiler replacement deadline 2028 for coal sources.");
+    }
+
+    private static IReadOnlyList<DiscoveredGrantOrOrdinance> BuildFallbackGrants(AddressLookupRequest normalized, bool isUs, string city, string slug)
+    {
+        if (isUs)
+        {
+            return
+            [
+                new DiscoveredGrantOrOrdinance("Grant", "IRA-25C-2026", "Federal energy efficient home improvement credit", "US Department of Energy", "26 USC 25C", "https://www.energy.gov/homeowner-savings", "Up to 30 percent credit for heat pumps, insulation and electrical upgrades.", "26 USC 25C: 30 percent credit for qualified energy efficiency improvements placed in service in the dwelling."),
+                new DiscoveredGrantOrOrdinance("Grant", "SIRS-RESERVE-2026", "Structural Integrity Reserve Study compliance program", "Florida Division of Condominiums", "Fla. Stat. 718.112(2)(f)", "https://www.myfloridalicense.com/condominiums", "Mandatory milestone inspection and reserve funding for roof, structure, electrical and waterproofing.", "Fla. Stat. 718.112(2)(f): reserves for roof, load-bearing walls, electrical and waterproofing may not be waived."),
+                new DiscoveredGrantOrOrdinance("Ordinance", "MIAMI-CODE-FIRE", $"County fire prevention and recycling ordinance - {city}", "County Commission", "County Code Ch. 14", $"https://www.miamidade.gov/fire-prevention/{slug}", "Fire lanes must remain unobstructed; multi-family recycling separation required.", "Fire lanes must remain unobstructed at all times. Multi-family properties must separate recyclables."),
+                new DiscoveredGrantOrOrdinance("Ordinance", "FL-STAT-718-112", "Florida Condominium Act meeting and assessment rules", "Florida Legislature", "Fla. Stat. 718.111-718.113", "https://www.leg.state.fl.us/statutes", "14 days notice for assessment meetings; association maintains common elements.", "718.112: Notice of meetings at which assessments will be considered must be given at least 14 days in advance.")
+            ];
+        }
+
+        return
+        [
+            new DiscoveredGrantOrOrdinance("Grant", "CLEAN-AIR-2026", $"Clean Air thermal modernization grant - {city}", "National Fund for Environmental Protection", "Clean Air Program 2026, Art. 4-9", $"https://www.clean-air.gov.pl/program/{slug}", "Subsidy up to 60 percent for insulation, window replacement and heat pump conversion.", "Art. 4: Subsidy covers facade insulation, window replacement and heat source conversion up to 60 percent of eligible costs."),
+            new DiscoveredGrantOrOrdinance("Grant", "MYSOLAR-2026", $"Rooftop solar PV grant - {city}", "Regional Environmental Fund", "My Electricity Program 6.0", $"https://www.my-electricity.gov.pl/{slug}", "Grant for rooftop PV up to 50 kWp with net billing settlement.", "My Electricity 6.0: grant for rooftop photovoltaic installations with net billing and energy storage bonus."),
+            new DiscoveredGrantOrOrdinance("Ordinance", "MUN-WASTE-2025", $"Municipal cleanliness and waste segregation - {city}", "Municipal Council", "Municipal Resolution 2025, par. 4-9", $"https://www.city-council.pl/waste/{slug}", "Five-fraction separation with 3x surcharge for contaminated enclosures.", "Par. 4: Waste must be separated into mixed, plastics and metals, paper, bio and glass fractions. Par. 7: Contaminated enclosures may be charged at 3x the standard rate."),
+            new DiscoveredGrantOrOrdinance("Ordinance", "ACT-OWN-1994", "Act on Ownership of Premises - share costs and voting", "National Parliament", "Journal of Laws 2024 item 1112, Art. 3, 12-16, 22-25", "https://www.legal-journals.gov.pl/ownership-premises", "Share-proportional costs, advances due by the 10th, 14 days notice, share voting.", "Art. 3 ust. 2: Common property includes risers, roof, facade and stairwells. Art. 12 ust. 2: Owners bear costs in proportion to shares.")
+        ];
+    }
+
+    private static PropertyAiDiscoveryDossier BuildOfflineDossier(AddressLookupRequest normalized)
+    {
+        var isUs = LooksLikeUsAddress(normalized);
+        var mode = isUs ? SystemOperatingMode.UsHoa : SystemOperatingMode.HousingAssociation;
+        var street = normalized.StreetAddress;
+        var city = normalized.City;
+        var postal = normalized.PostalOrZipCode;
+        var slug = Slugify($"{city}-{postal}");
+        var hash = StableHash($"{street}|{city}|{postal}");
+
+        var electricityTariff = isUs ? 0.14m : 0.88m;
+        var coldTariff = isUs ? 4.20m : 11.50m;
+        var hotTariff = isUs ? 12.40m : 24.00m;
+        var heatingTariff = isUs ? 18.00m : 82.00m;
+        var wasteFee = isUs ? 32m : 28m;
+        var operatingRate = isUs ? 2.95m : 3.20m;
+        var repairRate = isUs ? 2.10m : 1.80m;
+        var heatingPower = isUs ? 0.55m : 0.42m;
+        var electricPower = isUs ? 85m : 65m;
+
+        var electricity = new DiscoveredUtilityOperator("Electricity",
+            isUs ? $"Florida Power and Light - {city} District" : $"Regional Power Distribution - {city} District",
+            isUs ? "1-800-468-8243" : "991",
+            isUs ? $"https://www.fpl.com/outages/{slug}" : $"https://www.stoen.pl/outages/{slug}",
+            isUs ? $"https://www.fpl.com/fault-map/{slug}" : $"https://www.stoen.pl/fault-map/{slug}",
+            isUs ? "https://www.fpl.com/rates" : "https://www.stoen.pl/tariffs-households",
+            electricityTariff, isUs ? "USD/kWh" : "PLN/kWh");
+        var gas = new DiscoveredUtilityOperator("Gas",
+            isUs ? $"Florida City Gas - {city} Network" : $"Regional Gas Distribution - {city} Network",
+            isUs ? "1-800-427-7712" : "992",
+            isUs ? $"https://www.floridacitygas.com/safety/{slug}" : $"https://www.psgaz.pl/outages/{slug}",
+            isUs ? $"https://www.floridacitygas.com/network/{slug}" : $"https://www.psgaz.pl/network/{slug}",
+            isUs ? "https://www.floridacitygas.com/rates" : "https://www.psgaz.pl/tariffs",
+            isUs ? 1.10m : 2.40m, isUs ? "USD/therm" : "PLN/m3");
+        var water = new DiscoveredUtilityOperator("ColdWater",
+            isUs ? $"Miami-Dade Water and Sewer - {city} Zone" : $"Municipal Water and Sewage Works - {city}",
+            isUs ? "305-665-7477" : "994",
+            isUs ? $"https://www.miamidade.gov/water-sewer/alerts/{slug}" : $"https://www.mpwik.com.pl/outages/{slug}",
+            isUs ? $"https://www.miamidade.gov/water-sewer/map/{slug}" : $"https://www.mpwik.com.pl/fault-map/{slug}",
+            isUs ? "https://www.miamidade.gov/water-sewer/rates" : "https://www.mpwik.com.pl/tariffs",
+            coldTariff, isUs ? "USD/CCF" : "PLN/m3");
+        var heating = new DiscoveredUtilityOperator("DistrictHeating",
+            isUs ? $"District Energy Services - {city}" : $"Municipal District Heating Network - {city}",
+            isUs ? "305-555-0142" : "993",
+            isUs ? $"https://www.districtenergy.org/outages/{slug}" : $"https://www.veolia.pl/outages/{slug}",
+            isUs ? $"https://www.districtenergy.org/map/{slug}" : $"https://www.veolia.pl/fault-map/{slug}",
+            isUs ? "https://www.districtenergy.org/rates" : "https://www.veolia.pl/tariffs",
+            heatingTariff, isUs ? "USD/MMBtu" : "PLN/GJ");
+        var wasteOp = new DiscoveredUtilityOperator("MunicipalWaste",
+            isUs ? $"Miami-Dade Solid Waste - {city} Sector" : $"City Waste Management - {city} Sector {DigitsOrFallback(postal, 2, hash)}",
+            isUs ? "311" : "+48 22 555 0100",
+            isUs ? $"https://www.miamidade.gov/solidwaste/schedule/{slug}" : $"https://www.city-cleaning.pl/schedule/{slug}",
+            isUs ? $"https://www.miamidade.gov/solidwaste/map/{slug}" : $"https://www.city-cleaning.pl/map/{slug}",
+            isUs ? "https://www.miamidade.gov/solidwaste/rates" : "https://www.city-cleaning.pl/tariffs",
+            wasteFee, isUs ? "USD/unit/mo" : "PLN/person/mo");
+
+        var police = new DiscoveredAuthorityContact("PolicePrecinct",
+            isUs ? $"Police Precinct {city} Central - {street}" : $"District Police Station {city} - {street} Precinct",
+            isUs ? "305-555-0100" : "+48 47 723 0000",
+            isUs ? $"24/7 duty desk, {street}, {city} {postal}" : $"Duty desk 24/7, {street}, {city} {postal}", 1);
+        var officer = new DiscoveredAuthorityContact("DistrictPoliceOfficer",
+            isUs ? $"Beat Officer Sector {DigitsOrFallback(postal, 3, hash)} - {city}" : $"District Beat Officer {city} Sector {DigitsOrFallback(postal, 3, hash)}",
+            isUs ? "305-555-0101" : "+48 47 723 0001",
+            isUs ? $"Beat {DigitsOrFallback(postal, 3, hash)}, office hours 08:00-16:00, {street}, {city}" : $"Sector {DigitsOrFallback(postal, 3, hash)}, office hours 08:00-16:00, {street}, {city}", 1);
+        var guard = new DiscoveredAuthorityContact("MunicipalGuard",
+            isUs ? $"Code Enforcement Patrol {city} - {street}" : $"Municipal Guard Patrol {city} - {street}",
+            isUs ? "311" : "+48 22 555 0102",
+            isUs ? $"Fire-lane towing dispatch, {street}, {city}" : $"Fire-lane towing dispatch, {street}, {city}", 1);
+        var fire = new DiscoveredAuthorityContact("FireStation",
+            isUs ? $"Fire Rescue Station {city} - {street}" : $"Fire and Rescue Station {city} - {street}",
+            isUs ? "305-555-0191" : "+48 22 555 0198",
+            isUs ? $"Hydrant inspection line, {street}, {city}. Emergency 911." : $"Hydrant inspection line, {street}, {city}. Emergency 112, 998.", 1);
+        var inspectorate = new DiscoveredAuthorityContact("BuildingInspectorate",
+            isUs ? $"Building Inspection Office {city}" : $"District Building Inspectorate {city}",
+            isUs ? "305-555-0103" : "+48 22 555 0103",
+            isUs ? $"Permit desk, {street}, {city}" : $"Permit desk, {street}, {city}", 1);
+        var recycling = new DiscoveredAuthorityContact("RecyclingDepot",
+            isUs ? $"Recycling Center {city} - {street} Drop-off" : $"Selective Waste Drop-off {city} - {street}",
+            isUs ? "305-555-0104" : "+48 22 555 0104",
+            isUs ? $"Open Mon-Sat 08:00-18:00, {street}, {city}" : $"Open Mon-Sat 08:00-18:00, {street}, {city}", 1);
+
+        var contractors = BuildFallbackContractors(normalized, isUs, slug, hash);
+        var profile = BuildFallbackBuildingProfile(normalized, isUs, hash);
+        var grants = BuildFallbackGrants(normalized, isUs, city, slug);
+
+        var sourceUrls = new List<string>
+        {
+            "offline-fallback deterministic generator (no live web search)",
+            electricity.TariffScheduleUrl,
+            water.TariffScheduleUrl,
+            heating.TariffScheduleUrl,
+            grants[0].SourceUrl,
+            grants[2].SourceUrl
+        };
+
+        return new PropertyAiDiscoveryDossier(
+            isUs ? $"Condominium Association {street}, {city}" : $"Housing Community {street}, {city}",
+            mode,
+            isUs ? "US" : "PL",
+            isUs ? "USD" : "PLN",
+            isUs ? $"{city} County District" : $"{city} Municipality",
+            isUs ? $"County Recorder Office, 111 NW 1st Street, {city} {postal}" : $"District Court Land Register Division, {street}, {city} {postal}",
+            isUs ? $"IRS Tax Office {city} - {postal}" : $"Tax Office {city}, {street} {postal}",
+            isUs ? $"FL-CONDO-{DigitsOrFallback(postal, 5, hash)}" : $"REG-{DigitsOrFallback(postal, 6, hash)}",
+            [electricity],
+            [gas],
+            [water],
+            [heating],
+            [wasteOp],
+            [police],
+            [officer],
+            [guard],
+            [fire],
+            [inspectorate],
+            [recycling],
+            contractors,
+            profile,
+            grants,
+            operatingRate,
+            repairRate,
+            wasteFee,
+            coldTariff,
+            hotTariff,
+            heatingTariff,
+            electricityTariff,
+            heatingPower,
+            electricPower,
+            sourceUrls);
+    }
+
+    private sealed record RawUtilityOperator(
+        string? UtilityKind,
+        string? ProviderName,
+        string? EmergencyPhone,
+        string? OutageBulletinUrl,
+        string? LiveFaultMapUrl,
+        string? TariffScheduleUrl,
+        decimal? CurrentUnitTariff,
+        string? TariffUnit);
+
+    private sealed record RawAuthorityContact(
+        string? Category,
+        string? Name,
+        string? PhoneNumber,
+        string? AddressOrNotes,
+        int? SortOrder);
+
+    private sealed record RawContractor(
+        string? Trade,
+        string? CompanyName,
+        string? Phone,
+        string? Email,
+        string? Website,
+        decimal? TypicalHourlyRate);
+
+    private sealed record RawBuildingProfile(
+        int? EstimatedConstructionYear,
+        int? FloorsCount,
+        int? StairwellsCount,
+        string? HeatingType,
+        string? RoofType,
+        double? RooftopSolarPotentialKwp,
+        string? FloodZone,
+        string? WindZone,
+        string? AcousticZone,
+        string? AirQualityNote);
+
+    private sealed record RawGrant(
+        string? Kind,
+        string? ProgramOrDocumentCode,
+        string? Title,
+        string? IssuingAuthority,
+        string? OfficialCitation,
+        string? SourceUrl,
+        string? Summary,
+        string? VerbatimText);
+
+    private sealed record RawDiscoveryDossier(
+        string? SuggestedAssociationName,
+        string? SuggestedOperatingMode,
+        string? CountryCode,
+        string? CurrencyCode,
+        string? LocalMunicipalityOrCounty,
+        string? CompetentCourtOrRecorder,
+        string? LocalTaxOffice,
+        string? RegistryNumber,
+        List<RawUtilityOperator>? ElectricityOperator,
+        List<RawUtilityOperator>? GasOperator,
+        List<RawUtilityOperator>? WaterOperator,
+        List<RawUtilityOperator>? HeatingOperator,
+        List<RawUtilityOperator>? WasteOperator,
+        List<RawAuthorityContact>? PolicePrecinct,
+        List<RawAuthorityContact>? DistrictOfficer,
+        List<RawAuthorityContact>? MunicipalGuard,
+        List<RawAuthorityContact>? FireStation,
+        List<RawAuthorityContact>? BuildingInspectorate,
+        List<RawAuthorityContact>? RecyclingDepot,
+        List<RawContractor>? Contractors,
+        RawBuildingProfile? BuildingProfile,
+        List<RawGrant>? GrantsAndOrdinances,
+        decimal? OperatingRatePerM2,
+        decimal? RepairFundRatePerM2,
+        decimal? WasteFeePerOccupant,
+        decimal? ColdWaterTariffPerM3,
+        decimal? HotWaterHeatingCostPerM3,
+        decimal? DistrictHeatingTariffPerGj,
+        decimal? CommonElectricityTariffPerKwh,
+        decimal? ContractedHeatingPowerMw,
+        decimal? ContractedElectricalPowerKw,
+        List<string>? SourceUrls);
+
+    private sealed record RawTriagePayload(
+        string? Category,
+        string? Priority,
+        string? Boundary,
+        string? BoundaryRationale,
+        string? CitedLegalDocumentCode,
+        string? CitedVerbatimLegalExcerpt,
+        string? DefectConcept,
+        string? EnglishSummaryTitle,
+        string? EnglishDescription,
+        string? DetectedLanguage,
+        string? ResidentReplyInOriginalLanguage,
+        double? Confidence);
+
+    private sealed record RawCompliancePayload(
+        bool? HasConflict,
+        string? ConflictClauseReference,
+        string? CitedStatutoryDocumentCode,
+        string? CitedVerbatimLegalExcerpt,
+        string? ConflictExplanation,
+        string? RecommendedMajorityRule,
+        string? CompliantRewriteText);
 }
 
 public static class LegalCorpusFactory

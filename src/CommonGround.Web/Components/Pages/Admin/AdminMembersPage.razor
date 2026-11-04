@@ -1,0 +1,308 @@
+@page "/admin/members"
+@using CommonGround.Application.Interfaces
+@using CommonGround.Application.Persistence
+@using CommonGround.Web.Components.Shared.Admin
+@using Microsoft.EntityFrameworkCore
+@inject WorkspaceAccessService Access
+@inject IAppDbContextFactory DbFactory
+@inject IMembershipService MembershipService
+@inject NavigationManager Nav
+
+<PageTitle>People and approvals - CommonGround</PageTitle>
+
+<div class="cg-page-header">
+    <div>
+        <h1>People and approvals</h1>
+        <p class="cg-page-lead">Unified queue for pending approvals, invitations, join links and active members.</p>
+    </div>
+    <a class="cg-btn" href="/admin">Back to overview</a>
+</div>
+
+@if (!_loaded)
+{
+    <p role="status" aria-live="polite">Loading members.</p>
+}
+else if (!_isAuthorized || !_firmId.HasValue || !_actorId.HasValue)
+{
+    <div class="cg-card"><p class="cg-empty-text">Access denied. Firm manager permission is required.</p></div>
+}
+else
+{
+    <div class="cg-card">
+        <div class="cg-toolbar" role="tablist" aria-label="Member sections">
+            <button type="button" role="tab" aria-selected="@(_tab == "pending")" class="cg-btn @(_tab == "pending" ? "cg-btn-selected" : string.Empty)" @onclick='() => _tab = "pending"' disabled="@_isBusy">Pending approvals (@_pending.Count)</button>
+            <button type="button" role="tab" aria-selected="@(_tab == "invites")" class="cg-btn @(_tab == "invites" ? "cg-btn-selected" : string.Empty)" @onclick='() => _tab = "invites"' disabled="@_isBusy">Invitations and join links (@_invitations.Count)</button>
+            <button type="button" role="tab" aria-selected="@(_tab == "active")" class="cg-btn @(_tab == "active" ? "cg-btn-selected" : string.Empty)" @onclick='() => _tab = "active"' disabled="@_isBusy">Active members (@_active.Count)</button>
+        </div>
+    </div>
+
+    @if (_tab == "pending")
+    {
+        <MemberApprovalQueueTable FirmId="_firmId.Value" ActorMembershipId="_actorId.Value" Pending="_pending" Properties="_properties" Units="_units" Users="_users" JoinRequests="_joinRequests" OnChanged="ReloadAsync" />
+    }
+    else if (_tab == "invites")
+    {
+        <div class="cg-stack">
+            <InviteMemberCard FirmId="_firmId.Value" Properties="_properties" OnInvitationCreated="ReloadAsync" />
+            <div class="cg-card">
+                <div class="cg-section-header">
+                    <h2>Invitations and join links</h2>
+                    <span class="cg-badge">@_invitations.Count pending</span>
+                </div>
+                @if (!string.IsNullOrWhiteSpace(_firmCode))
+                {
+                    <div class="cg-callout" style="overflow-wrap: anywhere;">
+                        Join with firm code <code class="mono num" style="font-variant-numeric: tabular-nums;">@_firmCode</code> or invitation link <a href="/accept-invite?code=@Uri.EscapeDataString(_firmCode)">@($"/accept-invite?code={_firmCode}")</a>
+                    </div>
+                }
+                <div class="cg-table-wrap">
+                    <table class="cg-table">
+                        <thead>
+                            <tr>
+                                <th>Recipient</th>
+                                <th>Role</th>
+                                <th>Status</th>
+                                <th>Expires</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (_invitations.Count == 0)
+                            {
+                                <tr><td colspan="5" style="color: var(--color-text-secondary);">No invitations found.</td></tr>
+                            }
+                            @foreach (var invitation in _invitations)
+                            {
+                                <tr @key="invitation.Id">
+                                    <td><strong>@invitation.RecipientName</strong><div style="font-size: 0.72rem; color: var(--color-text-secondary);">@invitation.RecipientEmail</div></td>
+                                    <td><span class="cg-badge">@invitation.TargetRole</span></td>
+                                    <td><span class="cg-badge">@invitation.Status</span></td>
+                                    <td class="mono num" style="font-variant-numeric: tabular-nums;">@invitation.ExpiresAtUtc.ToString("yyyy-MM-dd")</td>
+                                    <td>
+                                        @if (invitation.Status == InvitationStatus.Pending)
+                                        {
+                                            <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => OnRevokeInvitationAsync(invitation.Id)">Revoke</button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="cg-card">
+            <div class="cg-section-header">
+                <h2>Active members</h2>
+                <span class="cg-badge">@_active.Count active</span>
+            </div>
+            <div class="cg-table-wrap">
+                <table class="cg-table">
+                    <thead>
+                        <tr>
+                            <th>Member</th>
+                            <th>Role</th>
+                            <th>Properties</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (_active.Count == 0)
+                        {
+                            <tr><td colspan="4" style="color: var(--color-text-secondary);">No active members found.</td></tr>
+                        }
+                        @foreach (var membership in _active)
+                        {
+                            var userName = _users.TryGetValue(membership.UserId, out var account) ? account.FullName : "Member";
+                            var userEmail = _users.TryGetValue(membership.UserId, out var mail) ? mail.Email : string.Empty;
+                            var scope = _accessByMembership.TryGetValue(membership.Id, out var access) ? access : new List<string>();
+                            <tr @key="membership.Id">
+                                <td><strong>@userName</strong><div style="font-size: 0.72rem; color: var(--color-text-secondary);">@userEmail</div></td>
+                                <td><span class="cg-badge">@membership.Role</span></td>
+                                <td style="font-size: 0.75rem;">@(scope.Count == 0 ? "Firm scope" : string.Join(", ", scope))</td>
+                                <td>
+                                    <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => OnRevokeMembershipAsync(membership.Id)">Revoke</button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_message))
+    {
+        <div role="status" aria-live="polite" class="cg-callout" style="margin-block-start: 0.75rem;">@_message</div>
+    }
+}
+
+@code {
+    [Inject] private IInvitationService InvitationService { get; set; } = default!;
+
+    private bool _loaded;
+    private bool _isAuthorized;
+    private bool _isBusy;
+    private Guid? _firmId;
+    private Guid? _actorId;
+    private string _tab = "pending";
+    private string _firmCode = string.Empty;
+    private string _message = string.Empty;
+    private List<FirmMembership> _pending = new();
+    private List<FirmMembership> _active = new();
+    private List<Invitation> _invitations = new();
+    private List<PropertyListItem> _properties = new();
+    private List<Unit> _units = new();
+    private Dictionary<Guid, User> _users = new();
+    private Dictionary<Guid, JoinRequest> _joinRequests = new();
+    private Dictionary<Guid, List<string>> _accessByMembership = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var firmId = await Access.GetFirmIdAsync();
+            var actorId = await Access.GetActiveMembershipIdAsync();
+            if (firmId is null || actorId is null)
+            {
+                _loaded = true;
+                return;
+            }
+            _firmId = firmId.Value;
+            _actorId = actorId.Value;
+            var role = await Access.GetRoleAsync();
+            var hasAdmin = role == WorkspaceSecurityRole.FirmManager
+                || await Access.HasPermissionAsync(WorkspacePermissionFlags.FirmFullAdministration);
+            if (!hasAdmin)
+            {
+                Nav.NavigateTo("/no-access", forceLoad: false);
+                return;
+            }
+            _isAuthorized = true;
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+        }
+        finally
+        {
+            _loaded = true;
+        }
+    }
+
+    private async Task ReloadAsync()
+    {
+        if (_firmId is null || _actorId is null)
+        {
+            return;
+        }
+        _isBusy = true;
+        try
+        {
+            var firmId = _firmId.Value;
+            _pending = (await MembershipService.GetPendingApprovalsAsync(firmId, _actorId.Value)).ToList();
+            await using var db = await DbFactory.CreateDbContextAsync();
+            _invitations = await db.Invitations.AsNoTracking()
+                .Where(i => i.ManagementFirmId == firmId)
+                .OrderByDescending(i => i.ExpiresAtUtc)
+                .Take(100)
+                .ToListAsync();
+            _active = await db.FirmMemberships.AsNoTracking()
+                .Where(m => m.ManagementFirmId == firmId && m.Status == WorkspaceMembershipStatus.Approved)
+                .OrderBy(m => m.Role)
+                .Take(200)
+                .ToListAsync();
+            var memberUserIds = _pending.Select(m => m.UserId).Concat(_active.Select(m => m.UserId)).Distinct().ToList();
+            var users = await db.Users.AsNoTracking()
+                .Where(u => memberUserIds.Contains(u.Id))
+                .ToListAsync();
+            _users = users.ToDictionary(u => u.Id);
+            var pendingIds = _pending.Select(m => m.Id).ToList();
+            var requests = await db.JoinRequests.AsNoTracking()
+                .Where(j => j.ManagementFirmId == firmId && pendingIds.Contains(j.FirmMembershipId))
+                .ToListAsync();
+            _joinRequests = requests.ToDictionary(j => j.FirmMembershipId);
+            var propertyRows = await db.Communities.AsNoTracking()
+                .Where(c => c.ManagementFirmId == firmId)
+                .OrderBy(c => c.Name)
+                .Select(c => new PropertyListItem(c.Id, c.Name, c.City, c.StreetAddress))
+                .ToListAsync();
+            _properties = propertyRows;
+            var propertyIds = propertyRows.Select(p => p.Id).ToList();
+            _units = await db.Units.AsNoTracking()
+                .Where(u => propertyIds.Contains(u.CommunityId))
+                .OrderBy(u => u.UnitNumber)
+                .Take(500)
+                .ToListAsync();
+            var accessRows = await db.MembershipPropertyAccesses.AsNoTracking()
+                .Where(a => propertyIds.Contains(a.CommunityId))
+                .ToListAsync();
+            var propertyNames = propertyRows.ToDictionary(p => p.Id, p => p.Name);
+            _accessByMembership = accessRows
+                .GroupBy(a => a.FirmMembershipId)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.Select(a => propertyNames.TryGetValue(a.CommunityId, out var communityName) ? communityName : a.CommunityId.ToString("N").Substring(0, 8)).Distinct().ToList());
+            var firm = await db.ManagementFirms.AsNoTracking().FirstOrDefaultAsync(f => f.Id == firmId);
+            _firmCode = firm?.FirmGroupCode ?? string.Empty;
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task OnRevokeInvitationAsync(Guid invitationId)
+    {
+        if (_actorId is null)
+        {
+            return;
+        }
+        _isBusy = true;
+        try
+        {
+            await InvitationService.RevokeInvitationAsync(invitationId, _actorId.Value);
+            _message = "Invitation revoked.";
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task OnRevokeMembershipAsync(Guid membershipId)
+    {
+        if (_actorId is null)
+        {
+            return;
+        }
+        _isBusy = true;
+        try
+        {
+            await MembershipService.RevokeMembershipAsync(_actorId.Value, membershipId);
+            _message = "Membership revoked.";
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+}

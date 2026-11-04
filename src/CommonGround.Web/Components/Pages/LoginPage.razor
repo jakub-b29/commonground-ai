@@ -23,10 +23,6 @@
 <form method="post" action="/auth/login" class="cg-form-stack">
     <input type="hidden" name="returnUrl" value="@ReturnUrl" />
     <div>
-        <label for="login-code">@Loc.T("firm.groupCode")</label>
-        <input id="login-code" name="firmCode" value="@FirmCode" placeholder="CG-FIRM-2026-AB12" autocomplete="organization" required />
-    </div>
-    <div>
         <label for="login-email">@Loc.T("form.workEmail")</label>
         <input id="login-email" name="email" type="email" placeholder="manager@example.com" autocomplete="username" required />
     </div>
@@ -49,7 +45,6 @@
     [SupplyParameterFromQuery(Name = "error")] public string? ErrorCode { get; set; }
     [SupplyParameterFromQuery(Name = "registered")] public string? RegisteredFlag { get; set; }
 
-    private string FirmCode = string.Empty;
     private string _error = string.Empty;
     private bool _registered;
     private string InviteHref = "/accept-invite";
@@ -60,7 +55,6 @@
         _locHandler = () => InvokeAsync(StateHasChanged);
         Loc.OnChange += _locHandler;
         await Loc.EnsureLoadedAsync();
-        FirmCode = QueryCode ?? string.Empty;
         _error = string.IsNullOrWhiteSpace(ErrorCode) ? string.Empty : ErrorCode;
         _registered = string.Equals(RegisteredFlag, "1", StringComparison.Ordinal);
         if (!string.IsNullOrWhiteSpace(QueryToken))

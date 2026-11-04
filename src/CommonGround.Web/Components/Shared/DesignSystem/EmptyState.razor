@@ -1,0 +1,29 @@
+<div class="cg-empty-state @CssClass">
+    <div class="cg-empty-icon" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="3"></rect>
+            <line x1="9" y1="9" x2="15" y2="9"></line>
+            <line x1="9" y1="13" x2="15" y2="13"></line>
+            <line x1="9" y1="17" x2="12" y2="17"></line>
+        </svg>
+    </div>
+    <div style="font-weight: 600; font-size: 0.9rem; color: var(--text-primary);">@Title</div>
+    @if (!string.IsNullOrWhiteSpace(Description))
+    {
+        <p style="font-size: 0.8rem; color: var(--text-secondary); max-width: 46ch;">@Description</p>
+    }
+    @if (Actions is not null)
+    {
+        <div style="margin-top: 0.35rem; display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: center;">
+            @Actions
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+    [Parameter] public string? Description { get; set; }
+    [Parameter] public string? CssClass { get; set; }
+    [Parameter] public RenderFragment? Actions { get; set; }
+}
+

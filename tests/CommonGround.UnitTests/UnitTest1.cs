@@ -1,4 +1,4 @@
-﻿namespace CommonGround.UnitTests;
+namespace CommonGround.UnitTests;
 
 public class UnitTest1
 {

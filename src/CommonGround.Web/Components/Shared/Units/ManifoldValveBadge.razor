@@ -1,0 +1,32 @@
+@inject WorkspaceLocalization Loc
+@implements IDisposable
+
+<button type="button" class="cg-btn @(IsActive ? "cg-btn-ai" : "")" style="width: 100%; justify-content: space-between;" @onclick="() => OnBroadcast.InvokeAsync(StackCode)" title="@ShutoffLocation">
+    <span class="mono">@StackCode</span>
+    <span class="cg-badge @(IsHeating ? "cg-badge-err" : "cg-badge-info")">@(IsHeating ? Loc.T("builder.valveRed") : Loc.T("builder.valveBlue"))</span>
+</button>
+<div style="font-size: 0.7rem; color: var(--text-secondary); margin-block-start: 0.2rem;">@ShutoffLocation</div>
+
+@code {
+    [Parameter] public string StackCode { get; set; } = string.Empty;
+    [Parameter] public string ShutoffLocation { get; set; } = string.Empty;
+    [Parameter] public bool IsActive { get; set; }
+    [Parameter] public EventCallback<string> OnBroadcast { get; set; }
+    private bool IsHeating => StackCode.Contains('B', StringComparison.OrdinalIgnoreCase);
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null)
+        {
+            Loc.OnChange -= _locHandler;
+        }
+    }
+}

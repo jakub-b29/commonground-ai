@@ -136,10 +136,22 @@ public sealed class SecureRedesignRegressionTests
         Assert.Contains("RedirectToLogin", shell, StringComparison.Ordinal);
 
         var nav = File.ReadAllText(Path.Combine(root, "src", "CommonGround.Web", "Components", "Layout", "NavMenu.razor"));
-        Assert.Contains("firm/properties", nav, StringComparison.Ordinal);
-        Assert.Contains("settings/account", nav, StringComparison.Ordinal);
+        Assert.Contains("AuthorizeView", nav, StringComparison.Ordinal);
+        Assert.Contains("FirmAdminNavSection", nav, StringComparison.Ordinal);
+        Assert.Contains("PropertyWorkspaceNavSection", nav, StringComparison.Ordinal);
+        Assert.Contains("PersonalNavSection", nav, StringComparison.Ordinal);
+        Assert.DoesNotContain("firm/properties", nav, StringComparison.Ordinal);
+        Assert.DoesNotContain("settings/account", nav, StringComparison.Ordinal);
         Assert.DoesNotContain("GetCommunitiesAsync", nav, StringComparison.Ordinal);
         Assert.DoesNotContain("GetManagementFirmsAsync", nav, StringComparison.Ordinal);
+
+        var firmNav = File.ReadAllText(Path.Combine(root, "src", "CommonGround.Web", "Components", "Layout", "FirmAdminNavSection.razor"));
+        Assert.Contains("admin/properties", firmNav, StringComparison.Ordinal);
+        Assert.Contains("admin/members", firmNav, StringComparison.Ordinal);
+
+        var personalNav = File.ReadAllText(Path.Combine(root, "src", "CommonGround.Web", "Components", "Layout", "PersonalNavSection.razor"));
+        Assert.Contains("my-unit", personalNav, StringComparison.Ordinal);
+        Assert.Contains("account", personalNav, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -147,7 +159,34 @@ public sealed class SecureRedesignRegressionTests
     {
         var path = Path.Combine(FindRepoRoot(), "src", "CommonGround.Web", "Components", "Shared", "Overview", "PendingApprovalsAndAuditPanel.razor");
         var text = File.ReadAllText(path);
-        Assert.Contains("/residents/approvals", text, StringComparison.Ordinal);
+        Assert.Contains("/admin/members", text, StringComparison.Ordinal);
         Assert.DoesNotContain("href=\"/residents\"", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DesignSystem_DualThemeTokensAndComponentsArePresent()
+    {
+        var root = FindRepoRoot();
+        var css = File.ReadAllText(Path.Combine(root, "src", "CommonGround.Web", "wwwroot", "app.css"));
+        Assert.Contains("[data-theme=\"dark\"]", css, StringComparison.Ordinal);
+        Assert.Contains("[data-theme=\"light\"]", css, StringComparison.Ordinal);
+        Assert.Contains("--background-primary: #09090B;", css, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("--background-primary: #F8FAFC;", css, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("--accent-ai: #A855F7;", css, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("--accent-ai: #9333EA;", css, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(".bento-grid", css, StringComparison.Ordinal);
+        Assert.Contains(".bento-card", css, StringComparison.Ordinal);
+
+        var dsDir = Path.Combine(root, "src", "CommonGround.Web", "Components", "Shared", "DesignSystem");
+        Assert.True(File.Exists(Path.Combine(dsDir, "ThemeSwitcher.razor")));
+        Assert.True(File.Exists(Path.Combine(dsDir, "ThemeSwitcher.razor.js")));
+        Assert.True(File.Exists(Path.Combine(dsDir, "PageHeader.razor")));
+        Assert.True(File.Exists(Path.Combine(dsDir, "BentoGrid.razor")));
+        Assert.True(File.Exists(Path.Combine(dsDir, "BentoCard.razor")));
+        Assert.True(File.Exists(Path.Combine(dsDir, "MetricCard.razor")));
+        Assert.True(File.Exists(Path.Combine(dsDir, "AIBadge.razor")));
+        Assert.True(File.Exists(Path.Combine(dsDir, "AIInsightCard.razor")));
+        Assert.True(File.Exists(Path.Combine(dsDir, "StatusBadge.razor")));
+        Assert.True(File.Exists(Path.Combine(dsDir, "EmptyState.razor")));
     }
 }

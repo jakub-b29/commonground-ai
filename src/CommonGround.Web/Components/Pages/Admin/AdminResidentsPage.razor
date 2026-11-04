@@ -1,0 +1,904 @@
+@page "/admin/residents"
+@attribute [Authorize(Policy = "WorkspaceMember")]
+@using CommonGround.Application.Services
+@inject WorkspaceLocalization Loc
+@inject WorkspaceAccessService Access
+@inject CommonGroundWorkspaceService Workspace
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>Residents, registrations &amp; unit assignments — CommonGround</PageTitle>
+
+@if (!_loaded)
+{
+    <p role="status" aria-live="polite">Loading resident management center...</p>
+}
+else if (!_isAuthorized)
+{
+    <div class="cg-card"><p class="cg-empty-text">Access denied. Manager permission is required.</p></div>
+}
+else
+{
+        <PageHeader Category="Firm Administration · Resident Identity &amp; Assignments"
+                    ContextCode="@($"{_directory.Count} residents · {_pendingRequestsCount} pending registrations")"
+                    Title="Resident Management, Registration Queue &amp; Assignment Center"
+                    Subtitle="Manage permanent Resident identities (RES-XXXXXXXX), review Mode B registration requests with smart duplicate detection, and execute the 7-step Resident-to-Unit Assignment Wizard.">
+            <Badges>
+                <StatusBadge Text="@($"{_directory.Count} Resident Profiles")" Variant="info" />
+                <StatusBadge Text="@($"{_pendingRequestsCount} Pending Review")" Variant="@(_pendingRequestsCount > 0 ? "warn" : "ok")" />
+                <AIBadge Label="Smart Identity Dedup &amp; Conflict Guard" Model="muse-spark-1.3" />
+            </Badges>
+            <Actions>
+                <button type="button" class="cg-btn cg-btn-sm @(_activeTab == "directory" ? "cg-btn-primary" : "")" @onclick='() => _activeTab = "directory"'>
+                    Residents Directory (@_directory.Count)
+                </button>
+                <button type="button" class="cg-btn cg-btn-sm @(_activeTab == "queue" ? "cg-btn-primary" : "")" @onclick='() => _activeTab = "queue"'>
+                    Registration Approval Queue (@_requests.Count)
+                </button>
+                <button type="button" class="cg-btn cg-btn-sm @(_activeTab == "wizard" ? "cg-btn-primary" : "cg-btn-ai")" @onclick="OpenAssignWizardNew">
+                    + Assign Resident to Unit (7-Step Wizard)
+                </button>
+                <a class="cg-btn cg-btn-sm" href="/units">Global Units</a>
+            </Actions>
+        </PageHeader>
+
+        @if (!string.IsNullOrWhiteSpace(_message))
+        {
+            <div class="ai-callout" style="margin-bottom: 1rem;" role="status" aria-live="polite">@_message</div>
+        }
+        @if (!string.IsNullOrWhiteSpace(_error))
+        {
+            <div class="cg-callout" style="margin-bottom: 1rem; border-color: var(--color-danger); color: var(--color-danger);" role="alert">@_error</div>
+        }
+
+        <div class="cg-grid-4" style="margin-bottom: 1rem;">
+            <MetricCard Label="Resident Identities"
+                        Value="@_directory.Count.ToString()"
+                        Subtitle="Permanent RES-XXXXXXXX accounts"
+                        BadgeText="Independent"
+                        StatusVariant="info" />
+            <MetricCard Label="Active Unit Assignments"
+                        Value="@_directory.Sum(d => d.ActiveAssignments.Count).ToString()"
+                        Subtitle="@($"{_directory.Count(d => d.ActiveAssignments.Count > 0)} residents currently occupying units")"
+                        BadgeText="Occupied"
+                        StatusVariant="ok" />
+            <MetricCard Label="Unassigned / Former"
+                        Value="@_directory.Count(d => d.ActiveAssignments.Count == 0).ToString()"
+                        Subtitle="Preserved identities after move-out"
+                        BadgeText="Historical"
+                        StatusVariant="neutral" />
+            <MetricCard Label="Registration Queue"
+                        Value="@_pendingRequestsCount.ToString()"
+                        Subtitle="@($"{_requests.Count} total registration submissions")"
+                        BadgeText="@(_pendingRequestsCount > 0 ? "Action Required" : "All Clear")"
+                        StatusVariant="@(_pendingRequestsCount > 0 ? "warn" : "ok")" />
+        </div>
+
+        @if (_activeTab == "directory")
+        {
+            <div class="cg-card" style="margin-bottom: 1rem;">
+                <div class="cg-section-header">
+                    <h2>Create Standalone Resident Profile (Independent of Unit Assignment)</h2>
+                    <button type="button" class="cg-btn cg-btn-sm" @onclick="() => _showQuickCreateResident = !_showQuickCreateResident">
+                        @(_showQuickCreateResident ? "Cancel" : "+ New Resident Profile")
+                    </button>
+                </div>
+                @if (_showQuickCreateResident)
+                {
+                    <div class="cg-grid-4">
+                        <div><label>First Name</label><input @bind="_newResFirst" placeholder="Anna" /></div>
+                        <div><label>Last Name</label><input @bind="_newResLast" placeholder="Kowalska" /></div>
+                        <div><label>Primary Email</label><input type="email" @bind="_newResEmail" placeholder="anna@example.com" /></div>
+                        <div><label>Phone</label><input @bind="_newResPhone" placeholder="+48 500 200 300" /></div>
+                    </div>
+                    <div class="cg-toolbar" style="margin-top: 0.65rem;">
+                        <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="CreateStandaloneResidentAsync">
+                            Create Resident Identity &amp; Generate RES-XXXXXXXX
+                        </button>
+                    </div>
+                }
+            </div>
+
+            <div class="cg-card">
+                <div class="cg-section-header">
+                    <h2>Firm Residents Directory (@FilteredDirectory.Count of @_directory.Count)</h2>
+                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                        <input style="min-width: 260px;"
+                               placeholder="Search name, RES-..., email, phone, unit, COM-..."
+                               @bind="_searchQuery"
+                               @bind:event="oninput" />
+                        <select @bind="_filterCommunityId">
+                            <option value="@Guid.Empty">All Communities (@_dashboard?.Communities.Count)</option>
+                            @if (_dashboard is not null)
+                            {
+                                @foreach (var c in _dashboard.Communities)
+                                {
+                                    <option value="@c.Id" @key="c.Id">@c.Name (@c.CommunityAccountNumber)</option>
+                                }
+                            }
+                        </select>
+                        <select @bind="_filterStatus">
+                            <option value="">All Account Statuses</option>
+                            @foreach (var st in Enum.GetValues<ResidentAccountStatus>())
+                            {
+                                <option value="@st.ToString()" @key="st">@st</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+
+                <div class="cg-table-wrap">
+                    <table class="cg-table">
+                        <thead>
+                            <tr>
+                                <th>Resident Account No.</th>
+                                <th>Full Name &amp; Contact</th>
+                                <th>Account &amp; Verification</th>
+                                <th>Active Community &amp; Unit Assignments</th>
+                                <th class="num">Past Units</th>
+                                <th class="num">Owned Units</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in FilteredDirectory)
+                            {
+                                <tr @key="row.Profile.Id">
+                                    <td>
+                                        <span class="cg-badge cg-badge-info mono">@row.Profile.ResidentAccountNumber</span>
+                                    </td>
+                                    <td>
+                                        <div><strong>@row.Profile.FullName</strong></div>
+                                        <div class="mono" style="font-size: 0.75rem; color: var(--text-secondary);">@row.Profile.PrimaryEmail · @row.Profile.Phone</div>
+                                    </td>
+                                    <td>
+                                        <span class="cg-badge @(row.Profile.AccountStatus == ResidentAccountStatus.Active ? "cg-badge-ok" : "cg-badge-warn")">@row.Profile.AccountStatus</span>
+                                        <span class="cg-badge" style="margin-left: 0.25rem;">@row.Profile.VerificationStatus</span>
+                                    </td>
+                                    <td>
+                                        @if (row.ActiveAssignments.Count == 0)
+                                        {
+                                            <span style="font-size: 0.78rem; color: var(--text-secondary);">Unassigned (Identity Active)</span>
+                                        }
+                                        else
+                                        {
+                                            @foreach (var a in row.ActiveAssignments)
+                                            {
+                                                <div @key="a.Assignment.Id" style="font-size: 0.78rem; margin-bottom: 0.2rem;">
+                                                    <strong>Unit @a.UnitNumber</strong> (@a.BuildingName) · @a.CommunityName
+                                                    <span class="mono" style="color: var(--accent-primary);">@a.CommunityAccountNumber</span>
+                                                    <span class="cg-badge">@a.Assignment.AssignmentType</span>
+                                                </div>
+                                            }
+                                        }
+                                    </td>
+                                    <td class="num">@row.PastAssignmentsCount</td>
+                                    <td class="num">@row.OwnedUnitsCount</td>
+                                    <td>
+                                        <div style="display: flex; gap: 0.35rem; flex-wrap: wrap;">
+                                            <a class="cg-btn cg-btn-sm cg-btn-primary" href="@($"/admin/residents/{row.Profile.Id}")">Open Profile</a>
+                                            <button type="button" class="cg-btn cg-btn-sm" @onclick="() => OpenAssignWizardForResident(row.Profile.Id)">Assign to Unit</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+        else if (_activeTab == "queue")
+        {
+            <div class="cg-card">
+                <div class="cg-section-header">
+                    <h2>Resident Registration Requests Queue (@_requests.Count)</h2>
+                    <span class="cg-badge">@_pendingRequestsCount Pending Approval</span>
+                </div>
+
+                @if (_requests.Count == 0)
+                {
+                    <p class="cg-empty-text">No resident registration submissions recorded yet.</p>
+                }
+                else
+                {
+                    @foreach (var item in _requests)
+                    {
+                        var req = item.Request;
+                        var isPending = req.Status == RegistrationRequestStatus.PendingApproval;
+                        <div @key="req.Id" class="cg-subcard" style="margin-bottom: 0.85rem; border-left: 3px solid @(isPending ? "var(--color-warning)" : req.Status is RegistrationRequestStatus.Approved or RegistrationRequestStatus.AutoApproved ? "var(--color-success)" : "var(--color-danger)");">
+                            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 0.75rem; flex-wrap: wrap;">
+                                <div>
+                                    <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                                        <strong>@req.SubmittedFullName</strong>
+                                        <span class="mono" style="font-size: 0.78rem; color: var(--text-secondary);">@req.SubmittedEmail · @req.SubmittedPhone</span>
+                                        <span class="cg-badge @(isPending ? "cg-badge-warn" : req.Status is RegistrationRequestStatus.Approved or RegistrationRequestStatus.AutoApproved ? "cg-badge-ok" : "cg-badge-danger")">@req.Status</span>
+                                        <span class="cg-badge">@req.ApprovalMode</span>
+                                    </div>
+                                    <div style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 0.25rem;">
+                                        Target: <strong>@item.CommunityName</strong> (<span class="mono">@item.CommunityAccountNumber</span>) · @item.BuildingName · <strong class="mono">Unit @item.UnitNumber</strong>
+                                        · Link: <em>@item.TokenReference</em> · Submitted <span class="mono">@req.SubmittedAtUtc.ToString("yyyy-MM-dd HH:mm")</span>
+                                    </div>
+                                    @if (!string.IsNullOrWhiteSpace(req.ResidentNotes))
+                                    {
+                                        <div style="font-size: 0.78rem; margin-top: 0.2rem;">Note from resident: <em>@req.ResidentNotes</em></div>
+                                    }
+                                </div>
+                                @if (req.MatchedOrCreatedResidentProfileId.HasValue)
+                                {
+                                    <a class="cg-btn cg-btn-sm" href="@($"/admin/residents/{req.MatchedOrCreatedResidentProfileId.Value}")">Open Resident Identity</a>
+                                }
+                            </div>
+
+                            @if (item.PotentialMatches.Count > 0)
+                            {
+                                <div style="margin-top: 0.5rem; padding: 0.5rem; background: var(--bg-canvas); border-radius: 6px; font-size: 0.76rem;">
+                                    <strong>Smart Identity Match Candidates (@item.PotentialMatches.Count):</strong>
+                                    @foreach (var m in item.PotentialMatches.Take(3))
+                                    {
+                                        <div @key="m.Profile.Id" style="margin-top: 0.2rem;">
+                                            <span class="mono" style="color: var(--accent-primary);">@m.Profile.ResidentAccountNumber</span>
+                                            <strong>@m.Profile.FullName</strong> (@m.Profile.PrimaryEmail) — @m.MatchReason (Confidence: <span class="num">@m.ConfidenceScore%</span>)
+                                        </div>
+                                    }
+                                </div>
+                            }
+
+                            @if (item.ConflictReport.HasConflict)
+                            {
+                                <div style="margin-top: 0.5rem; padding: 0.5rem; border: 1px solid var(--color-warning); border-radius: 6px; font-size: 0.76rem;">
+                                    <strong>Occupancy Conflict Warning:</strong> @string.Join(" ", item.ConflictReport.Warnings)
+                                </div>
+                            }
+
+                            @if (isPending && _dashboard is not null)
+                            {
+                                <div class="cg-grid-4" style="margin-top: 0.65rem;">
+                                    <div>
+                                        <label>Target Community</label>
+                                        <select value="@GetOverrideCommunityId(req)" @onchange="e => SetOverrideCommunityId(req.Id, e.Value?.ToString())">
+                                            @foreach (var c in _dashboard.Communities)
+                                            {
+                                                <option value="@c.Id" @key="c.Id">@c.Name (@c.CommunityAccountNumber)</option>
+                                            }
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label>Target Unit (Can Reassign)</label>
+                                        <select value="@GetOverrideUnitId(req)" @onchange="e => SetOverrideUnitId(req.Id, e.Value?.ToString())">
+                                            @foreach (var u in GetUnitsForCommunity(GetOverrideCommunityId(req)))
+                                            {
+                                                <option value="@u.UnitId" @key="u.UnitId">Unit @u.UnitNumber (@u.BuildingName · @u.OccupancyStatus)</option>
+                                            }
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label>Assignment Role</label>
+                                        <select value="@GetReviewAssignmentType(req.Id)" @onchange="e => SetReviewAssignmentType(req.Id, e.Value?.ToString())">
+                                            @foreach (var t in Enum.GetValues<ResidentAssignmentType>())
+                                            {
+                                                <option value="@t" @key="t">@t</option>
+                                            }
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label>Decision / Rejection Notes</label>
+                                        <input value="@GetReviewNotes(req.Id)" @onchange="e => SetReviewNotes(req.Id, e.Value?.ToString())" placeholder="Verified lease / ID..." />
+                                    </div>
+                                </div>
+                                <div class="cg-toolbar" style="margin-top: 0.5rem;">
+                                    <button type="button" class="cg-btn cg-btn-sm cg-btn-primary" disabled="@_isBusy" @onclick="() => DecideRequestAsync(req, true)">
+                                        Approve &amp; Activate Resident Assignment
+                                    </button>
+                                    <button type="button" class="cg-btn cg-btn-sm" disabled="@_isBusy" @onclick="() => DecideRequestAsync(req, false)">
+                                        Reject Request
+                                    </button>
+                                </div>
+                            }
+                            else if (!string.IsNullOrWhiteSpace(req.DecisionNotesOrRejectionReason))
+                            {
+                                <div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.35rem;">
+                                    Reviewed by @req.ReviewedByName on <span class="mono">@req.ReviewedAtUtc?.ToString("yyyy-MM-dd HH:mm")</span>: @req.DecisionNotesOrRejectionReason
+                                </div>
+                            }
+                        </div>
+                    }
+                }
+            </div>
+        }
+        else if (_activeTab == "wizard" && _dashboard is not null)
+        {
+            <div class="cg-card" style="border: 1px solid var(--accent-primary);">
+                <div class="cg-section-header">
+                    <div>
+                        <span class="cg-badge cg-badge-info">Step @_wizStep of 7</span>
+                        <h2 style="display: inline; margin-left: 0.5rem;">Firm-Initiated Resident-to-Unit Assignment Wizard</h2>
+                    </div>
+                    <button type="button" class="cg-btn cg-btn-sm" @onclick='() => _activeTab = "directory"'>Close Wizard</button>
+                </div>
+
+                <div style="display: flex; gap: 0.35rem; flex-wrap: wrap; margin-bottom: 1rem;">
+                    @for (var s = 1; s <= 7; s++)
+                    {
+                        var stepNum = s;
+                        <button type="button"
+                                class="cg-btn cg-btn-sm @(_wizStep == stepNum ? "cg-btn-primary" : "")"
+                                @onclick="() => GoToWizardStepAsync(stepNum)">
+                            @stepNum. @GetWizardStepLabel(stepNum)
+                        </button>
+                    }
+                </div>
+
+                @if (_wizStep == 1)
+                {
+                    <div class="cg-grid-2">
+                        <div>
+                            <label>Resident Identity Mode</label>
+                            <select @bind="_wizCreateNewResident">
+                                <option value="false">Select Existing Resident Profile (RES-XXXXXXXX)</option>
+                                <option value="true">Create New Resident Profile Automatically</option>
+                            </select>
+                        </div>
+                        @if (!_wizCreateNewResident)
+                        {
+                            <div>
+                                <label>Existing Resident Profile</label>
+                                <select @bind="_wizExistingResidentId">
+                                    @foreach (var r in _directory)
+                                    {
+                                        <option value="@r.Profile.Id" @key="r.Profile.Id">@r.Profile.FullName (@r.Profile.ResidentAccountNumber · @r.Profile.PrimaryEmail)</option>
+                                    }
+                                </select>
+                            </div>
+                        }
+                    </div>
+                    @if (_wizCreateNewResident)
+                    {
+                        <div class="cg-grid-4" style="margin-top: 0.65rem;">
+                            <div><label>First Name</label><input @bind="_wizFirstName" placeholder="Piotr" /></div>
+                            <div><label>Last Name</label><input @bind="_wizLastName" placeholder="Nowak" /></div>
+                            <div><label>Email</label><input type="email" @bind="_wizEmail" placeholder="piotr.nowak@example.com" /></div>
+                            <div><label>Phone</label><input @bind="_wizPhone" placeholder="+48 600 100 200" /></div>
+                        </div>
+                        <div class="cg-grid-3" style="margin-top: 0.65rem;">
+                            <div>
+                                <label>Preferred Language</label>
+                                <select @bind="_wizLanguage">
+                                    <option value="EN">EN</option>
+                                    <option value="PL">PL</option>
+                                    <option value="DE">DE</option>
+                                    <option value="ES">ES</option>
+                                    <option value="FR">FR</option>
+                                </select>
+                            </div>
+                            <div><label>Emergency Contact Name</label><input @bind="_wizEmergencyName" /></div>
+                            <div><label>Emergency Contact Phone</label><input @bind="_wizEmergencyPhone" /></div>
+                        </div>
+                    }
+                }
+                else if (_wizStep == 2)
+                {
+                    <div class="cg-grid-2">
+                        <div>
+                            <label>Select Target Community (COM-XXXXXXXX)</label>
+                            <select value="@_wizCommunityId" @onchange="OnWizardCommunityChanged">
+                                @foreach (var c in _dashboard.Communities)
+                                {
+                                    <option value="@c.Id" @key="c.Id">@c.Name (@c.CommunityAccountNumber · @c.City)</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
+                }
+                else if (_wizStep == 3)
+                {
+                    <div class="cg-grid-2">
+                        <div>
+                            <label>Select Building</label>
+                            <select value="@_wizBuildingId" @onchange="OnWizardBuildingChanged">
+                                @foreach (var b in WizardBuildings)
+                                {
+                                    <option value="@b.Id" @key="b.Id">@b.Name (@b.StreetAddress)</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
+                }
+                else if (_wizStep == 4)
+                {
+                    <div class="cg-grid-2">
+                        <div>
+                            <label>Select Target Unit</label>
+                            <select @bind="_wizUnitId">
+                                @foreach (var u in WizardUnits)
+                                {
+                                    <option value="@u.UnitId" @key="u.UnitId">Unit @u.UnitNumber (@u.Kind · @u.FloorAreaM2.ToString("F1") m² · @u.OccupancyStatus)</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
+                }
+                else if (_wizStep == 5)
+                {
+                    <div class="cg-grid-3">
+                        <div>
+                            <label>Assignment Role / Type</label>
+                            <select @bind="_wizAssignmentType">
+                                @foreach (var t in Enum.GetValues<ResidentAssignmentType>())
+                                {
+                                    <option value="@t" @key="t">@t</option>
+                                }
+                            </select>
+                        </div>
+                        <div>
+                            <label>Assignment Status</label>
+                            <select @bind="_wizStatus">
+                                <option value="@UnitAssignmentStatus.Active">Active</option>
+                                <option value="@UnitAssignmentStatus.PendingMoveIn">Pending Move-In</option>
+                            </select>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 0.5rem; padding-top: 1.4rem;">
+                            <input id="wiz-primary" type="checkbox" @bind="_wizIsPrimary" />
+                            <label for="wiz-primary" style="margin: 0;">Primary Resident for Unit</label>
+                        </div>
+                    </div>
+                }
+                else if (_wizStep == 6)
+                {
+                    <div class="cg-grid-3">
+                        <div>
+                            <label>Move-In Date</label>
+                            <input type="date" @bind="_wizMoveInDate" />
+                        </div>
+                        <div>
+                            <label>Planned Move-Out Date (Optional)</label>
+                            <input type="date" @bind="_wizMoveOutDate" />
+                        </div>
+                        <div>
+                            <label>Assignment Reason / Notes</label>
+                            <input @bind="_wizNotes" placeholder="Signed lease agreement / deed transfer" />
+                        </div>
+                    </div>
+                }
+                else if (_wizStep == 7)
+                {
+                    <div class="cg-subcard" style="margin-bottom: 0.75rem;">
+                        <h3>Assignment Confirmation Summary</h3>
+                        <div class="cg-grid-3" style="margin-top: 0.5rem; font-size: 0.82rem;">
+                            <div>
+                                <div style="color: var(--text-secondary);">Resident</div>
+                                <strong>@(_wizCreateNewResident ? $"{_wizFirstName} {_wizLastName} (New RES-XXXXXXXX)" : SelectedWizardResidentLabel)</strong>
+                            </div>
+                            <div>
+                                <div style="color: var(--text-secondary);">Target Community &amp; Unit</div>
+                                <strong>@SelectedWizardCommunityLabel · Unit @SelectedWizardUnitLabel</strong>
+                            </div>
+                            <div>
+                                <div style="color: var(--text-secondary);">Role &amp; Effective Date</div>
+                                <strong>@_wizAssignmentType (@(_wizIsPrimary ? "Primary" : "Secondary")) · @_wizMoveInDate.ToString("yyyy-MM-dd")</strong>
+                            </div>
+                        </div>
+                    </div>
+
+                    @if (_wizConflict is not null && _wizConflict.HasConflict)
+                    {
+                        <div class="cg-subcard" style="border: 1px solid var(--color-warning); margin-bottom: 0.75rem;">
+                            <strong style="color: var(--color-warning);">Occupancy Conflict Detected</strong>
+                            <ul style="margin: 0.35rem 0 0.5rem 1.2rem; font-size: 0.8rem;">
+                                @foreach (var w in _wizConflict.Warnings)
+                                {
+                                    <li @key="w">@w</li>
+                                }
+                            </ul>
+                            <div>
+                                <label>Explicit Conflict Override Reason (Required to proceed)</label>
+                                <input @bind="_wizOverrideReason" placeholder="Replacing outgoing primary resident / approved co-tenancy..." />
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="cg-subcard" style="border-left: 3px solid var(--color-success); margin-bottom: 0.75rem;">
+                            No occupancy conflicts detected for the selected unit. Ready to assign.
+                        </div>
+                    }
+                }
+
+                <div class="cg-toolbar" style="justify-content: space-between; margin-top: 1rem;">
+                    <div>
+                        @if (_wizStep > 1)
+                        {
+                            <button type="button" class="cg-btn" @onclick="() => GoToWizardStepAsync(_wizStep - 1)">Previous Step</button>
+                        }
+                    </div>
+                    <div style="display: flex; gap: 0.5rem;">
+                        @if (_wizStep < 7)
+                        {
+                            <button type="button" class="cg-btn cg-btn-primary" @onclick="() => GoToWizardStepAsync(_wizStep + 1)">Next Step</button>
+                        }
+                        else
+                        {
+                            <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="SubmitWizardAssignmentAsync">
+                                @(_isBusy ? "Assigning..." : "Confirm & Execute Resident Assignment")
+                            </button>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    }
+
+@code {
+    private string _activeTab = "directory";
+    private IReadOnlyList<ResidentDirectoryRow> _directory = [];
+    private IReadOnlyList<RegistrationRequestQueueItem> _requests = [];
+    private GlobalUnitsDashboardSnapshot? _dashboard;
+    private int _pendingRequestsCount;
+    private WorkspaceSecurityRole _role = WorkspaceSecurityRole.FirmManager;
+    private bool _isAuthorized = true;
+    private string _actorName = "Firm Administrator";
+    private Guid? _membershipId;
+    private Guid? _firmId;
+    private IReadOnlyList<Guid> _allowedCommunityIds = [];
+    private bool _loaded;
+    private bool _isBusy;
+    private string _message = string.Empty;
+    private string _error = string.Empty;
+
+    private string _searchQuery = string.Empty;
+    private Guid _filterCommunityId = Guid.Empty;
+    private string _filterStatus = string.Empty;
+
+    private bool _showQuickCreateResident;
+    private string _newResFirst = string.Empty;
+    private string _newResLast = string.Empty;
+    private string _newResEmail = string.Empty;
+    private string _newResPhone = string.Empty;
+
+    private readonly Dictionary<Guid, Guid> _overrideCommByReq = new();
+    private readonly Dictionary<Guid, Guid> _overrideUnitByReq = new();
+    private readonly Dictionary<Guid, ResidentAssignmentType> _assignTypeByReq = new();
+    private readonly Dictionary<Guid, string> _notesByReq = new();
+
+    // 7-step assignment wizard state
+    private int _wizStep = 1;
+    private bool _wizCreateNewResident;
+    private Guid _wizExistingResidentId;
+    private string _wizFirstName = string.Empty;
+    private string _wizLastName = string.Empty;
+    private string _wizEmail = string.Empty;
+    private string _wizPhone = string.Empty;
+    private string _wizLanguage = "EN";
+    private string _wizEmergencyName = string.Empty;
+    private string _wizEmergencyPhone = string.Empty;
+    private Guid _wizCommunityId;
+    private Guid _wizBuildingId;
+    private Guid _wizUnitId;
+    private ResidentAssignmentType _wizAssignmentType = ResidentAssignmentType.PrimaryResident;
+    private UnitAssignmentStatus _wizStatus = UnitAssignmentStatus.Active;
+    private bool _wizIsPrimary = true;
+    private DateTime _wizMoveInDate = DateTime.UtcNow.Date;
+    private DateTime? _wizMoveOutDate;
+    private string _wizNotes = string.Empty;
+    private string _wizOverrideReason = string.Empty;
+    private UnitOccupancyConflictReport? _wizConflict;
+
+    private Action? _locHandler;
+
+    private IReadOnlyList<ResidentDirectoryRow> FilteredDirectory
+    {
+        get
+        {
+            var q = _directory.AsEnumerable();
+            if (_filterCommunityId != Guid.Empty)
+            {
+                q = q.Where(r => r.ActiveAssignments.Any(a => a.Assignment.CommunityId == _filterCommunityId));
+            }
+            if (!string.IsNullOrWhiteSpace(_filterStatus) && Enum.TryParse<ResidentAccountStatus>(_filterStatus, out var st))
+            {
+                q = q.Where(r => r.Profile.AccountStatus == st);
+            }
+            if (!string.IsNullOrWhiteSpace(_searchQuery))
+            {
+                var term = _searchQuery.Trim();
+                q = q.Where(r =>
+                    r.Profile.FullName.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                    r.Profile.ResidentAccountNumber.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                    r.Profile.PrimaryEmail.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                    r.Profile.Phone.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                    r.ActiveAssignments.Any(a =>
+                        a.UnitNumber.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                        a.CommunityName.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                        a.CommunityAccountNumber.Contains(term, StringComparison.OrdinalIgnoreCase)));
+            }
+            return q.ToList();
+        }
+    }
+
+    private IReadOnlyList<Building> WizardBuildings =>
+        _dashboard is null
+            ? []
+            : _dashboard.Buildings.Where(b => b.CommunityId == _wizCommunityId).ToList();
+
+    private IReadOnlyList<UnitSummaryRow> WizardUnits =>
+        _dashboard is null
+            ? []
+            : _dashboard.Units.Where(u => u.CommunityId == _wizCommunityId && (_wizBuildingId == Guid.Empty || u.BuildingId == _wizBuildingId)).ToList();
+
+    private string SelectedWizardResidentLabel =>
+        _directory.FirstOrDefault(d => d.Profile.Id == _wizExistingResidentId) is { } r
+            ? $"{r.Profile.FullName} ({r.Profile.ResidentAccountNumber})"
+            : "Selected Resident";
+
+    private string SelectedWizardCommunityLabel =>
+        _dashboard?.Communities.FirstOrDefault(c => c.Id == _wizCommunityId) is { } c
+            ? $"{c.Name} ({c.CommunityAccountNumber})"
+            : "Community";
+
+    private string SelectedWizardUnitLabel =>
+        _dashboard?.Units.FirstOrDefault(u => u.UnitId == _wizUnitId)?.UnitNumber ?? "—";
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        try
+        {
+            _role = await Access.GetRoleAsync() ?? WorkspaceSecurityRole.FirmManager;
+            _isAuthorized = DataSecurityAndPrivacyGuard.IsManagerRole(_role);
+            _membershipId = await Access.GetActiveMembershipIdAsync();
+            var account = await Access.GetAccountAsync();
+            if (!string.IsNullOrWhiteSpace(account?.FullName))
+                _actorName = account.FullName;
+
+            var allowedComms = await Access.GetAllowedCommunitiesAsync();
+            _allowedCommunityIds = allowedComms.Select(c => c.Id).ToList();
+            _firmId = await Access.GetFirmIdAsync() ?? allowedComms.FirstOrDefault()?.ManagementFirmId;
+
+            if (_firmId.HasValue && _firmId.Value != Guid.Empty)
+            {
+                _directory = await Workspace.GetFirmResidentsDirectoryAsync(_firmId.Value, _allowedCommunityIds);
+                _requests = await Workspace.GetRegistrationRequestsQueueAsync(_firmId.Value, _allowedCommunityIds);
+                _dashboard = await Workspace.GetGlobalUnitsDashboardAsync(_firmId.Value, _allowedCommunityIds);
+                _pendingRequestsCount = _requests.Count(r => r.Request.Status == RegistrationRequestStatus.PendingApproval);
+
+                if (_wizExistingResidentId == Guid.Empty && _directory.Count > 0)
+                    _wizExistingResidentId = _directory[0].Profile.Id;
+                if (_wizCommunityId == Guid.Empty && _dashboard.Communities.Count > 0)
+                    _wizCommunityId = _dashboard.Communities[0].Id;
+                SyncWizardBuildingAndUnitDefaults();
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loaded = true;
+        }
+    }
+
+    private void SyncWizardBuildingAndUnitDefaults()
+    {
+        var blds = WizardBuildings;
+        if (blds.Count > 0 && !blds.Any(b => b.Id == _wizBuildingId))
+            _wizBuildingId = blds[0].Id;
+        var units = WizardUnits;
+        if (units.Count > 0 && !units.Any(u => u.UnitId == _wizUnitId))
+            _wizUnitId = units[0].UnitId;
+    }
+
+    private async Task CreateStandaloneResidentAsync()
+    {
+        _error = string.Empty;
+        _message = string.Empty;
+        if (string.IsNullOrWhiteSpace(_newResFirst) && string.IsNullOrWhiteSpace(_newResLast))
+        {
+            _error = "Resident name is required.";
+            return;
+        }
+        _isBusy = true;
+        try
+        {
+            var created = await Workspace.CreateOrGetResidentProfileAsync(
+                _firmId, null, _newResFirst, _newResLast, _newResEmail, _newResPhone);
+            _newResFirst = string.Empty;
+            _newResLast = string.Empty;
+            _newResEmail = string.Empty;
+            _newResPhone = string.Empty;
+            _showQuickCreateResident = false;
+            _message = $"Resident identity {created.FullName} created with permanent Resident Account Number {created.ResidentAccountNumber}.";
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private Guid GetOverrideCommunityId(ResidentRegistrationRequest req) =>
+        _overrideCommByReq.TryGetValue(req.Id, out var cid) ? cid : req.CommunityId;
+
+    private void SetOverrideCommunityId(Guid reqId, string? raw)
+    {
+        if (Guid.TryParse(raw, out var cid))
+        {
+            _overrideCommByReq[reqId] = cid;
+            var firstUnit = GetUnitsForCommunity(cid).FirstOrDefault();
+            if (firstUnit is not null)
+                _overrideUnitByReq[reqId] = firstUnit.UnitId;
+        }
+    }
+
+    private Guid GetOverrideUnitId(ResidentRegistrationRequest req) =>
+        _overrideUnitByReq.TryGetValue(req.Id, out var uid) ? uid : req.TargetUnitId;
+
+    private void SetOverrideUnitId(Guid reqId, string? raw)
+    {
+        if (Guid.TryParse(raw, out var uid))
+            _overrideUnitByReq[reqId] = uid;
+    }
+
+    private ResidentAssignmentType GetReviewAssignmentType(Guid reqId) =>
+        _assignTypeByReq.TryGetValue(reqId, out var t) ? t : ResidentAssignmentType.PrimaryResident;
+
+    private void SetReviewAssignmentType(Guid reqId, string? raw)
+    {
+        if (Enum.TryParse<ResidentAssignmentType>(raw, out var t))
+            _assignTypeByReq[reqId] = t;
+    }
+
+    private string GetReviewNotes(Guid reqId) =>
+        _notesByReq.TryGetValue(reqId, out var n) ? n : string.Empty;
+
+    private void SetReviewNotes(Guid reqId, string? raw) =>
+        _notesByReq[reqId] = raw ?? string.Empty;
+
+    private IReadOnlyList<UnitSummaryRow> GetUnitsForCommunity(Guid communityId) =>
+        _dashboard is null ? [] : _dashboard.Units.Where(u => u.CommunityId == communityId).ToList();
+
+    private async Task DecideRequestAsync(ResidentRegistrationRequest req, bool approve)
+    {
+        _error = string.Empty;
+        _message = string.Empty;
+        _isBusy = true;
+        try
+        {
+            var decided = await Workspace.ReviewRegistrationRequestAsync(
+                req.Id,
+                approve,
+                GetOverrideCommunityId(req),
+                GetOverrideUnitId(req),
+                req.MatchedOrCreatedResidentProfileId,
+                GetReviewAssignmentType(req.Id),
+                GetReviewNotes(req.Id),
+                _role,
+                _actorName,
+                _membershipId);
+            _message = approve
+                ? $"Registration request for {decided.SubmittedFullName} approved and assigned."
+                : $"Registration request for {decided.SubmittedFullName} rejected.";
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private void OpenAssignWizardNew()
+    {
+        _wizStep = 1;
+        _activeTab = "wizard";
+    }
+
+    private void OpenAssignWizardForResident(Guid residentProfileId)
+    {
+        _wizCreateNewResident = false;
+        _wizExistingResidentId = residentProfileId;
+        _wizStep = 2;
+        _activeTab = "wizard";
+    }
+
+    private void OnWizardCommunityChanged(ChangeEventArgs e)
+    {
+        if (Guid.TryParse(e.Value?.ToString(), out var cid))
+        {
+            _wizCommunityId = cid;
+            SyncWizardBuildingAndUnitDefaults();
+        }
+    }
+
+    private void OnWizardBuildingChanged(ChangeEventArgs e)
+    {
+        if (Guid.TryParse(e.Value?.ToString(), out var bid))
+        {
+            _wizBuildingId = bid;
+            var units = WizardUnits;
+            if (units.Count > 0)
+                _wizUnitId = units[0].UnitId;
+        }
+    }
+
+    private static string GetWizardStepLabel(int step) => step switch
+    {
+        1 => "Resident Identity",
+        2 => "Community",
+        3 => "Building",
+        4 => "Unit",
+        5 => "Role & Type",
+        6 => "Move-In Dates",
+        _ => "Conflict Check & Confirm"
+    };
+
+    private async Task GoToWizardStepAsync(int step)
+    {
+        _wizStep = Math.Clamp(step, 1, 7);
+        if (_wizStep == 7 && _wizCommunityId != Guid.Empty && _wizUnitId != Guid.Empty)
+        {
+            _wizConflict = await Workspace.CheckUnitOccupancyConflictAsync(
+                _wizCommunityId, _wizUnitId, _wizAssignmentType, _wizIsPrimary);
+        }
+    }
+
+    private async Task SubmitWizardAssignmentAsync()
+    {
+        _error = string.Empty;
+        _message = string.Empty;
+        _isBusy = true;
+        try
+        {
+            var req = new ManualResidentAssignmentRequest(
+                _wizCommunityId,
+                _wizBuildingId,
+                _wizUnitId,
+                _wizCreateNewResident,
+                _wizCreateNewResident ? null : _wizExistingResidentId,
+                _wizFirstName,
+                _wizLastName,
+                _wizEmail,
+                _wizPhone,
+                _wizLanguage,
+                _wizEmergencyName,
+                _wizEmergencyPhone,
+                _wizAssignmentType,
+                _wizStatus,
+                _wizIsPrimary,
+                _wizMoveInDate,
+                _wizMoveOutDate,
+                _wizNotes,
+                _wizOverrideReason);
+            var assignment = await Workspace.AssignResidentToUnitManualAsync(req, _role, _actorName, _membershipId);
+            _message = $"Resident {assignment.ResidentProfile?.FullName} ({assignment.ResidentProfile?.ResidentAccountNumber}) assigned to Unit {SelectedWizardUnitLabel}.";
+            _activeTab = "directory";
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+    }
+}

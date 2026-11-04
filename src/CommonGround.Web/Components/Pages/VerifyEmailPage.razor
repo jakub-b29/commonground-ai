@@ -1,0 +1,52 @@
+@page "/verify-email"
+@layout Layout.AuthLayout
+@attribute [AllowAnonymous]
+@inject WorkspaceLocalization Loc
+@implements IDisposable
+
+<PageTitle>Verify email - CommonGround</PageTitle>
+
+<div class="cg-auth-heading">
+    <h1>Verify email</h1>
+    <p>Enter the confirmation token sent to your email to activate the account.</p>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(ErrorCode))
+{
+    <div role="alert" class="cg-auth-error">Verification failed. Check the token and try again.</div>
+}
+
+<form method="post" action="/auth/verify-email" class="cg-form-stack">
+    <div>
+        <label for="ve-email">Work email</label>
+        <input id="ve-email" name="email" type="email" value="@Email" required autocomplete="username" />
+    </div>
+    <div>
+        <label for="ve-token">Confirmation token</label>
+        <input id="ve-token" name="token" required autocomplete="off" placeholder="Paste confirmation token" />
+    </div>
+    <button type="submit" class="cg-btn cg-btn-primary cg-btn-block">Verify email</button>
+</form>
+
+<div class="cg-auth-links">
+    <a href="/login">Sign in</a>
+    <a href="/register-firm">Register a new firm</a>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "email")] public string? Email { get; set; }
+    [SupplyParameterFromQuery(Name = "error")] public string? ErrorCode { get; set; }
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+    }
+}

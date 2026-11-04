@@ -1,0 +1,477 @@
+@page "/properties/{id:guid}/settings"
+@using Microsoft.EntityFrameworkCore
+@using CommonGround.Application.Interfaces
+@using CommonGround.Application.Persistence
+@using CommonGround.Application.Services
+@using CommonGround.Web.Components.Shared.Admin
+@attribute [Authorize(Policy = "WorkspaceMember")]
+@inject WorkspaceLocalization Loc
+@inject WorkspaceAccessService Access
+@inject IPropertyOnboardingService Onboarding
+@inject CommonGroundWorkspaceService Workspace
+@inject IAppDbContextFactory DbFactory
+@implements IDisposable
+
+<PageTitle>Community profile &amp; contacts — CommonGround</PageTitle>
+
+<RequirePropertyAccess PropertyId="Id">
+    @if (!_loaded)
+    {
+        <p role="status" aria-live="polite">Loading.</p>
+    }
+    else if (_property is null)
+    {
+        <div class="cg-card"><p class="cg-empty-text">Property not found.</p></div>
+    }
+    else if (!_canEdit)
+    {
+        <div class="cg-card"><p class="cg-empty-text">Only the firm manager or the assigned primary manager may edit settings.</p></div>
+    }
+    else
+    {
+        <PageHeader Category="Community Account &amp; Configuration"
+                    ContextCode="@($"{_property.CommunityAccountNumber} · {_property.TaxIdOrEin}")"
+                    Title="@($"{_property.Name} · Community Profile & Contacts")"
+                    Subtitle="Permanent Community Account Number, unified HOA &amp; governance capabilities, structured Community Contacts directory, tariffs, and AI-discovered authorities.">
+            <Badges>
+                <StatusBadge Text="@_property.CommunityAccountNumber" Variant="info" />
+                <StatusBadge Text="@_property.Status.ToString()" Variant="ok" />
+                <AIBadge Label="AI Web Grounding" Model="muse-spark-1.3-contributor" />
+            </Badges>
+            <Actions>
+                <a class="cg-btn cg-btn-sm" href="@($"/properties/{Id}/units")">Units &amp; occupancy</a>
+                <a class="cg-btn cg-btn-sm" href="@($"/properties/{Id}/overview")">Back to overview</a>
+            </Actions>
+        </PageHeader>
+
+        <div class="cg-card">
+            <div class="cg-section-header">
+                <h2>Community Details &amp; Unified Capabilities</h2>
+                <span class="cg-badge cg-badge-info mono num">@_property.CommunityAccountNumber (Immutable)</span>
+            </div>
+            <div class="cg-grid-3">
+                <div>
+                    <label for="ps-acc">Community Account Number (Permanent)</label>
+                    <input id="ps-acc" class="mono num" value="@_property.CommunityAccountNumber" readonly disabled />
+                </div>
+                <div><label for="ps-name">Community / Property Name</label><input id="ps-name" @bind="_property.Name" /></div>
+                <div>
+                    <label for="ps-status">Community Status</label>
+                    <select id="ps-status" @bind="_property.Status">
+                        <option value="@CommunityStatus.Active">Active</option>
+                        <option value="@CommunityStatus.Onboarding">Onboarding</option>
+                        <option value="@CommunityStatus.Archived">Archived</option>
+                    </select>
+                </div>
+                <div><label for="ps-type">Property Type / Configuration</label><input id="ps-type" @bind="_property.PropertyTypeConfiguration" placeholder="Residential Condominium & HOA" /></div>
+                <div><label for="ps-street">Street Address</label><input id="ps-street" @bind="_property.StreetAddress" /></div>
+                <div><label for="ps-city">City</label><input id="ps-city" @bind="_property.City" /></div>
+                <div><label for="ps-zip">Postal / ZIP Code</label><input id="ps-zip" @bind="_property.PostalOrZipCode" /></div>
+                <div><label for="ps-country">Country Code</label><input id="ps-country" @bind="_property.CountryCode" /></div>
+                <div><label for="ps-curr">Currency Code</label><input id="ps-curr" @bind="_property.CurrencyCode" /></div>
+                <div><label for="ps-tax">Tax ID / EIN</label><input id="ps-tax" @bind="_property.TaxIdOrEin" /></div>
+                <div><label for="ps-reg">Registry Number</label><input id="ps-reg" @bind="_property.RegistryNumber" /></div>
+                <div><label for="ps-admin-email">Administrative Contact Email</label><input id="ps-admin-email" type="email" @bind="_property.AdministrativeEmail" /></div>
+                <div><label for="ps-admin-phone">Administrative Contact Phone</label><input id="ps-admin-phone" type="tel" @bind="_property.AdministrativePhone" /></div>
+                <div>
+                    <label for="ps-jurisdiction">Statutory Jurisdiction Profile</label>
+                    <select id="ps-jurisdiction" @bind="_property.OperatingMode">
+                        <option value="@SystemOperatingMode.HousingAssociation">European Condominium &amp; HOA Statute</option>
+                        <option value="@SystemOperatingMode.UsHoa">North American HOA &amp; Condominium Statute</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="ps-reg-mode">Default Resident Registration Link Policy</label>
+                    <select id="ps-reg-mode" @bind="_property.DefaultRegistrationApprovalMode">
+                        <option value="@RegistrationApprovalMode.ManualFirmApproval">Mode B — Manual Firm Approval (Recommended)</option>
+                        <option value="@RegistrationApprovalMode.AutomaticAuthorized">Mode A — Automatic Authorized Registration</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="cg-subcard" style="margin-block-start: 0.85rem;">
+                <strong>Unified HOA &amp; Community Capabilities</strong>
+                <div style="display: flex; flex-wrap: wrap; gap: 1rem; margin-block-start: 0.5rem;">
+                    <label class="cg-check-row"><input type="checkbox" @bind="_property.EnableHoaGovernance" /><span>HOA Board, Meetings &amp; Resolutions</span></label>
+                    <label class="cg-check-row"><input type="checkbox" @bind="_property.EnableShareWeightedVoting" /><span>Ownership Share &amp; Statutory Voting</span></label>
+                    <label class="cg-check-row"><input type="checkbox" @bind="_property.EnableArcRequests" /><span>ARC &amp; Remodeling Permits</span></label>
+                    <label class="cg-check-row"><input type="checkbox" @bind="_property.EnableSubMeterReconciliation" /><span>Bulk-to-Sub-Meter &amp; RUBS Reconciliation</span></label>
+                    <label class="cg-check-row"><input type="checkbox" @bind="_property.EnableReserveStudy" /><span>Reserve Study &amp; SIRS Capital Planning</span></label>
+                </div>
+            </div>
+
+            <div class="cg-grid-4" style="margin-block-start: 0.85rem;">
+                <div><label for="ps-op">Operating rate per m2</label><input id="ps-op" type="number" step="0.01" @bind="_property.OperatingRatePerM2" /></div>
+                <div><label for="ps-repair">Repair fund rate per m2</label><input id="ps-repair" type="number" step="0.01" @bind="_property.RepairFundRatePerM2" /></div>
+                <div><label for="ps-waste">Waste fee per occupant</label><input id="ps-waste" type="number" step="0.01" @bind="_property.WasteFeePerOccupant" /></div>
+                <div><label for="ps-cold">Cold water tariff per m3</label><input id="ps-cold" type="number" step="0.01" @bind="_property.ColdWaterTariffPerM3" /></div>
+                <div><label for="ps-hot">Hot water heating cost per m3</label><input id="ps-hot" type="number" step="0.01" @bind="_property.HotWaterHeatingCostPerM3" /></div>
+                <div><label for="ps-heat">District heating tariff per GJ</label><input id="ps-heat" type="number" step="0.01" @bind="_property.DistrictHeatingTariffPerGj" /></div>
+                <div><label for="ps-elec">Electricity tariff per kWh</label><input id="ps-elec" type="number" step="0.01" @bind="_property.CommonElectricityTariffPerKwh" /></div>
+                <div><label for="ps-power">Contracted electrical power kW</label><input id="ps-power" type="number" step="0.5" @bind="_property.ContractedElectricalPowerKw" /></div>
+            </div>
+            <div class="cg-toolbar" style="margin-top: 0.85rem;">
+                <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="OnSave">Save community profile &amp; tariffs</button>
+            </div>
+        </div>
+
+        <div class="cg-card" style="margin-block-start: 1rem;">
+            <div class="cg-section-header">
+                <h2>Community Contacts Directory</h2>
+                <span class="cg-badge cg-badge-info">@_contacts.Count contacts</span>
+            </div>
+            <p style="font-size: 0.78rem; color: var(--text-secondary); margin-bottom: 0.75rem;">
+                Maintain property-level contacts for Management Office, Property Manager, Board / Association, Emergency, Technical, Accounting, Maintenance, and Other.
+            </p>
+            <div class="cg-table-wrap">
+                <table class="cg-table">
+                    <thead>
+                        <tr>
+                            <th>Category</th>
+                            <th>Contact Name &amp; Role</th>
+                            <th>Phone &amp; Email</th>
+                            <th>Office Hours &amp; Location</th>
+                            <th>Visible to Residents</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in _contacts)
+                        {
+                            <tr @key="item.Id">
+                                <td><span class="cg-badge cg-badge-neutral">@item.Category</span></td>
+                                <td>
+                                    <strong>@item.ContactName</strong>
+                                    <div style="font-size: 0.72rem; color: var(--text-secondary);">@item.RoleTitle</div>
+                                </td>
+                                <td class="mono num" style="font-size: 0.75rem;">
+                                    <div>@item.Phone</div>
+                                    <div style="color: var(--text-secondary);">@item.Email</div>
+                                </td>
+                                <td style="font-size: 0.75rem;">
+                                    <div>@item.OfficeHours</div>
+                                    <div style="color: var(--text-secondary);">@item.AddressOrLocation</div>
+                                </td>
+                                <td>@(item.IsVisibleToResidents ? "Yes" : "Internal")</td>
+                                <td>
+                                    <div style="display: flex; gap: 0.35rem;">
+                                        <button type="button" class="cg-btn cg-btn-sm" @onclick="() => EditContact(item)">Edit</button>
+                                        <button type="button" class="cg-btn cg-btn-sm" @onclick="() => DeleteContactAsync(item.Id)">Remove</button>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="cg-subcard" style="margin-top: 0.85rem;">
+                <strong>@(_editingContactId.HasValue ? "Edit Community Contact" : "Add Community Contact")</strong>
+                <div class="cg-grid-3" style="margin-top: 0.5rem;">
+                    <div>
+                        <label for="cc-cat">Category</label>
+                        <select id="cc-cat" @bind="_contactCategory">
+                            @foreach (var cat in Enum.GetValues<CommunityContactCategory>())
+                            {
+                                <option value="@cat" @key="cat">@cat</option>
+                            }
+                        </select>
+                    </div>
+                    <div><label for="cc-name">Contact Name</label><input id="cc-name" @bind="_contactName" placeholder="e.g. Anna Kowalska / 24h Dispatch" /></div>
+                    <div><label for="cc-role">Role / Title</label><input id="cc-role" @bind="_contactRole" placeholder="e.g. Senior Property Manager" /></div>
+                    <div><label for="cc-phone">Phone Number</label><input id="cc-phone" @bind="_contactPhone" placeholder="+48 22 555 0100" /></div>
+                    <div><label for="cc-email">Email Address</label><input id="cc-email" type="email" @bind="_contactEmail" placeholder="office@commonground.local" /></div>
+                    <div><label for="cc-hours">Office Hours</label><input id="cc-hours" @bind="_contactHours" placeholder="Mon-Fri 08:00-17:00" /></div>
+                    <div><label for="cc-addr">Address / Location</label><input id="cc-addr" @bind="_contactAddress" placeholder="Ground floor office" /></div>
+                    <div><label for="cc-notes">Notes</label><input id="cc-notes" @bind="_contactNotes" placeholder="Optional escalation notes" /></div>
+                    <div style="display: flex; align-items: flex-end; padding-bottom: 0.35rem;">
+                        <label class="cg-check-row"><input type="checkbox" @bind="_contactVisible" /><span>Visible to residents</span></label>
+                    </div>
+                </div>
+                <div class="cg-toolbar" style="margin-top: 0.65rem;">
+                    <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="SaveContactAsync">@(_editingContactId.HasValue ? "Update contact" : "Add contact")</button>
+                    @if (_editingContactId.HasValue)
+                    {
+                        <button type="button" class="cg-btn" @onclick="ResetContactForm">Cancel edit</button>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="cg-card" style="margin-block-start: 1rem;">
+            <div class="cg-section-header"><h2>Discovered Municipal &amp; Emergency Authorities</h2><span class="cg-badge">@_property.EmergencyContacts.Count contacts</span></div>
+            <div class="cg-table-wrap"><table class="cg-table"><thead><tr><th>Category</th><th>Name</th><th>Phone</th><th>Address or notes</th></tr></thead><tbody>
+            @foreach (var c in _property.EmergencyContacts.OrderBy(c => c.SortOrder))
+            {
+                <tr @key="c.Id"><td><span class="cg-badge cg-badge-neutral">@c.Category</span></td><td><strong>@c.Name</strong></td><td class="mono"><input aria-label="Phone" @bind="c.PhoneNumber" /></td><td><input aria-label="Address" @bind="c.AddressOrNotes" /></td></tr>
+            }
+            </tbody></table></div>
+            @if (_isScanning || _scanPercent > 0)
+            {
+                <div role="status" aria-live="polite" style="margin-block: 0.75rem;">
+                    <div style="display: flex; justify-content: space-between; font-size: 0.78rem; margin-bottom: 0.3rem;"><strong>@_scanStage</strong><span class="mono num">@_scanPercent%</span></div>
+                    <div class="ai-progress-track"><div class="ai-progress-fill" style="width: @(_scanPercent)%;"></div></div>
+                    <p style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 0.35rem;">@_scanDetail</p>
+                    <ModelThinkingLog ThinkingLog="_scanThinking" IsRunning="_isScanning" ModelId="muse-spark-1.3-contributor" />
+                </div>
+            }
+            <div class="cg-toolbar" style="margin-top: 0.85rem;">
+                <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="OnSaveAuthorities">Save authorities</button>
+                <button type="button" class="cg-btn cg-btn-ai" disabled="@(_isBusy || _isScanning)" @onclick="OnRescan">
+                    <span class="ai-dot" aria-hidden="true"></span>
+                    <span>Re-scan via AI web search</span>
+                </button>
+            </div>
+        </div>
+    }
+    @if (!string.IsNullOrWhiteSpace(_message))
+    {
+        <div role="status" aria-live="polite" class="cg-callout" style="margin-block-start: 0.75rem;">@_message</div>
+    }
+</RequirePropertyAccess>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    private Community? _property;
+    private IReadOnlyList<CommunityContact> _contacts = [];
+    private Guid? _editingContactId;
+    private CommunityContactCategory _contactCategory = CommunityContactCategory.ManagementOffice;
+    private string _contactName = string.Empty;
+    private string _contactRole = string.Empty;
+    private string _contactPhone = string.Empty;
+    private string _contactEmail = string.Empty;
+    private string _contactHours = "Mon-Fri 08:00-17:00";
+    private string _contactAddress = string.Empty;
+    private string _contactNotes = string.Empty;
+    private bool _contactVisible = true;
+    private bool _loaded;
+    private bool _isBusy;
+    private bool _isScanning;
+    private int _scanPercent;
+    private string _scanStage = string.Empty;
+    private string _scanDetail = string.Empty;
+    private readonly List<string> _scanThinking = [];
+    private readonly HashSet<string> _scanThinkingSeen = new(StringComparer.Ordinal);
+    private int _scanLastMilestone = -1;
+    private bool _canEdit;
+    private string _message = string.Empty;
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        try
+        {
+            await Workspace.EnsureCommunityAccountNumberAsync(Id);
+            _property = await Onboarding.GetPropertyDetailAsync(Id);
+            _contacts = await Workspace.GetCommunityContactsAsync(Id);
+            var role = await Access.GetRoleAsync();
+            var membershipId = await Access.GetActiveMembershipIdAsync();
+            _canEdit = role == WorkspaceSecurityRole.FirmManager || role == WorkspaceSecurityRole.PropertyManager;
+            if (role == WorkspaceSecurityRole.PropertyManager && membershipId.HasValue)
+            {
+                await using var db = await DbFactory.CreateDbContextAsync();
+                var hasAccess = await db.MembershipPropertyAccesses.AsNoTracking()
+                    .AnyAsync(a => a.FirmMembershipId == membershipId.Value && a.CommunityId == Id);
+                _canEdit = hasAccess;
+            }
+        }
+        catch (Exception ex) { _message = ex.Message; }
+        finally { _loaded = true; }
+    }
+
+    private async Task OnSave()
+    {
+        if (_property is null) return;
+        _isBusy = true;
+        try
+        {
+            var role = await Access.GetRoleAsync() ?? WorkspaceSecurityRole.FirmManager;
+            var userId = await Access.GetUserIdAsync();
+            await Workspace.UpdateUnifiedCommunityProfileAsync(
+                new UnifiedCommunityProfileInput(
+                    Id,
+                    _property.Name,
+                    _property.Status,
+                    _property.PropertyTypeConfiguration,
+                    _property.StreetAddress,
+                    _property.City,
+                    _property.PostalOrZipCode,
+                    _property.CountryCode,
+                    _property.CurrencyCode,
+                    _property.TaxIdOrEin,
+                    _property.RegistryNumber,
+                    _property.LocalMunicipalityOrCounty,
+                    _property.LocalTaxOffice,
+                    _property.CompetentCourtOrRecorder,
+                    _property.AdministrativeEmail,
+                    _property.AdministrativePhone,
+                    _property.OperatingMode,
+                    _property.EnableHoaGovernance,
+                    _property.EnableShareWeightedVoting,
+                    _property.EnableArcRequests,
+                    _property.EnableSubMeterReconciliation,
+                    _property.EnableReserveStudy,
+                    _property.DefaultRegistrationApprovalMode,
+                    _property.OperatingRatePerM2,
+                    _property.RepairFundRatePerM2,
+                    _property.WasteFeePerOccupant,
+                    _property.ColdWaterTariffPerM3,
+                    _property.HotWaterHeatingCostPerM3,
+                    _property.DistrictHeatingTariffPerGj,
+                    _property.CommonElectricityTariffPerKwh),
+                role,
+                userId);
+            _property = await Onboarding.GetPropertyDetailAsync(Id);
+            _message = $"Community profile saved ({_property?.CommunityAccountNumber}).";
+        }
+        catch (Exception ex) { _message = ex.Message; }
+        finally { _isBusy = false; }
+    }
+
+    private void EditContact(CommunityContact item)
+    {
+        _editingContactId = item.Id;
+        _contactCategory = item.Category;
+        _contactName = item.ContactName;
+        _contactRole = item.RoleTitle;
+        _contactPhone = item.Phone;
+        _contactEmail = item.Email;
+        _contactHours = item.OfficeHours;
+        _contactAddress = item.AddressOrLocation;
+        _contactNotes = item.Notes;
+        _contactVisible = item.IsVisibleToResidents;
+    }
+
+    private void ResetContactForm()
+    {
+        _editingContactId = null;
+        _contactCategory = CommunityContactCategory.ManagementOffice;
+        _contactName = string.Empty;
+        _contactRole = string.Empty;
+        _contactPhone = string.Empty;
+        _contactEmail = string.Empty;
+        _contactHours = "Mon-Fri 08:00-17:00";
+        _contactAddress = string.Empty;
+        _contactNotes = string.Empty;
+        _contactVisible = true;
+    }
+
+    private async Task SaveContactAsync()
+    {
+        _isBusy = true;
+        try
+        {
+            var role = await Access.GetRoleAsync() ?? WorkspaceSecurityRole.FirmManager;
+            await Workspace.UpsertCommunityContactAsync(
+                Id,
+                new CommunityContactInput(
+                    _editingContactId,
+                    _contactCategory,
+                    _contactName,
+                    _contactRole,
+                    _contactPhone,
+                    _contactEmail,
+                    _contactHours,
+                    _contactAddress,
+                    _contactNotes,
+                    _contacts.Count,
+                    _contactVisible),
+                role);
+            _contacts = await Workspace.GetCommunityContactsAsync(Id);
+            ResetContactForm();
+            _message = "Community contact saved.";
+        }
+        catch (Exception ex) { _message = ex.Message; }
+        finally { _isBusy = false; }
+    }
+
+    private async Task DeleteContactAsync(Guid contactId)
+    {
+        _isBusy = true;
+        try
+        {
+            var role = await Access.GetRoleAsync() ?? WorkspaceSecurityRole.FirmManager;
+            await Workspace.DeleteCommunityContactAsync(Id, contactId, role);
+            _contacts = await Workspace.GetCommunityContactsAsync(Id);
+            _message = "Community contact removed.";
+        }
+        catch (Exception ex) { _message = ex.Message; }
+        finally { _isBusy = false; }
+    }
+
+    private async Task OnSaveAuthorities()
+    {
+        if (_property is null) return;
+        _isBusy = true;
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            foreach (var c in _property.EmergencyContacts)
+            {
+                var tracked = await db.EmergencyContacts.FirstOrDefaultAsync(e => e.Id == c.Id);
+                if (tracked is not null)
+                {
+                    tracked.PhoneNumber = c.PhoneNumber;
+                    tracked.AddressOrNotes = c.AddressOrNotes;
+                }
+            }
+            await db.SaveChangesAsync();
+            _message = "Authorities saved.";
+        }
+        catch (Exception ex) { _message = ex.Message; }
+        finally { _isBusy = false; }
+    }
+
+    private async Task OnRescan()
+    {
+        if (_property is null) return;
+        _isScanning = true; _scanPercent = 0; _scanStage = "Starting live search."; _scanDetail = string.Empty;
+        _scanThinking.Clear(); _scanThinkingSeen.Clear(); _scanLastMilestone = -1;
+        try
+        {
+            var membershipId = await Access.GetActiveMembershipIdAsync() ?? Guid.Empty;
+            var request = new AddressLookupRequest(_property.StreetAddress, _property.PostalOrZipCode, _property.City, _property.CountryCode, _property.OperatingMode);
+            var reporter = new Progress<DiscoveryProgressStep>(s =>
+            {
+                _scanStage = s.Stage; _scanDetail = s.Detail; _scanPercent = s.Percent;
+                if (!string.IsNullOrWhiteSpace(s.Thinking))
+                {
+                    var key = s.Thinking.Trim();
+                    if (!string.IsNullOrWhiteSpace(key) && _scanThinkingSeen.Add(key))
+                    {
+                        _scanThinking.Add($"[{DateTime.Now:HH:mm:ss}] {key}");
+                        while (_scanThinking.Count > 200) { _scanThinking.RemoveAt(0); }
+                    }
+                }
+                if ((s.Percent is 0 or 15 or 70 or 90 or 100) && s.Percent != _scanLastMilestone)
+                {
+                    _scanLastMilestone = s.Percent;
+                    _scanThinking.Add($"[{DateTime.Now:HH:mm:ss}] \u2192 {s.Stage}: {s.Detail}");
+                    while (_scanThinking.Count > 200) { _scanThinking.RemoveAt(0); }
+                }
+                InvokeAsync(StateHasChanged);
+            });
+            var dossier = await Onboarding.DiscoverPropertyDossierFromAddressAsync(request, default, reporter);
+            await Onboarding.ApplyDiscoveryDossierToPropertyAsync(Id, membershipId, dossier, DossierSectionFlags.All);
+            _property = await Onboarding.GetPropertyDetailAsync(Id);
+            _message = dossier.SourceUrls.Any(u => u.Contains("offline-fallback", StringComparison.OrdinalIgnoreCase))
+                ? "Live search timed out; offline defaults applied. Fill missing fields manually."
+                : "Discovery dossier applied.";
+        }
+        catch (Exception ex) { _message = ex.Message; }
+        finally { _isScanning = false; }
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+    }
+}

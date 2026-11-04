@@ -3,7 +3,8 @@
     display: flex;
     flex-direction: column;
     min-height: 100dvh;
-    background-color: var(--color-bg-canvas);
+    background-color: var(--background-primary);
+    color: var(--text-primary);
 }
 
 .workspace-shell {
@@ -11,18 +12,23 @@
     min-width: 0;
     display: flex;
     flex-direction: column;
+    background-color: var(--background-primary);
 }
 
 .workspace-container {
     width: 100%;
-    max-width: 1480px;
+    max-width: 1560px;
     margin-inline: auto;
-    padding: 1rem 1.25rem 2.5rem;
+    padding: 1.25rem 1.25rem 2.5rem;
+    flex: 1;
 }
 
 .sidebar {
-    background-color: var(--color-bg-surface);
-    border-bottom: 1px solid var(--color-border-subtle);
+    background-color: var(--background-secondary);
+    border-bottom: 1px solid var(--border-default);
+    position: relative;
+    z-index: 45;
+    transition: width 160ms ease;
 }
 
 @media (min-width: 769px) {
@@ -32,34 +38,38 @@
     }
 
     .sidebar {
-        width: 248px;
+        width: 256px;
         flex-shrink: 0;
         min-height: 100dvh;
         border-bottom: none;
-        border-inline-end: 1px solid var(--color-border-subtle);
+        border-inline-end: 1px solid var(--border-default);
         position: sticky;
         inset-block-start: 0;
         align-self: flex-start;
         height: 100dvh;
         overflow-y: auto;
+        overflow-x: hidden;
+    }
+
+    .sidebar.sidebar-collapsed {
+        width: 68px;
     }
 
     .workspace-container {
-        padding: 1.25rem 1.75rem 3rem;
+        padding: 1.35rem 1.75rem 3rem;
     }
 }
 
 #blazor-error-ui {
-    color-scheme: light only;
-    background: #fef2f2;
-    color: #991b1b;
-    border-top: 1px solid #fecaca;
+    background: var(--status-danger-bg);
+    color: var(--status-danger);
+    border-top: 1px solid var(--status-danger-border);
     bottom: 0;
-    box-shadow: 0 -1px 2px rgba(15, 23, 42, 0.12);
+    box-shadow: var(--shadow-elevated);
     box-sizing: border-box;
     display: none;
     left: 0;
-    padding: 0.6rem 1.25rem 0.7rem 1.25rem;
+    padding: 0.65rem 1.25rem;
     position: fixed;
     width: 100%;
     z-index: 1000;

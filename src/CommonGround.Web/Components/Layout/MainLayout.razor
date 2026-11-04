@@ -1,4 +1,4 @@
-﻿@inherits LayoutComponentBase
+@inherits LayoutComponentBase
 @inject WorkspaceUiState UiState
 @inject WorkspaceLocalization Loc
 @inject WorkspaceAccessService Access
@@ -8,20 +8,24 @@
 
 <AuthorizeView>
     <Authorized>
-        <div class="page">
-            <aside class="sidebar" aria-label="Primary navigation">
+        <div class="page @(UiState.IsSidebarCollapsed ? "page-sidebar-collapsed" : "")">
+            <aside class="sidebar @(UiState.IsSidebarCollapsed ? "sidebar-collapsed" : "")" aria-label="Primary navigation">
                 <NavMenu />
             </aside>
 
             <div class="workspace-shell">
+                <TopCommandHeader />
                 <div class="workspace-container">
-                    <TopCommandHeader />
                     @if (UiState.IsEmergencyDrawerOpen)
                     {
                         <EmergencyContactsStrip />
                     }
                     <div role="status" aria-live="polite" class="@(string.IsNullOrWhiteSpace(UiState.StatusBannerMessage) ? "visually-hidden" : "cg-status-banner")">
-                        <span>@UiState.StatusBannerMessage</span>
+                        <div style="display: inline-flex; align-items: center; gap: 0.5rem;">
+                            <span class="ai-dot" aria-hidden="true"></span>
+                            <span>@UiState.StatusBannerMessage</span>
+                        </div>
+                        <button type="button" class="cg-btn cg-btn-sm cg-btn-ghost" @onclick="ClearBanner" aria-label="Dismiss notification">Dismiss</button>
                     </div>
                     <main id="main-content" tabindex="-1">
                         @Body
@@ -79,6 +83,11 @@
         catch
         {
         }
+    }
+
+    private void ClearBanner()
+    {
+        UiState.Announce(string.Empty);
     }
 
     public void Dispose()

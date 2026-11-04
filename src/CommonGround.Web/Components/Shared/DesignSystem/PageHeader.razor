@@ -1,0 +1,42 @@
+<header class="cg-page-header">
+    <div style="min-width: 0;">
+        @if (!string.IsNullOrWhiteSpace(Category))
+        {
+            <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.3rem; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted);">
+                <span>@Category</span>
+                @if (!string.IsNullOrWhiteSpace(ContextCode))
+                {
+                    <span>/</span>
+                    <span class="mono" style="color: var(--accent-ai-light);">@ContextCode</span>
+                }
+            </div>
+        }
+        <h1 class="cg-page-title">
+            <span>@Title</span>
+            @if (Badges is not null)
+            {
+                @Badges
+            }
+        </h1>
+        @if (!string.IsNullOrWhiteSpace(Subtitle))
+        {
+            <p class="cg-page-subtitle">@Subtitle</p>
+        }
+    </div>
+    @if (Actions is not null)
+    {
+        <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+            @Actions
+        </div>
+    }
+</header>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+    [Parameter] public string? Subtitle { get; set; }
+    [Parameter] public string? Category { get; set; }
+    [Parameter] public string? ContextCode { get; set; }
+    [Parameter] public RenderFragment? Badges { get; set; }
+    [Parameter] public RenderFragment? Actions { get; set; }
+}
+

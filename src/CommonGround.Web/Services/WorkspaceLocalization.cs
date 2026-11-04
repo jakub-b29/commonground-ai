@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Microsoft.JSInterop;
 
 namespace CommonGround.Web.Services;
@@ -11,15 +12,17 @@ public sealed class WorkspaceLocalization
     private readonly IWebHostEnvironment _env;
     private readonly IJSRuntime? _js;
     private readonly IHttpContextAccessor? _http;
+    private readonly ILogger<WorkspaceLocalization>? _logger;
     private Dictionary<string, string> _strings = new(StringComparer.Ordinal);
     private string _language = "en";
     private bool _initializedFromBrowser;
 
-    public WorkspaceLocalization(IWebHostEnvironment env, IJSRuntime? js = null, IHttpContextAccessor? http = null)
+    public WorkspaceLocalization(IWebHostEnvironment env, IJSRuntime? js = null, IHttpContextAccessor? http = null, ILogger<WorkspaceLocalization>? logger = null)
     {
         _env = env;
         _js = js;
         _http = http;
+        _logger = logger;
     }
 
     public string CurrentLanguage => _language;
@@ -78,6 +81,10 @@ public sealed class WorkspaceLocalization
             }
         }
         _strings = await LoadAsync(_language, ct);
+        if (_strings.Count > 0)
+        {
+            OnChange?.Invoke();
+        }
     }
 
     private string? ReadLanguageCookie()
@@ -146,22 +153,60 @@ public sealed class WorkspaceLocalization
 
     private async Task<Dictionary<string, string>> LoadAsync(string language, CancellationToken ct)
     {
-        try
+        var file = $"{language}.json";
+        var webRoot = _env.WebRootPath ?? string.Empty;
+        var contentRoot = _env.ContentRootPath ?? string.Empty;
+        var baseDir = AppContext.BaseDirectory ?? string.Empty;
+        var candidates = new[]
         {
-            var path = Path.Combine(_env.WebRootPath, "i18n", $"{language}.json");
+            Path.Combine(webRoot, "i18n", file),
+            Path.Combine(contentRoot, "wwwroot", "i18n", file),
+            Path.Combine(baseDir, "wwwroot", "i18n", file),
+            Path.Combine(baseDir, "i18n", file),
+        };
+        var attempted = new List<string>(candidates.Length);
+        foreach (var path in candidates)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                continue;
+            }
+            var seen = false;
+            foreach (var prior in attempted)
+            {
+                if (string.Equals(prior, path, StringComparison.OrdinalIgnoreCase))
+                {
+                    seen = true;
+                    break;
+                }
+            }
+            if (seen)
+            {
+                continue;
+            }
+            attempted.Add(path);
             if (!File.Exists(path))
             {
-                return new Dictionary<string, string>(StringComparer.Ordinal);
+                continue;
             }
-            await using var stream = File.OpenRead(path);
-            var parsed = await JsonSerializer.DeserializeAsync<Dictionary<string, string>>(stream, JsonOptions, ct);
-            return parsed is null
-                ? new Dictionary<string, string>(StringComparer.Ordinal)
-                : new Dictionary<string, string>(parsed, StringComparer.Ordinal);
+            try
+            {
+                await using var stream = File.OpenRead(path);
+                var parsed = await JsonSerializer.DeserializeAsync<Dictionary<string, string>>(stream, JsonOptions, ct);
+                if (parsed is null)
+                {
+                    _logger?.LogWarning("Localization file deserialized to null: {Path}", path);
+                    continue;
+                }
+                return new Dictionary<string, string>(parsed, StringComparer.Ordinal);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Failed to load localization file: {Path}", path);
+            }
         }
-        catch
-        {
-            return new Dictionary<string, string>(StringComparer.Ordinal);
-        }
+        _logger?.LogWarning("Localization file {File} not found. Attempted paths: {Paths}", file, string.Join("; ", attempted));
+        return new Dictionary<string, string>(StringComparer.Ordinal);
     }
 }
+

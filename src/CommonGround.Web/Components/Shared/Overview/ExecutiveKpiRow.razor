@@ -2,27 +2,43 @@
 @inject WorkspaceLocalization Loc
 @implements IDisposable
 
-<div class="cg-grid-4">
-    <div class="cg-card">
-        <div class="kpi-label">@Loc.T("kpi.operatingCash")</div>
-        <div class="kpi-value num">@Snapshot.OperatingCash.ToString("N2") @Snapshot.Community.CurrencyCode</div>
-        <div class="kpi-sub">@Loc.T("kpi.reserveFund"): <strong class="num">@Snapshot.ReserveCash.ToString("N2") @Snapshot.Community.CurrencyCode</strong></div>
-    </div>
-    <div class="cg-card">
-        <div class="kpi-label">@Loc.T("kpi.delinquency")</div>
-        <div class="kpi-value num">@Snapshot.DelinquencyRate.ToString("N2") %</div>
-        <div class="kpi-sub">@Loc.T("kpi.arrearsUnits"): <strong class="num">@Snapshot.ArrearsUnits</strong> of <span class="num">@Snapshot.Community.Units.Count</span></div>
-    </div>
-    <div class="cg-card">
-        <div class="kpi-label">@Loc.T("kpi.openOrders")</div>
-        <div class="kpi-value num">@Snapshot.OpenWorkOrders</div>
-        <div class="kpi-sub">@Loc.T("kpi.warranty"): <span class="cg-badge @(Snapshot.Community.IsUnderDeveloperWarranty ? "cg-badge-ok" : "")">@(Snapshot.Community.IsUnderDeveloperWarranty ? Loc.T("kpi.warrantyActive") : Loc.T("kpi.standardReserve"))</span></div>
-    </div>
-    <div class="cg-card">
-        <div class="kpi-label">@Loc.T("kpi.pending")</div>
-        <div class="kpi-value num">@Snapshot.PendingApprovals</div>
-        <div class="kpi-sub">@Loc.T("kpi.resolutions"): <strong class="num">@Snapshot.Community.Resolutions.Count</strong></div>
-    </div>
+<div class="cg-grid-4" style="margin-bottom: 1rem;">
+    <MetricCard Label="@Loc.T("kpi.operatingCash")"
+                Value="@($"{Snapshot.OperatingCash:N2} {Snapshot.Community.CurrencyCode}")"
+                BadgeText="Ledger verified"
+                StatusVariant="ok">
+        <SubContent>
+            <span>@Loc.T("kpi.reserveFund"): <strong class="num" style="color: var(--text-primary);">@Snapshot.ReserveCash.ToString("N2") @Snapshot.Community.CurrencyCode</strong></span>
+        </SubContent>
+    </MetricCard>
+
+    <MetricCard Label="@Loc.T("kpi.delinquency")"
+                Value="@($"{Snapshot.DelinquencyRate:N2} %")"
+                BadgeText="@(Snapshot.DelinquencyRate > 5m ? "Monitor" : "Healthy")"
+                StatusVariant="@(Snapshot.DelinquencyRate > 5m ? "warn" : "ok")">
+        <SubContent>
+            <span>@Loc.T("kpi.arrearsUnits"): <strong class="num" style="color: var(--text-primary);">@Snapshot.ArrearsUnits</strong> of <span class="num">@Snapshot.Community.Units.Count</span></span>
+        </SubContent>
+    </MetricCard>
+
+    <MetricCard Label="@Loc.T("kpi.openOrders")"
+                Value="@Snapshot.OpenWorkOrders.ToString()"
+                BadgeText="@(Snapshot.Community.IsUnderDeveloperWarranty ? Loc.T("kpi.warrantyActive") : Loc.T("kpi.standardReserve"))"
+                StatusVariant="@(Snapshot.Community.IsUnderDeveloperWarranty ? "ok" : "neutral")">
+        <SubContent>
+            <span>@Loc.T("kpi.warranty") · <span class="mono">@Snapshot.Community.Buildings.Count</span> bldgs</span>
+        </SubContent>
+    </MetricCard>
+
+    <MetricCard Label="@Loc.T("kpi.pending")"
+                Value="@Snapshot.PendingApprovals.ToString()"
+                BadgeText="CommonGround Queue"
+                StatusVariant="ai"
+                IsAi="true">
+        <SubContent>
+            <span>@Loc.T("kpi.resolutions"): <strong class="num" style="color: var(--text-primary);">@Snapshot.Community.Resolutions.Count</strong></span>
+        </SubContent>
+    </MetricCard>
 </div>
 
 @code {

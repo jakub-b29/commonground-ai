@@ -1,117 +1,19 @@
 @page "/firm/properties"
 @page "/firm"
 @attribute [Authorize(Policy = "FirmManagerOnly")]
-@inject WorkspaceUiState UiState
-@inject WorkspaceLocalization Loc
-@inject WorkspaceAccessService Access
-@inject CommonGroundWorkspaceService Workspace
 @inject NavigationManager Nav
-@implements IDisposable
 
-<PageTitle>@Loc.T("firm.propertiesTitle") - CommonGround</PageTitle>
+<PageTitle>Moved - CommonGround</PageTitle>
 
-<div class="cg-page-header">
-    <div>
-        <h1>@Loc.T("firm.propertiesTitle")</h1>
-        <p class="cg-page-lead">@Loc.T("firm.portfolioLead")</p>
-    </div>
-    <span class="cg-badge mono">@_firmCode</span>
-</div>
-
-@if (!_loaded)
-{
-    <p role="status" aria-live="polite">@Loc.T("msg.loading")</p>
-}
-else if (_firm is null)
-{
-    <div class="cg-card">
-        <div class="cg-section-header"><h2>@Loc.T("firm.selectFirmTitle")</h2></div>
-        <p class="cg-empty-text">@Loc.T("firm.selectFirmHint")</p>
-        <div class="cg-toolbar">
-            <a class="cg-btn cg-btn-primary" href="/register-firm">@Loc.T("firm.registerNew")</a>
-        </div>
-    </div>
-}
-else
-{
-    <div class="cg-stack">
-        <div class="cg-card">
-            <div class="cg-section-header">
-                <h2>@Loc.T("firm.propertiesTitle")</h2>
-                <span class="cg-badge">@_properties.Count @Loc.T("firm.propertiesCount")</span>
-            </div>
-            <div class="cg-table-wrap">
-                <table class="cg-table">
-                    <thead><tr><th>@Loc.T("form.community")</th><th>@Loc.T("table.owner")</th><th class="num">@Loc.T("table.balance")</th><th>@Loc.T("table.actions")</th></tr></thead>
-                    <tbody>
-                        @foreach (var p in _properties)
-                        {
-                            <tr @key="p.Id">
-                                <td><strong>@p.Name</strong><div style="font-size: 0.72rem; color: var(--color-text-secondary);">@p.StreetAddress, @p.City · @p.OperatingMode</div></td>
-                                <td style="font-size: 0.75rem;">@p.AssignedPropertyManagerName<div style="color: var(--color-text-secondary);">@p.AssignedPropertyManagerEmail</div></td>
-                                <td class="num">@p.Units.Count units</td>
-                                <td><button type="button" class="cg-btn" @onclick="() => OnSelectProperty(p.Id, p.OperatingMode)">@Loc.T("firm.openProperty")</button></td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
-            <div class="cg-toolbar">
-                <a class="cg-btn cg-btn-primary" href="/firm/properties/new">@Loc.T("firm.createProperty")</a>
-                <a class="cg-btn" href="/firm/managers">@Loc.T("firm.assignManager")</a>
-                <a class="cg-btn" href="/firm/invitations">@Loc.T("firm.inviteTitle")</a>
-            </div>
-        </div>
-    </div>
-}
+<p role="status" aria-live="polite">This page has moved to firm administration. Redirecting.</p>
 
 @code {
-    private ManagementFirm? _firm;
-    private List<Community> _properties = new();
-    private string _firmCode = string.Empty;
-    private bool _loaded;
-    private Action? _stateHandler;
-    private Action? _locHandler;
-
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized()
     {
-        _stateHandler = () => InvokeAsync(ReloadAsync);
-        UiState.OnChange += _stateHandler;
-        _locHandler = () => InvokeAsync(StateHasChanged);
-        Loc.OnChange += _locHandler;
-        await Loc.EnsureLoadedAsync();
-        await ReloadAsync();
-    }
-
-    private async Task ReloadAsync()
-    {
-        try
-        {
-            _firm = await Access.GetFirmAsync();
-            if (_firm is not null)
-            {
-                _firmCode = _firm.FirmGroupCode;
-                _properties = (await Access.GetAllowedCommunitiesAsync()).ToList();
-            }
-        }
-        catch { }
-        finally
-        {
-            _loaded = true;
-            StateHasChanged();
-        }
-    }
-
-    private Task OnSelectProperty(Guid id, SystemOperatingMode mode)
-    {
-        UiState.SelectCommunity(id, mode == SystemOperatingMode.UsHoa ? "US HOA & Condo Mode" : "Housing Association Mode");
-        Nav.NavigateTo("/");
-        return Task.CompletedTask;
-    }
-
-    public void Dispose()
-    {
-        if (_stateHandler is not null) UiState.OnChange -= _stateHandler;
-        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+        var path = new Uri(Nav.Uri).AbsolutePath;
+        if (string.Equals(path, "/firm", StringComparison.OrdinalIgnoreCase))
+            Nav.NavigateTo("/admin", forceLoad: false);
+        else
+            Nav.NavigateTo("/admin/properties", forceLoad: false);
     }
 }

@@ -94,7 +94,7 @@
         await Loc.EnsureLoadedAsync();
         try
         {
-            _role = await Access.GetRoleAsync();
+            _role = await Access.GetRoleAsync() ?? WorkspaceSecurityRole.Resident;
         }
         catch { }
     }

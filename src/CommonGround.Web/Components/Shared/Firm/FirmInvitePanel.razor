@@ -27,7 +27,7 @@
             </div>
             <div>
                 <label for="inv-role">@Loc.T("form.requestedRole")</label>
-                <select id="inv-role" @bind="_role">
+                <select id="inv-role" value="@_role" @onchange="OnRoleSelectChanged">
                     @if (_isFirmManager)
                     {
                         <option value="@WorkspaceSecurityRole.PropertyManager">@Loc.T("role.propertyManager")</option>
@@ -62,6 +62,56 @@
                 <label for="inv-trade">@Loc.T("form.companyTrade")</label>
                 <input id="inv-trade" @bind="_trade" placeholder="Hydro-Instal" />
             </div>
+        </div>
+        <div style="margin-block-start: 0.75rem;">
+            <label id="inv-multi-label">Property scope (select one or more)</label>
+            <fieldset aria-labelledby="inv-multi-label" style="border: 1px solid var(--color-border, #E2E8F0); border-radius: 4px; padding: 0.5rem 0.75rem; margin: 0;">
+                @if (_properties.Count == 0)
+                {
+                    <p style="color: var(--color-text-secondary); font-size: 0.78125rem; margin: 0;">No properties available.</p>
+                }
+                @foreach (var p in _properties)
+                {
+                    <label style="display: flex; align-items: center; gap: 0.375rem; font-weight: 400; margin-block-end: 0.25rem;">
+                        <input type="checkbox" checked="@_selectedCommunityIds.Contains(p.Id)" @onchange="(e) => OnPropertyToggled(p.Id, (bool?)e.Value == true)" />
+                        <span>@p.Name</span>
+                        <span class="mono num" style="font-size: 0.72rem; color: var(--color-text-secondary); font-variant-numeric: tabular-nums;">@p.Id.ToString("N").AsSpan(0, 8).ToString()</span>
+                    </label>
+                }
+            </fieldset>
+        </div>
+        <div style="margin-block-start: 0.75rem;">
+            <label id="inv-perm-label">Permission matrix for selected role</label>
+            <fieldset aria-labelledby="inv-perm-label" style="border: 1px solid var(--color-border, #E2E8F0); border-radius: 4px; padding: 0.5rem 0.75rem; margin: 0;">
+                @foreach (var flag in RelevantFlags)
+                {
+                    <label style="display: flex; align-items: center; gap: 0.375rem; font-weight: 400; margin-block-end: 0.25rem;">
+                        <input type="checkbox" checked="@_checkedPermissions.HasFlag(flag)" @onchange="(e) => OnPermissionToggled(flag, (bool?)e.Value == true)" />
+                        <span>@GetPermissionLabel(flag)</span>
+                    </label>
+                }
+            </fieldset>
+            <p style="color: var(--color-text-secondary); font-size: 0.75rem; margin-block-start: 0.375rem;">Defaults follow the preset for the chosen role. Uncheck to restrict.</p>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(_firmGroupCode))
+        {
+            <div style="margin-block-start: 0.75rem; border: 1px solid var(--color-border, #E2E8F0); border-radius: 4px; padding: 0.5rem 0.75rem;">
+                <strong>Join code share box</strong>
+                <div style="margin-block-start: 0.375rem; display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center;">
+                    <span>Group code:</span>
+                    <code class="mono num" style="font-variant-numeric: tabular-nums;">@_firmGroupCode</code>
+                    <span style="color: var(--color-text-secondary); font-size: 0.75rem;">Copy this code and share it with new members.</span>
+                </div>
+                <div style="margin-block-start: 0.375rem;">
+                    <span>Invite link:</span>
+                    <a href="/accept-invite?code=@Uri.EscapeDataString(_firmGroupCode)">@($"/accept-invite?code={_firmGroupCode}")</a>
+                </div>
+            </div>
+        }
+        <div style="margin-block-start: 0.5rem;">
+            <label style="display: flex; align-items: center; gap: 0.375rem; font-weight: 500;">
+                <input type="checkbox" @bind="_requiresManagerApproval" /> Require manager approval after sign up
+            </label>
         </div>
         <div class="cg-toolbar">
             <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="OnInvite">@Loc.T("firm.sendInvite")</button>
@@ -125,15 +175,25 @@
     private bool _isFirmManager;
     private WorkspaceSecurityRole _actorRole = WorkspaceSecurityRole.PropertyManager;
     private Action? _locHandler;
+    private HashSet<Guid> _selectedCommunityIds = new();
+    private WorkspacePermissionFlags _checkedPermissions;
+    private string _firmGroupCode = string.Empty;
+    private bool _requiresManagerApproval = true;
+
+    private IReadOnlyList<WorkspacePermissionFlags> RelevantFlags =>
+        Enum.GetValues<WorkspacePermissionFlags>()
+            .Where(f => f != 0 && WorkspacePermissionPresets.DefaultForRole(_role).HasFlag(f))
+            .ToList();
 
     protected override async Task OnInitializedAsync()
     {
         _locHandler = () => InvokeAsync(StateHasChanged);
         Loc.OnChange += _locHandler;
         await Loc.EnsureLoadedAsync();
+        _checkedPermissions = WorkspacePermissionPresets.DefaultForRole(_role);
         try
         {
-            _actorRole = await Access.GetRoleAsync();
+            _actorRole = await Access.GetRoleAsync() ?? WorkspaceSecurityRole.PropertyManager;
             _isFirmManager = _actorRole == WorkspaceSecurityRole.FirmManager;
             _isManager = _isFirmManager || _actorRole == WorkspaceSecurityRole.PropertyManager;
         }
@@ -152,9 +212,57 @@
             if (myFirm is null || myFirm.Value != FirmId.Value) return;
             _properties = (await Access.GetAllowedCommunitiesAsync()).ToList();
             _invites = (await Workspace.GetFirmInvitationsAsync(FirmId.Value)).ToList();
+            var firm = await Workspace.GetManagementFirmAsync(FirmId.Value);
+            if (firm is not null)
+                _firmGroupCode = firm.FirmGroupCode ?? string.Empty;
+            if (_selectedCommunityIds.Count == 0 && _properties.Count > 0 && string.IsNullOrWhiteSpace(_propertyId))
+            {
+                foreach (var p in _properties)
+                    _selectedCommunityIds.Add(p.Id);
+            }
         }
         catch { }
         StateHasChanged();
+    }
+
+    private void OnRoleSelectChanged(ChangeEventArgs e)
+    {
+        if (Enum.TryParse<WorkspaceSecurityRole>(e.Value?.ToString(), out var parsed))
+        {
+            _role = parsed;
+            _checkedPermissions = WorkspacePermissionPresets.DefaultForRole(_role);
+        }
+    }
+
+    private void OnPropertyToggled(Guid communityId, bool isChecked)
+    {
+        if (isChecked)
+            _selectedCommunityIds.Add(communityId);
+        else
+            _selectedCommunityIds.Remove(communityId);
+    }
+
+    private void OnPermissionToggled(WorkspacePermissionFlags flag, bool isChecked)
+    {
+        if (isChecked)
+            _checkedPermissions |= flag;
+        else
+            _checkedPermissions &= ~flag;
+    }
+
+    private static string GetPermissionLabel(WorkspacePermissionFlags flag)
+    {
+        var raw = flag.ToString();
+        if (string.IsNullOrWhiteSpace(raw)) return string.Empty;
+        var chars = new System.Text.StringBuilder();
+        for (var i = 0; i < raw.Length; i++)
+        {
+            var c = raw[i];
+            if (i > 0 && char.IsUpper(c) && !char.IsUpper(raw[i - 1]))
+                chars.Append(' ');
+            chars.Append(i == 0 ? c : char.ToLowerInvariant(c));
+        }
+        return chars.ToString();
     }
 
     private async Task OnInvite()
@@ -165,9 +273,28 @@
         {
             Guid? targetId = null;
             if (Guid.TryParse(_propertyId, out var pid)) targetId = pid;
+            var targetIds = _selectedCommunityIds.ToList();
+            if (targetIds.Count == 0 && targetId.HasValue)
+                targetIds.Add(targetId.Value);
+            if (targetId is null && targetIds.Count > 0)
+                targetId = targetIds[0];
             var account = await Access.GetAccountAsync();
             var issuedBy = account?.FullName ?? _actorRole.ToString();
-            await Workspace.CreateWorkspaceInvitationAsync(FirmId.Value, _email.Trim(), _name.Trim(), _phone.Trim(), _role, _mode, targetId, string.IsNullOrWhiteSpace(_unit) ? null : _unit.Trim(), string.IsNullOrWhiteSpace(_trade) ? null : _trade.Trim(), issuedBy, _actorRole);
+            await Workspace.CreateWorkspaceInvitationAsync(
+                FirmId.Value,
+                _email.Trim(),
+                _name.Trim(),
+                _phone.Trim(),
+                _role,
+                _mode,
+                targetId,
+                string.IsNullOrWhiteSpace(_unit) ? null : _unit.Trim(),
+                string.IsNullOrWhiteSpace(_trade) ? null : _trade.Trim(),
+                issuedBy,
+                _actorRole,
+                targetIds,
+                _checkedPermissions,
+                _requiresManagerApproval);
             _email = _name = _phone = _unit = _trade = string.Empty;
             _message = Loc.T("msg.messagePosted");
             await ReloadAsync();

@@ -1,0 +1,72 @@
+@page "/properties/{id:guid}/infrastructure"
+@attribute [Authorize(Policy = "WorkspaceMember")]
+@using CommonGround.Web.Components.Shared.Units
+@inject WorkspaceLocalization Loc
+@inject CommonGroundWorkspaceService Workspace
+@implements IDisposable
+
+<PageTitle>Property infrastructure — CommonGround</PageTitle>
+
+<RequirePropertyAccess PropertyId="Id">
+    @if (!_loaded)
+    {
+        <p role="status" aria-live="polite">Loading.</p>
+    }
+    else if (_snapshot is null)
+    {
+        <div class="cg-card"><p class="cg-empty-text">Property not found.</p></div>
+    }
+    else
+    {
+        <PageHeader Category="Infrastructure & Permits"
+                    ContextCode="@($"{_snapshot.Community.InfrastructurePhotos.Count} atlas nodes")"
+                    Title="@($"{_snapshot.Community.Name} · Infrastructure & statutory inspections")"
+                    Subtitle="SAM 3.1 annotated shutoff valve & manifold atlas, role-gated access code vault, statutory building inspections, and architectural renovation permits.">
+            <Badges>
+                <AIBadge Label="Atlas Annotation" Model="sam-3.1" />
+                <StatusBadge Text="Role-Gated PIN Vault" Variant="ok" />
+            </Badges>
+            <Actions>
+                <a class="cg-btn cg-btn-sm" href="@($"/properties/{Id}/units")">Units & riser matrix</a>
+                <a class="cg-btn cg-btn-sm" href="@($"/properties/{Id}/overview")">Back to overview</a>
+            </Actions>
+        </PageHeader>
+
+        <InfrastructureAtlasGrid Photos="_snapshot.Community.InfrastructurePhotos" AccessCodes="_snapshot.Community.AccessCodes" CommunityId="_snapshot.Community.Id" />
+        <div style="margin-block-start: 1rem;">
+            <InspectionsAndPermitsPanel Inspections="_snapshot.Community.Inspections" Requests="_snapshot.Community.ModificationRequests" CommunityId="_snapshot.Community.Id" OnChanged="ReloadAsync" />
+        </div>
+    }
+    @if (!string.IsNullOrWhiteSpace(_message))
+    {
+        <div role="status" aria-live="polite" class="cg-callout" style="margin-block-start: 0.75rem;">@_message</div>
+    }
+</RequirePropertyAccess>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    private CommunityWorkspaceSnapshot? _snapshot;
+    private bool _loaded;
+    private string _message = string.Empty;
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        try { _snapshot = await Workspace.GetSnapshotAsync(Id); }
+        catch (Exception ex) { _message = ex.Message; }
+        finally { _loaded = true; }
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+    }
+}

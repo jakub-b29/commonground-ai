@@ -1,38 +1,18 @@
 @page "/financials/simulations"
 @page "/simulations-reserves"
 @attribute [Authorize(Policy = "ManagersOnly")]
-@using CommonGround.Web.Components.Shared.Financials
-@inject WorkspaceLocalization Loc
-@implements IDisposable
+@inject NavigationManager Nav
+@inject WorkspaceAccessService Access
 
-<PageTitle>@Loc.T("panel.tariffSim") - CommonGround</PageTitle>
+<PageTitle>Moved - CommonGround</PageTitle>
 
-<div class="cg-page-header">
-    <div>
-        <h1>@Loc.T("page.simulationsTitle")</h1>
-        <p class="cg-page-lead">@Loc.T("page.simulationsLead")</p>
-    </div>
-    <a class="cg-btn" href="/financials/reserves">@Loc.T("panel.reserve")</a>
-</div>
-
-<ScopedCommunityPage>
-    <ChildContent>
-        <TariffInflationSimulatorPanel CommunityId="context.Community.Id" />
-    </ChildContent>
-</ScopedCommunityPage>
+<p role="status" aria-live="polite">Financials have moved to the property workspace. Redirecting.</p>
 
 @code {
-    private Action? _locHandler;
-
     protected override async Task OnInitializedAsync()
     {
-        _locHandler = () => InvokeAsync(StateHasChanged);
-        Loc.OnChange += _locHandler;
-        await Loc.EnsureLoadedAsync();
-    }
-
-    public void Dispose()
-    {
-        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+        var communities = await Access.GetAllowedCommunitiesAsync();
+        var first = communities.FirstOrDefault();
+        Nav.NavigateTo(first is null ? "/admin" : $"/properties/{first.Id}/financials", forceLoad: false);
     }
 }

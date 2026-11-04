@@ -3,6 +3,7 @@
 @inject WorkspaceAccessService Access
 @inject WorkspaceLocalization Loc
 @inject CommonGroundWorkspaceService Workspace
+@inject NavigationManager Nav
 @implements IDisposable
 
 @if (!_loaded)
@@ -15,7 +16,7 @@ else if (_snapshot is null)
         <div class="cg-section-header"><h2>@Loc.T("firm.selectFirmTitle")</h2></div>
         <p class="cg-empty-text">@Loc.T("msg.noCommunityAssigned")</p>
         <div class="cg-toolbar">
-            <a class="cg-btn cg-btn-primary" href="/account/profile">@Loc.T("settings.accountTitle")</a>
+            <a class="cg-btn cg-btn-primary" href="/account">@Loc.T("settings.accountTitle")</a>
         </div>
     </div>
 }
@@ -51,27 +52,33 @@ else
             if (allowed.Count == 0)
             {
                 _snapshot = null;
+                Nav.NavigateTo("/no-access", replace: true);
                 return;
             }
-            Guid targetId;
+
+            Guid? targetId = null;
             if (UiState.SelectedCommunityId.HasValue && allowed.Any(c => c.Id == UiState.SelectedCommunityId.Value))
             {
                 targetId = UiState.SelectedCommunityId.Value;
             }
             else
             {
-                var first = allowed.OrderBy(c => c.Name).First();
-                UiState.SelectCommunity(first.Id, first.OperatingMode == SystemOperatingMode.UsHoa ? "US HOA & Condo Mode" : "Housing Association Mode");
-                targetId = first.Id;
-            }
-            if (!await Access.CanAccessCommunityAsync(targetId))
-            {
                 _snapshot = null;
                 return;
             }
-            _snapshot = await Workspace.GetSnapshotAsync(targetId);
+
+            if (!await Access.CanAccessCommunityAsync(targetId.Value))
+            {
+                _snapshot = null;
+                Nav.NavigateTo("/no-access", replace: true);
+                return;
+            }
+
+            _snapshot = await Workspace.GetSnapshotAsync(targetId.Value);
             if (_snapshot is not null)
+            {
                 await OnSnapshotLoaded.InvokeAsync(_snapshot);
+            }
         }
         catch
         {

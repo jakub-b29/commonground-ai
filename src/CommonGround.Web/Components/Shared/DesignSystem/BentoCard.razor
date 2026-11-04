@@ -1,0 +1,56 @@
+<section class="bento-card bento-span-@Span @(IsAi ? "bento-card-ai" : "") @(Interactive ? "bento-card-interactive" : "") @CssClass" style="@Style">
+    @if (!string.IsNullOrWhiteSpace(Title) || HeaderActions is not null)
+    {
+        <div class="bento-card-header">
+            <div style="min-width: 0;">
+                <div class="cg-panel-title">
+                    @if (IsAi)
+                    {
+                        <span class="ai-dot" aria-hidden="true"></span>
+                    }
+                    <span>@Title</span>
+                    @if (!string.IsNullOrWhiteSpace(BadgeText))
+                    {
+                        <span class="cg-badge cg-badge-@BadgeVariant">@BadgeText</span>
+                    }
+                </div>
+                @if (!string.IsNullOrWhiteSpace(Subtitle))
+                {
+                    <div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.15rem;">@Subtitle</div>
+                }
+            </div>
+            @if (HeaderActions is not null)
+            {
+                <div style="display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap;">
+                    @HeaderActions
+                </div>
+            }
+        </div>
+    }
+    <div class="bento-card-body" style="@BodyStyle">
+        @ChildContent
+    </div>
+    @if (FooterContent is not null)
+    {
+        <div class="bento-card-footer">
+            @FooterContent
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter] public int Span { get; set; } = 12;
+    [Parameter] public bool IsAi { get; set; }
+    [Parameter] public bool Interactive { get; set; }
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public string? Subtitle { get; set; }
+    [Parameter] public string? BadgeText { get; set; }
+    [Parameter] public string BadgeVariant { get; set; } = "neutral";
+    [Parameter] public string? CssClass { get; set; }
+    [Parameter] public string? Style { get; set; }
+    [Parameter] public string? BodyStyle { get; set; }
+    [Parameter] public RenderFragment? HeaderActions { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public RenderFragment? FooterContent { get; set; }
+}
+

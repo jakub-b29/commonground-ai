@@ -1,0 +1,97 @@
+@using CommonGround.Application.Interfaces
+@using CommonGround.Domain.Calculators
+
+<div class="cg-card">
+    <div class="cg-section-header">
+        <h2>Discovery dossier review</h2>
+        <AIBadge Label="Grounded Sources" Model="@($"{Dossier.SourceUrls.Count} urls")" ShowPulseDot="false" />
+    </div>
+    <p style="color: var(--text-secondary); font-size: 0.78125rem; margin-bottom: 0.75rem;">Review harvested sections, fill any missing fields manually, then select the sections to commit.</p>
+    <div class="cg-subcard" style="margin-block-end: 0.85rem;">
+        <label class="cg-check-row" for="sec-identity-@_instance">
+            <input id="sec-identity-@_instance" type="checkbox" checked="@Selected.HasFlag(DossierSectionFlags.IdentityAndTariffs)" @onchange="(e) => ToggleSection(DossierSectionFlags.IdentityAndTariffs, (bool?)e.Value == true)" />
+            <span>Identity and tariffs</span>
+        </label>
+        <div class="cg-grid-3" style="margin-block-start: 0.65rem;">
+            <div><label for="dossier-name-@_instance">Suggested association name</label><input id="dossier-name-@_instance" @bind="Editable.SuggestedAssociationName" />@if (string.IsNullOrWhiteSpace(Editable.SuggestedAssociationName)) { <span class="cg-hint">Not found by AI — fill manually.</span> }</div>
+            <div><label for="dossier-registry-@_instance">Registry number</label><input id="dossier-registry-@_instance" @bind="Editable.RegistryNumber" />@if (string.IsNullOrWhiteSpace(Editable.RegistryNumber)) { <span class="cg-hint">Not found by AI — fill manually.</span> }</div>
+            <div><label for="dossier-muni-@_instance">Municipality or county</label><input id="dossier-muni-@_instance" @bind="Editable.LocalMunicipalityOrCounty" />@if (string.IsNullOrWhiteSpace(Editable.LocalMunicipalityOrCounty)) { <span class="cg-hint">Not found by AI — fill manually.</span> }</div>
+            <div><label for="dossier-court-@_instance">Competent court or recorder</label><input id="dossier-court-@_instance" @bind="Editable.CompetentCourtOrRecorder" />@if (string.IsNullOrWhiteSpace(Editable.CompetentCourtOrRecorder)) { <span class="cg-hint">Not found by AI — fill manually.</span> }</div>
+            <div><label for="dossier-tax-@_instance">Local tax office</label><input id="dossier-tax-@_instance" @bind="Editable.LocalTaxOffice" />@if (string.IsNullOrWhiteSpace(Editable.LocalTaxOffice)) { <span class="cg-hint">Not found by AI — fill manually.</span> }</div>
+            <div><label for="dossier-op-@_instance">Operating rate per m2</label><input id="dossier-op-@_instance" type="number" step="0.01" @bind="Editable.OperatingRatePerM2" />@if (Editable.OperatingRatePerM2 == 0) { <span class="cg-hint">Not found by AI — fill manually.</span> }</div>
+            <div><label for="dossier-rf-@_instance">Repair fund rate per m2</label><input id="dossier-rf-@_instance" type="number" step="0.01" @bind="Editable.RepairFundRatePerM2" />@if (Editable.RepairFundRatePerM2 == 0) { <span class="cg-hint">Not found by AI — fill manually.</span> }</div>
+            <div><label for="dossier-waste-@_instance">Waste fee per occupant</label><input id="dossier-waste-@_instance" type="number" step="0.01" @bind="Editable.WasteFeePerOccupant" />@if (Editable.WasteFeePerOccupant == 0) { <span class="cg-hint">Not found by AI — fill manually.</span> }</div>
+            <div><label for="dossier-cold-@_instance">Cold water tariff per m3</label><input id="dossier-cold-@_instance" type="number" step="0.01" @bind="Editable.ColdWaterTariffPerM3" />@if (Editable.ColdWaterTariffPerM3 == 0) { <span class="cg-hint">Not found by AI — fill manually.</span> }</div>
+            <div><label for="dossier-hot-@_instance">Hot water heating cost per m3</label><input id="dossier-hot-@_instance" type="number" step="0.01" @bind="Editable.HotWaterHeatingCostPerM3" />@if (Editable.HotWaterHeatingCostPerM3 == 0) { <span class="cg-hint">Not found by AI — fill manually.</span> }</div>
+            <div><label for="dossier-heat-@_instance">District heating tariff per Gj</label><input id="dossier-heat-@_instance" type="number" step="0.01" @bind="Editable.DistrictHeatingTariffPerGj" />@if (Editable.DistrictHeatingTariffPerGj == 0) { <span class="cg-hint">Not found by AI — fill manually.</span> }</div>
+            <div><label for="dossier-electric-@_instance">Electricity tariff per kwh</label><input id="dossier-electric-@_instance" type="number" step="0.01" @bind="Editable.CommonElectricityTariffPerKwh" />@if (Editable.CommonElectricityTariffPerKwh == 0) { <span class="cg-hint">Not found by AI — fill manually.</span> }</div>
+            <div><label for="dossier-hpow-@_instance">Contracted heating power Mw</label><input id="dossier-hpow-@_instance" type="number" step="0.01" @bind="Editable.ContractedHeatingPowerMw" />@if (Editable.ContractedHeatingPowerMw == 0) { <span class="cg-hint">Not found by AI — fill manually.</span> }</div>
+            <div><label for="dossier-epow-@_instance">Contracted electrical power Kw</label><input id="dossier-epow-@_instance" type="number" step="0.5" @bind="Editable.ContractedElectricalPowerKw" />@if (Editable.ContractedElectricalPowerKw == 0) { <span class="cg-hint">Not found by AI — fill manually.</span> }</div>
+        </div>
+    </div>
+    <div class="cg-grid-2">
+        <div class="cg-subcard">
+            <label class="cg-check-row" for="sec-util-@_instance"><input id="sec-util-@_instance" type="checkbox" checked="@Selected.HasFlag(DossierSectionFlags.UtilityProviders)" @onchange="(e) => ToggleSection(DossierSectionFlags.UtilityProviders, (bool?)e.Value == true)" /><span>Utility providers (@Editable.Utilities.Count)</span></label>
+            @foreach (var u in Editable.Utilities) { <div @key="u.Key" style="border-block-start: 1px solid var(--border-default); padding-block: 0.45rem; margin-top: 0.45rem;"><div><label for="util-name-@_instance-@u.Key">Provider (@u.UtilityKind)</label><input id="util-name-@_instance-@u.Key" @bind="u.ProviderName" /></div><div class="cg-grid-3" style="margin-top: 0.35rem;"><div><label for="util-phone-@_instance-@u.Key">Phone</label><input id="util-phone-@_instance-@u.Key" @bind="u.EmergencyPhone" /></div><div><label for="util-tariff-@_instance-@u.Key">Tariff</label><input id="util-tariff-@_instance-@u.Key" type="number" step="0.01" @bind="u.CurrentUnitTariff" /></div><div><label for="util-unit-@_instance-@u.Key">Unit</label><input id="util-unit-@_instance-@u.Key" @bind="u.TariffUnit" /></div></div>@if (string.IsNullOrWhiteSpace(u.ProviderName)) { <span class="cg-hint">Not found by AI — fill manually.</span> }</div> }
+        </div>
+        <div class="cg-subcard">
+            <label class="cg-check-row" for="sec-auth-@_instance"><input id="sec-auth-@_instance" type="checkbox" checked="@Selected.HasFlag(DossierSectionFlags.Authorities)" @onchange="(e) => ToggleSection(DossierSectionFlags.Authorities, (bool?)e.Value == true)" /><span>Authorities and emergency contacts (@Editable.Authorities.Count)</span></label>
+            @foreach (var a in Editable.Authorities) { <div @key="a.Key" style="border-block-start: 1px solid var(--border-default); padding-block: 0.45rem; margin-top: 0.45rem;"><div><label for="auth-name-@_instance-@a.Key">@a.Category name</label><input id="auth-name-@_instance-@a.Key" @bind="a.Name" /></div><div class="cg-grid-2" style="margin-top: 0.35rem;"><div><label for="auth-phone-@_instance-@a.Key">Phone</label><input id="auth-phone-@_instance-@a.Key" @bind="a.PhoneNumber" /></div><div><label for="auth-addr-@_instance-@a.Key">Address or notes</label><input id="auth-addr-@_instance-@a.Key" @bind="a.AddressOrNotes" /></div></div>@if (string.IsNullOrWhiteSpace(a.Name)) { <span class="cg-hint">Not found by AI — fill manually.</span> }</div> }
+        </div>
+        <div class="cg-subcard"><label class="cg-check-row" for="sec-vendor-@_instance"><input id="sec-vendor-@_instance" type="checkbox" checked="@Selected.HasFlag(DossierSectionFlags.Vendors)" @onchange="(e) => ToggleSection(DossierSectionFlags.Vendors, (bool?)e.Value == true)" /><span>Contractors (@Dossier.Contractors.Count)</span></label><ul style="margin-block: 0.5rem 0; padding-inline-start: 1.1rem; font-size: 0.78rem; color: var(--text-secondary);">@foreach (var vendor in Dossier.Contractors.Take(6)) { <li @key="vendor.CompanyName">@vendor.CompanyName (@vendor.Trade)</li> }</ul></div>
+        <div class="cg-subcard"><label class="cg-check-row" for="sec-legal-@_instance"><input id="sec-legal-@_instance" type="checkbox" checked="@Selected.HasFlag(DossierSectionFlags.LegalCorpus)" @onchange="(e) => ToggleSection(DossierSectionFlags.LegalCorpus, (bool?)e.Value == true)" /><span>Legal corpus (@Dossier.GrantsAndOrdinances.Count)</span></label><ul style="margin-block: 0.5rem 0; padding-inline-start: 1.1rem; font-size: 0.78rem; color: var(--text-secondary);">@foreach (var item in Dossier.GrantsAndOrdinances.Take(6)) { <li @key="item.Title">@item.Title</li> }</ul></div>
+    </div>
+    <div class="cg-grid-3" style="margin-block-start: 0.75rem;">
+        <label class="cg-check-row" for="sec-waste-@_instance"><input id="sec-waste-@_instance" type="checkbox" checked="@Selected.HasFlag(DossierSectionFlags.WasteSchedule)" @onchange="(e) => ToggleSection(DossierSectionFlags.WasteSchedule, (bool?)e.Value == true)" /><span>Include waste schedule</span></label>
+        <label class="cg-check-row" for="sec-insp-@_instance"><input id="sec-insp-@_instance" type="checkbox" checked="@Selected.HasFlag(DossierSectionFlags.Inspections)" @onchange="(e) => ToggleSection(DossierSectionFlags.Inspections, (bool?)e.Value == true)" /><span>Include inspections</span></label>
+        <label class="cg-check-row" for="sec-green-@_instance"><input id="sec-green-@_instance" type="checkbox" checked="@Selected.HasFlag(DossierSectionFlags.GreenSubsidies)" @onchange="(e) => ToggleSection(DossierSectionFlags.GreenSubsidies, (bool?)e.Value == true)" /><span>Include green subsidies</span></label>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public PropertyAiDiscoveryDossier Dossier { get; set; } = default!;
+    [Parameter, EditorRequired] public DossierSectionFlags Selected { get; set; }
+    [Parameter, EditorRequired] public EventCallback<DossierSectionFlags> SelectedChanged { get; set; }
+    [Parameter, EditorRequired] public EditableDossier Editable { get; set; } = default!;
+    private static int _sequence;
+    private readonly string _instance = (++_sequence).ToString(System.Globalization.CultureInfo.InvariantCulture);
+    private async Task ToggleSection(DossierSectionFlags flag, bool isChecked)
+    {
+        var next = isChecked ? Selected | flag : Selected & ~flag;
+        Selected = next;
+        await SelectedChanged.InvokeAsync(next);
+    }
+    public sealed class EditableUtility { public string Key { get; set; } = Guid.NewGuid().ToString("N"); public string UtilityKind { get; set; } = string.Empty; public string ProviderName { get; set; } = string.Empty; public string EmergencyPhone { get; set; } = string.Empty; public decimal CurrentUnitTariff { get; set; } public string TariffUnit { get; set; } = string.Empty; public string OutageBulletinUrl { get; set; } = string.Empty; public string LiveFaultMapUrl { get; set; } = string.Empty; public string TariffScheduleUrl { get; set; } = string.Empty; }
+    public sealed class EditableAuthority { public string Key { get; set; } = Guid.NewGuid().ToString("N"); public string Category { get; set; } = string.Empty; public string Name { get; set; } = string.Empty; public string PhoneNumber { get; set; } = string.Empty; public string AddressOrNotes { get; set; } = string.Empty; public int SortOrder { get; set; } }
+    public sealed class EditableDossier
+    {
+        public EditableDossier() { }
+        public EditableDossier(PropertyAiDiscoveryDossier d)
+        {
+            SuggestedAssociationName = d.SuggestedAssociationName; RegistryNumber = d.RegistryNumber; LocalMunicipalityOrCounty = d.LocalMunicipalityOrCounty; CompetentCourtOrRecorder = d.CompetentCourtOrRecorder; LocalTaxOffice = d.LocalTaxOffice;
+            OperatingRatePerM2 = d.OperatingRatePerM2; RepairFundRatePerM2 = d.RepairFundRatePerM2; WasteFeePerOccupant = d.WasteFeePerOccupant; ColdWaterTariffPerM3 = d.ColdWaterTariffPerM3; HotWaterHeatingCostPerM3 = d.HotWaterHeatingCostPerM3; DistrictHeatingTariffPerGj = d.DistrictHeatingTariffPerGj; CommonElectricityTariffPerKwh = d.CommonElectricityTariffPerKwh; ContractedHeatingPowerMw = d.ContractedHeatingPowerMw; ContractedElectricalPowerKw = d.ContractedElectricalPowerKw;
+            foreach (var op in d.ElectricityOperator.Concat(d.GasOperator).Concat(d.WaterOperator).Concat(d.HeatingOperator).Concat(d.WasteOperator)) Utilities.Add(new EditableUtility { UtilityKind = op.UtilityKind, ProviderName = op.ProviderName, EmergencyPhone = op.EmergencyPhone, CurrentUnitTariff = op.CurrentUnitTariff, TariffUnit = op.TariffUnit, OutageBulletinUrl = op.OutageBulletinUrl, LiveFaultMapUrl = op.LiveFaultMapUrl, TariffScheduleUrl = op.TariffScheduleUrl });
+            foreach (var c in d.PolicePrecinct.Concat(d.DistrictOfficer).Concat(d.MunicipalGuard).Concat(d.FireStation).Concat(d.BuildingInspectorate).Concat(d.RecyclingDepot)) Authorities.Add(new EditableAuthority { Category = c.Category, Name = c.Name, PhoneNumber = c.PhoneNumber, AddressOrNotes = c.AddressOrNotes, SortOrder = c.SortOrder });
+        }
+        public string SuggestedAssociationName { get; set; } = string.Empty; public string RegistryNumber { get; set; } = string.Empty; public string LocalMunicipalityOrCounty { get; set; } = string.Empty; public string CompetentCourtOrRecorder { get; set; } = string.Empty; public string LocalTaxOffice { get; set; } = string.Empty;
+        public decimal OperatingRatePerM2 { get; set; } public decimal RepairFundRatePerM2 { get; set; } public decimal WasteFeePerOccupant { get; set; } public decimal ColdWaterTariffPerM3 { get; set; } public decimal HotWaterHeatingCostPerM3 { get; set; } public decimal DistrictHeatingTariffPerGj { get; set; } public decimal CommonElectricityTariffPerKwh { get; set; } public decimal ContractedHeatingPowerMw { get; set; } public decimal ContractedElectricalPowerKw { get; set; }
+        public List<EditableUtility> Utilities { get; set; } = []; public List<EditableAuthority> Authorities { get; set; } = [];
+        private static string Norm(string? v) => new string((v ?? string.Empty).Where(c => char.IsLetterOrDigit(c)).ToArray()).ToLowerInvariant();
+        public PropertyAiDiscoveryDossier ToMergedDossier(PropertyAiDiscoveryDossier source)
+        {
+            List<DiscoveredUtilityOperator> ByKind(string k, IReadOnlyList<DiscoveredUtilityOperator> fallback)
+            {
+                var norm = Norm(k);
+                var matched = Utilities.Where(u => Norm(u.UtilityKind) == norm || Norm(u.UtilityKind).Contains(norm, StringComparison.Ordinal) || norm.Contains(Norm(u.UtilityKind), StringComparison.Ordinal)).Select(u => new DiscoveredUtilityOperator(u.UtilityKind, u.ProviderName.Trim(), u.EmergencyPhone.Trim(), u.OutageBulletinUrl, u.LiveFaultMapUrl, u.TariffScheduleUrl, u.CurrentUnitTariff, u.TariffUnit.Trim())).ToList();
+                return matched.Count > 0 ? matched : fallback.ToList();
+            }
+            List<DiscoveredAuthorityContact> ByCat(string c, IReadOnlyList<DiscoveredAuthorityContact> fallback)
+            {
+                var norm = Norm(c);
+                var matched = Authorities.Where(a => Norm(a.Category) == norm || Norm(a.Category).Contains(norm, StringComparison.Ordinal) || norm.Contains(Norm(a.Category), StringComparison.Ordinal)).Select(a => new DiscoveredAuthorityContact(a.Category, a.Name.Trim(), a.PhoneNumber.Trim(), a.AddressOrNotes.Trim(), a.SortOrder)).ToList();
+                return matched.Count > 0 ? matched : fallback.ToList();
+            }
+            return source with { SuggestedAssociationName = SuggestedAssociationName.Trim(), RegistryNumber = RegistryNumber.Trim(), LocalMunicipalityOrCounty = LocalMunicipalityOrCounty.Trim(), CompetentCourtOrRecorder = CompetentCourtOrRecorder.Trim(), LocalTaxOffice = LocalTaxOffice.Trim(), OperatingRatePerM2 = OperatingRatePerM2, RepairFundRatePerM2 = RepairFundRatePerM2, WasteFeePerOccupant = WasteFeePerOccupant, ColdWaterTariffPerM3 = ColdWaterTariffPerM3, HotWaterHeatingCostPerM3 = HotWaterHeatingCostPerM3, DistrictHeatingTariffPerGj = DistrictHeatingTariffPerGj, CommonElectricityTariffPerKwh = CommonElectricityTariffPerKwh, ContractedHeatingPowerMw = ContractedHeatingPowerMw, ContractedElectricalPowerKw = ContractedElectricalPowerKw, ElectricityOperator = ByKind("Electricity", source.ElectricityOperator), GasOperator = ByKind("Gas", source.GasOperator), WaterOperator = ByKind("ColdWater", source.WaterOperator), HeatingOperator = ByKind("DistrictHeating", source.HeatingOperator), WasteOperator = ByKind("MunicipalWaste", source.WasteOperator), PolicePrecinct = ByCat("PolicePrecinct", source.PolicePrecinct), DistrictOfficer = ByCat("DistrictPoliceOfficer", source.DistrictOfficer), MunicipalGuard = ByCat("MunicipalGuard", source.MunicipalGuard), FireStation = ByCat("FireStation", source.FireStation), BuildingInspectorate = ByCat("BuildingInspectorate", source.BuildingInspectorate), RecyclingDepot = ByCat("RecyclingDepot", source.RecyclingDepot) };
+        }
+    }
+}

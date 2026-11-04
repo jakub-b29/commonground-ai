@@ -1,0 +1,986 @@
+@page "/admin/residents/{id:guid}"
+@attribute [Authorize(Policy = "WorkspaceMember")]
+@using CommonGround.Application.Services
+@inject WorkspaceLocalization Loc
+@inject WorkspaceAccessService Access
+@inject CommonGroundWorkspaceService Workspace
+@implements IDisposable
+
+<PageTitle>Resident Profile — CommonGround</PageTitle>
+
+@if (!_loaded)
+{
+    <p role="status" aria-live="polite">Loading resident profile...</p>
+}
+else if (!_isAuthorized)
+{
+    <div class="cg-card"><p class="cg-empty-text">Access denied. Manager permission is required.</p></div>
+}
+else if (_dossier is null)
+    {
+        <div class="cg-card">
+            <p class="cg-empty-text">Resident profile not found.</p>
+            <div class="cg-toolbar"><a class="cg-btn" href="/admin/residents">Back to Residents Directory</a></div>
+        </div>
+    }
+    else
+    {
+        <PageHeader Category="Firm Administration · Resident Identity &amp; Dossier"
+                    ContextCode="@($"{_dossier.Profile.ResidentAccountNumber} · {_dossier.Profile.AccountStatus}")"
+                    Title="@($"{_dossier.Profile.FullName} · {_dossier.Profile.ResidentAccountNumber}")"
+                    Subtitle="Complete 6-section Resident Profile: Personal Identity, Property &amp; Unit Relationships, Tenancy &amp; Household, Communications, Document Vault, and Audit Trail.">
+            <Badges>
+                <StatusBadge Text="@_dossier.Profile.ResidentAccountNumber" Variant="info" />
+                <StatusBadge Text="@_dossier.Profile.AccountStatus.ToString()" Variant="@(_dossier.Profile.AccountStatus == ResidentAccountStatus.Active ? "ok" : "warn")" />
+                <StatusBadge Text="@_dossier.Profile.VerificationStatus.ToString()" Variant="neutral" />
+            </Badges>
+            <Actions>
+                <a class="cg-btn cg-btn-sm" href="/admin/residents">Back to Residents Directory</a>
+                <a class="cg-btn cg-btn-sm" href="/units">Global Units</a>
+            </Actions>
+        </PageHeader>
+
+        @if (!string.IsNullOrWhiteSpace(_message))
+        {
+            <div class="ai-callout" style="margin-bottom: 1rem;" role="status" aria-live="polite">@_message</div>
+        }
+        @if (!string.IsNullOrWhiteSpace(_error))
+        {
+            <div class="cg-callout" style="margin-bottom: 1rem; border-color: var(--color-danger); color: var(--color-danger);" role="alert">@_error</div>
+        }
+
+        <div class="cg-grid-4" style="margin-bottom: 1rem;">
+            <MetricCard Label="Resident Account Number"
+                        Value="@_dossier.Profile.ResidentAccountNumber"
+                        Subtitle="Permanent, immutable across move-outs"
+                        BadgeText="Verified ID"
+                        StatusVariant="info" />
+            <MetricCard Label="Active Unit Assignments"
+                        Value="@_dossier.ActiveAssignments.Count.ToString()"
+                        Subtitle="@($"{_dossier.PastAssignments.Count} historical assignments preserved")"
+                        BadgeText="@(_dossier.ActiveAssignments.Count > 0 ? "Occupied" : "Unassigned")"
+                        StatusVariant="@(_dossier.ActiveAssignments.Count > 0 ? "ok" : "neutral")" />
+            <MetricCard Label="Owned Units"
+                        Value="@_dossier.Ownerships.Count.ToString()"
+                        Subtitle="@($"{_dossier.HouseholdMembers.Count} household members")"
+                        BadgeText="Ownership"
+                        StatusVariant="info" />
+            <MetricCard Label="Vault Documents"
+                        Value="@_dossier.Documents.Count.ToString()"
+                        Subtitle="@($"{_dossier.AuditEvents.Count} security audit events")"
+                        BadgeText="Vault"
+                        StatusVariant="ok" />
+        </div>
+
+        <div style="display: flex; gap: 0.35rem; flex-wrap: wrap; margin-bottom: 1rem;">
+            <button type="button" class="cg-btn cg-btn-sm @(_section == "identity" ? "cg-btn-primary" : "")" @onclick='() => _section = "identity"'>
+                1. Personal Identity (@_dossier.Profile.ResidentAccountNumber)
+            </button>
+            <button type="button" class="cg-btn cg-btn-sm @(_section == "units" ? "cg-btn-primary" : "")" @onclick='() => _section = "units"'>
+                2. Property &amp; Unit Relationships (@(_dossier.ActiveAssignments.Count + _dossier.PastAssignments.Count))
+            </button>
+            <button type="button" class="cg-btn cg-btn-sm @(_section == "household" ? "cg-btn-primary" : "")" @onclick='() => _section = "household"'>
+                3. Tenancy &amp; Household (@_dossier.HouseholdMembers.Count)
+            </button>
+            <button type="button" class="cg-btn cg-btn-sm @(_section == "comms" ? "cg-btn-primary" : "")" @onclick='() => _section = "comms"'>
+                4. Communications (@_dossier.DirectMessages.Count)
+            </button>
+            <button type="button" class="cg-btn cg-btn-sm @(_section == "documents" ? "cg-btn-primary" : "")" @onclick='() => _section = "documents"'>
+                5. Document Vault (@_dossier.Documents.Count)
+            </button>
+            <button type="button" class="cg-btn cg-btn-sm @(_section == "audit" ? "cg-btn-primary" : "")" @onclick='() => _section = "audit"'>
+                6. Account &amp; Audit Trail (@_dossier.AuditEvents.Count)
+            </button>
+        </div>
+
+        @if (_section == "identity")
+        {
+            <div class="cg-card">
+                <div class="cg-section-header">
+                    <h2>Section 1 · Personal Identity &amp; Emergency Contact</h2>
+                    <span class="cg-badge cg-badge-info mono">@_dossier.Profile.ResidentAccountNumber (Immutable)</span>
+                </div>
+                <div class="cg-grid-4">
+                    <div>
+                        <label>Permanent Resident Account No.</label>
+                        <input value="@_dossier.Profile.ResidentAccountNumber" class="mono" disabled />
+                    </div>
+                    <div>
+                        <label>First Name</label>
+                        <input @bind="_firstName" />
+                    </div>
+                    <div>
+                        <label>Last Name</label>
+                        <input @bind="_lastName" />
+                    </div>
+                    <div>
+                        <label>Primary Email</label>
+                        <input type="email" @bind="_email" />
+                    </div>
+                </div>
+                <div class="cg-grid-4" style="margin-top: 0.65rem;">
+                    <div>
+                        <label>Phone Number</label>
+                        <input @bind="_phone" />
+                    </div>
+                    <div>
+                        <label>Preferred Language</label>
+                        <select @bind="_preferredLanguage">
+                            <option value="EN">EN</option>
+                            <option value="PL">PL</option>
+                            <option value="DE">DE</option>
+                            <option value="ES">ES</option>
+                            <option value="FR">FR</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>Preferred Contact Method</label>
+                        <select @bind="_preferredContactMethod">
+                            <option value="Email">Email</option>
+                            <option value="Phone">Phone</option>
+                            <option value="SMS">SMS</option>
+                            <option value="Portal">Resident Portal</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>Date of Birth (Optional)</label>
+                        <input type="date" @bind="_dateOfBirth" />
+                    </div>
+                </div>
+                <div class="cg-grid-4" style="margin-top: 0.65rem;">
+                    <div>
+                        <label>Account Status</label>
+                        <select @bind="_accountStatus">
+                            @foreach (var st in Enum.GetValues<ResidentAccountStatus>())
+                            {
+                                <option value="@st" @key="st">@st</option>
+                            }
+                        </select>
+                    </div>
+                    <div>
+                        <label>Verification Status</label>
+                        <select @bind="_verificationStatus">
+                            @foreach (var vs in Enum.GetValues<ResidentVerificationStatus>())
+                            {
+                                <option value="@vs" @key="vs">@vs</option>
+                            }
+                        </select>
+                    </div>
+                    <div>
+                        <label>Emergency Contact Name</label>
+                        <input @bind="_emergencyName" />
+                    </div>
+                    <div>
+                        <label>Emergency Contact Phone &amp; Relation</label>
+                        <input @bind="_emergencyPhone" placeholder="+48 500 000 000 (Spouse)" />
+                    </div>
+                </div>
+                <div class="cg-grid-2" style="margin-top: 0.65rem;">
+                    <div>
+                        <label>Additional Contact Details</label>
+                        <input @bind="_additionalContact" placeholder="Secondary email or mailing address" />
+                    </div>
+                    <div>
+                        <label>Administrative Notes</label>
+                        <input @bind="_notes" />
+                    </div>
+                </div>
+                <div class="cg-toolbar" style="margin-top: 0.75rem;">
+                    <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="SaveIdentityAsync">
+                        Save Resident Identity
+                    </button>
+                </div>
+            </div>
+        }
+        else if (_section == "units")
+        {
+            <div class="cg-card" style="margin-bottom: 1rem;">
+                <div class="cg-section-header">
+                    <h2>Section 2 · Active Unit Assignments (@_dossier.ActiveAssignments.Count)</h2>
+                    @if (_dashboard is not null && _dashboard.Units.Count > 0)
+                    {
+                        <button type="button" class="cg-btn cg-btn-sm cg-btn-primary" @onclick="() => _showQuickAssign = !_showQuickAssign">
+                            @(_showQuickAssign ? "Cancel Assignment" : "+ Assign to Another Unit")
+                        </button>
+                    }
+                </div>
+
+                @if (_showQuickAssign && _dashboard is not null)
+                {
+                    <div class="cg-subcard" style="margin-bottom: 0.85rem;">
+                        <h3>Assign @_dossier.Profile.FullName (@_dossier.Profile.ResidentAccountNumber) to Unit</h3>
+                        <div class="cg-grid-4" style="margin-top: 0.5rem;">
+                            <div>
+                                <label>Community</label>
+                                <select value="@_assignCommunityId" @onchange="OnQuickAssignCommunityChanged">
+                                    @foreach (var c in _dashboard.Communities)
+                                    {
+                                        <option value="@c.Id" @key="c.Id">@c.Name (@c.CommunityAccountNumber)</option>
+                                    }
+                                </select>
+                            </div>
+                            <div>
+                                <label>Unit</label>
+                                <select @bind="_assignUnitId">
+                                    @foreach (var u in QuickAssignUnits)
+                                    {
+                                        <option value="@u.UnitId" @key="u.UnitId">Unit @u.UnitNumber (@u.BuildingName · @u.OccupancyStatus)</option>
+                                    }
+                                </select>
+                            </div>
+                            <div>
+                                <label>Assignment Type</label>
+                                <select @bind="_assignType">
+                                    @foreach (var t in Enum.GetValues<ResidentAssignmentType>())
+                                    {
+                                        <option value="@t" @key="t">@t</option>
+                                    }
+                                </select>
+                            </div>
+                            <div>
+                                <label>Conflict Override / Notes</label>
+                                <input @bind="_assignNotes" placeholder="Reason or override note" />
+                            </div>
+                        </div>
+                        <div class="cg-toolbar" style="margin-top: 0.5rem;">
+                            <button type="button" class="cg-btn cg-btn-sm cg-btn-primary" disabled="@_isBusy" @onclick="SubmitQuickAssignAsync">
+                                Confirm Unit Assignment
+                            </button>
+                        </div>
+                    </div>
+                }
+
+                @if (_dossier.ActiveAssignments.Count == 0)
+                {
+                    <p class="cg-empty-text">No active unit assignments. Resident identity (@_dossier.Profile.ResidentAccountNumber) remains active and can be assigned to any unit.</p>
+                }
+                else
+                {
+                    <div class="cg-table-wrap">
+                        <table class="cg-table">
+                            <thead>
+                                <tr>
+                                    <th>Community</th>
+                                    <th>Building &amp; Unit</th>
+                                    <th>Role &amp; Status</th>
+                                    <th>Move-In Date</th>
+                                    <th>Approved By</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var item in _dossier.ActiveAssignments)
+                                {
+                                    <tr @key="item.Assignment.Id">
+                                        <td>
+                                            <div><strong>@item.CommunityName</strong></div>
+                                            <div class="mono" style="font-size: 0.72rem; color: var(--accent-primary);">@item.CommunityAccountNumber</div>
+                                        </td>
+                                        <td>
+                                            <strong>Unit @item.UnitNumber</strong> · @item.BuildingName (<span class="num">@item.FloorAreaM2.ToString("F1") m²</span>)
+                                        </td>
+                                        <td>
+                                            <span class="cg-badge cg-badge-ok">@item.Assignment.AssignmentType</span>
+                                            @if (item.Assignment.IsPrimaryResident)
+                                            {
+                                                <span class="cg-badge cg-badge-info" style="margin-left: 0.25rem;">Primary</span>
+                                            }
+                                        </td>
+                                        <td class="mono">@item.Assignment.MoveInDateUtc.ToString("yyyy-MM-dd")</td>
+                                        <td>@item.Assignment.ApprovedByName</td>
+                                        <td>
+                                            <div style="display: flex; gap: 0.35rem; flex-wrap: wrap;">
+                                                <a class="cg-btn cg-btn-sm" href="@($"/properties/{item.Assignment.CommunityId}/units/{item.Assignment.UnitId}")">Open Unit</a>
+                                                <button type="button" class="cg-btn cg-btn-sm" disabled="@_isBusy" @onclick="() => MoveOutNowAsync(item.Assignment)">
+                                                    Execute Move-Out
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+
+            <div class="cg-grid-2">
+                <div class="cg-card">
+                    <div class="cg-section-header">
+                        <h2>Historical Unit Assignments (@_dossier.PastAssignments.Count)</h2>
+                    </div>
+                    @if (_dossier.PastAssignments.Count == 0)
+                    {
+                        <p class="cg-empty-text">No past unit assignments on file.</p>
+                    }
+                    else
+                    {
+                        <div class="cg-table-wrap">
+                            <table class="cg-table">
+                                <thead>
+                                    <tr>
+                                        <th>Community &amp; Unit</th>
+                                        <th>Type</th>
+                                        <th>Move-In / Move-Out</th>
+                                        <th>Notes</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var past in _dossier.PastAssignments)
+                                    {
+                                        <tr @key="past.Assignment.Id">
+                                            <td>
+                                                <strong>Unit @past.UnitNumber</strong> · @past.CommunityName
+                                                <span class="mono" style="font-size: 0.72rem; color: var(--accent-primary);">@past.CommunityAccountNumber</span>
+                                            </td>
+                                            <td><span class="cg-badge">@past.Assignment.AssignmentType</span></td>
+                                            <td class="mono">@past.Assignment.MoveInDateUtc.ToString("yyyy-MM-dd") → @(past.Assignment.MoveOutDateUtc?.ToString("yyyy-MM-dd") ?? "Ended")</td>
+                                            <td>@past.Assignment.AssignmentReasonOrNotes</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+
+                <div class="cg-card">
+                    <div class="cg-section-header">
+                        <h2>Legal Ownership Records (@_dossier.Ownerships.Count)</h2>
+                    </div>
+                    @if (_dossier.Ownerships.Count == 0)
+                    {
+                        <p class="cg-empty-text">No legal ownership records linked to this resident.</p>
+                    }
+                    else
+                    {
+                        <div class="cg-table-wrap">
+                            <table class="cg-table">
+                                <thead>
+                                    <tr>
+                                        <th>Community &amp; Unit</th>
+                                        <th>Role</th>
+                                        <th class="num">Share</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var own in _dossier.Ownerships)
+                                    {
+                                        <tr @key="own.Ownership.Id">
+                                            <td>
+                                                <strong>Unit @own.UnitNumber</strong> · @own.CommunityName
+                                                <span class="mono" style="font-size: 0.72rem; color: var(--accent-primary);">@own.CommunityAccountNumber</span>
+                                            </td>
+                                            <td><span class="cg-badge">@own.Ownership.OwnershipRole</span></td>
+                                            <td class="num mono">@own.Ownership.ShareNumerator / @own.Ownership.ShareDenominator (@own.Ownership.OwnershipPercentage.ToString("F1")%)</td>
+                                            <td><span class="cg-badge @(own.Ownership.IsActive ? "cg-badge-ok" : "")">@(own.Ownership.IsActive ? "Active" : "Historical")</span></td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+        else if (_section == "household")
+        {
+            <div class="cg-card">
+                <div class="cg-section-header">
+                    <h2>Section 3 · Tenancy, Occupancy &amp; Household Members (@_dossier.HouseholdMembers.Count)</h2>
+                </div>
+                @if (_dossier.ActiveAssignments.Count > 0)
+                {
+                    <div class="cg-grid-4" style="margin-bottom: 0.75rem;">
+                        <div><label>Full Name</label><input @bind="_hhName" placeholder="Zofia Kowalska" /></div>
+                        <div><label>Relationship</label><input @bind="_hhRelation" placeholder="Spouse / Child / Co-Occupant" /></div>
+                        <div><label>Phone</label><input @bind="_hhPhone" /></div>
+                        <div><label>Email</label><input @bind="_hhEmail" /></div>
+                    </div>
+                    <div class="cg-toolbar" style="margin-bottom: 0.75rem;">
+                        <button type="button" class="cg-btn cg-btn-sm cg-btn-primary" disabled="@_isBusy" @onclick="AddHouseholdMemberAsync">
+                            + Add Household Member to Primary Unit
+                        </button>
+                    </div>
+                }
+                @if (_dossier.HouseholdMembers.Count == 0)
+                {
+                    <p class="cg-empty-text">No household members recorded.</p>
+                }
+                else
+                {
+                    <div class="cg-table-wrap">
+                        <table class="cg-table">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Relationship</th>
+                                    <th>Contact</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var h in _dossier.HouseholdMembers)
+                                {
+                                    <tr @key="h.Id">
+                                        <td><strong>@h.FullName</strong></td>
+                                        <td><span class="cg-badge">@h.RelationshipToPrimary</span></td>
+                                        <td class="mono">@h.Email · @h.Phone</td>
+                                        <td><span class="cg-badge @(h.IsActive ? "cg-badge-ok" : "")">@(h.IsActive ? "Active" : "Ended")</span></td>
+                                        <td>
+                                            @if (h.IsActive)
+                                            {
+                                                <button type="button" class="cg-btn cg-btn-sm" disabled="@_isBusy" @onclick="() => RemoveHouseholdMemberAsync(h)">Remove</button>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        }
+        else if (_section == "comms")
+        {
+            <div class="cg-card">
+                <div class="cg-section-header">
+                    <h2>Section 4 · Resident Communication History (@_dossier.DirectMessages.Count)</h2>
+                </div>
+                @if (_dossier.ActiveAssignments.Count > 0 && !string.IsNullOrWhiteSpace(_dossier.Profile.PrimaryEmail))
+                {
+                    <div class="cg-grid-2" style="margin-bottom: 0.75rem;">
+                        <div><label>Subject</label><input @bind="_msgSubject" placeholder="Notice regarding Unit occupancy / lease..." /></div>
+                        <div><label>Message Body</label><input @bind="_msgBody" placeholder="Write direct message to resident..." /></div>
+                    </div>
+                    <div class="cg-toolbar" style="margin-bottom: 0.75rem;">
+                        <button type="button" class="cg-btn cg-btn-sm cg-btn-primary" disabled="@_isBusy" @onclick="SendMessageToResidentAsync">
+                            Send Direct Message
+                        </button>
+                    </div>
+                }
+                @if (_dossier.DirectMessages.Count == 0)
+                {
+                    <p class="cg-empty-text">No direct messages recorded for this resident yet.</p>
+                }
+                else
+                {
+                    @foreach (var m in _dossier.DirectMessages)
+                    {
+                        <div @key="m.Id" class="cg-subcard" style="margin-bottom: 0.5rem;">
+                            <div style="display: flex; justify-content: space-between; gap: 0.5rem;">
+                                <strong>@m.Subject</strong>
+                                <span class="mono" style="font-size: 0.72rem; color: var(--text-secondary);">@m.SentAtUtc.ToString("yyyy-MM-dd HH:mm")</span>
+                            </div>
+                            <div style="font-size: 0.8rem; margin-top: 0.25rem;">@m.Body</div>
+                            <div style="font-size: 0.72rem; color: var(--text-secondary); margin-top: 0.2rem;">
+                                From: @m.SenderName (@m.SenderRole) → @m.RecipientName
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+        }
+        else if (_section == "documents")
+        {
+            <div class="cg-card">
+                <div class="cg-section-header">
+                    <h2>Section 5 · Resident Document Vault (@_dossier.Documents.Count)</h2>
+                </div>
+                <div class="cg-grid-4" style="margin-bottom: 0.75rem;">
+                    <div>
+                        <label>Category</label>
+                        <select @bind="_docCategory">
+                            @foreach (var cat in Enum.GetValues<ResidentDocumentCategory>())
+                            {
+                                <option value="@cat" @key="cat">@cat</option>
+                            }
+                        </select>
+                    </div>
+                    <div><label>Document Title</label><input @bind="_docTitle" placeholder="Signed Lease Agreement 2026" /></div>
+                    <div><label>File Name</label><input @bind="_docFileName" placeholder="lease-2026.pdf" /></div>
+                    <div><label>Summary / Notes</label><input @bind="_docNotes" placeholder="Verified by property manager" /></div>
+                </div>
+                <div class="cg-toolbar" style="margin-bottom: 0.75rem;">
+                    <button type="button" class="cg-btn cg-btn-sm cg-btn-primary" disabled="@_isBusy" @onclick="AddDocumentAsync">
+                        + Add Document to Resident Vault
+                    </button>
+                </div>
+
+                @if (_dossier.Documents.Count == 0)
+                {
+                    <p class="cg-empty-text">No documents stored in this resident's vault yet.</p>
+                }
+                else
+                {
+                    <div class="cg-table-wrap">
+                        <table class="cg-table">
+                            <thead>
+                                <tr>
+                                    <th>Category</th>
+                                    <th>Title &amp; File</th>
+                                    <th>Summary</th>
+                                    <th>Uploaded By</th>
+                                    <th>Uploaded At</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var d in _dossier.Documents)
+                                {
+                                    <tr @key="d.Id">
+                                        <td><span class="cg-badge">@d.Category</span></td>
+                                        <td>
+                                            <div><strong>@d.Title</strong></div>
+                                            <div class="mono" style="font-size: 0.72rem; color: var(--text-secondary);">@d.FileName</div>
+                                        </td>
+                                        <td>@d.SummaryOrNotes</td>
+                                        <td>@d.UploadedByName (@d.UploadedByRole)</td>
+                                        <td class="mono">@d.UploadedAtUtc.ToString("yyyy-MM-dd HH:mm")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        }
+        else if (_section == "audit")
+        {
+            <div class="cg-card">
+                <div class="cg-section-header">
+                    <h2>Section 6 · Account Security &amp; Tamper-Evident Audit Trail (@_dossier.AuditEvents.Count)</h2>
+                    <span class="cg-badge mono">SHA-256 Chained</span>
+                </div>
+                <div class="cg-subcard" style="margin-bottom: 0.75rem; font-size: 0.8rem;">
+                    <strong>Resident Account Number:</strong> <span class="mono">@_dossier.Profile.ResidentAccountNumber</span> ·
+                    <strong>Registered:</strong> <span class="mono">@_dossier.Profile.RegistrationDateUtc.ToString("yyyy-MM-dd HH:mm")</span> ·
+                    <strong>Linked User ID:</strong> <span class="mono">@(_dossier.Profile.UserId?.ToString() ?? "Not linked to portal login yet")</span>
+                </div>
+                @if (_dossier.AuditEvents.Count == 0)
+                {
+                    <p class="cg-empty-text">No security audit events recorded for this resident yet.</p>
+                }
+                else
+                {
+                    <div class="cg-table-wrap">
+                        <table class="cg-table">
+                            <thead>
+                                <tr>
+                                    <th>Timestamp (UTC)</th>
+                                    <th>Category</th>
+                                    <th>Actor Role</th>
+                                    <th>Summary</th>
+                                    <th>SHA-256 Chain Hash</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var ev in _dossier.AuditEvents)
+                                {
+                                    <tr @key="ev.Id">
+                                        <td class="mono">@ev.OccurredAtUtc.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                                        <td><span class="cg-badge">@ev.ActionCategory</span></td>
+                                        <td>@ev.ActorRole</td>
+                                        <td>@ev.Summary</td>
+                                        <td class="mono" style="font-size: 0.72rem;">@ev.EntrySha256Hash[..Math.Min(16, ev.EntrySha256Hash.Length)]…</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        }
+    }
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private ResidentFullDossier? _dossier;
+    private GlobalUnitsDashboardSnapshot? _dashboard;
+    private string _section = "identity";
+    private WorkspaceSecurityRole _role = WorkspaceSecurityRole.FirmManager;
+    private bool _isAuthorized = true;
+    private string _actorName = "Firm Administrator";
+    private Guid? _actorUserId;
+    private Guid? _membershipId;
+    private Guid? _firmId;
+    private IReadOnlyList<Guid> _allowedCommunityIds = [];
+    private bool _loaded;
+    private bool _isBusy;
+    private string _message = string.Empty;
+    private string _error = string.Empty;
+
+    // Identity fields
+    private string _firstName = string.Empty;
+    private string _lastName = string.Empty;
+    private string _email = string.Empty;
+    private string _phone = string.Empty;
+    private DateTime? _dateOfBirth;
+    private string _additionalContact = string.Empty;
+    private ResidentAccountStatus _accountStatus = ResidentAccountStatus.Active;
+    private ResidentVerificationStatus _verificationStatus = ResidentVerificationStatus.Verified;
+    private string _preferredLanguage = "EN";
+    private string _preferredContactMethod = "Email";
+    private string _emergencyName = string.Empty;
+    private string _emergencyPhone = string.Empty;
+    private string _emergencyRelation = string.Empty;
+    private string _notes = string.Empty;
+
+    // Quick assign fields
+    private bool _showQuickAssign;
+    private Guid _assignCommunityId;
+    private Guid _assignUnitId;
+    private ResidentAssignmentType _assignType = ResidentAssignmentType.PrimaryResident;
+    private string _assignNotes = string.Empty;
+
+    // Household fields
+    private string _hhName = string.Empty;
+    private string _hhRelation = "Family Member";
+    private string _hhPhone = string.Empty;
+    private string _hhEmail = string.Empty;
+
+    // Direct message fields
+    private string _msgSubject = string.Empty;
+    private string _msgBody = string.Empty;
+
+    // Document fields
+    private ResidentDocumentCategory _docCategory = ResidentDocumentCategory.LeaseAgreement;
+    private string _docTitle = string.Empty;
+    private string _docFileName = string.Empty;
+    private string _docNotes = string.Empty;
+
+    private Action? _locHandler;
+
+    private IReadOnlyList<UnitSummaryRow> QuickAssignUnits =>
+        _dashboard is null ? [] : _dashboard.Units.Where(u => u.CommunityId == _assignCommunityId).ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+        await ReloadAsync();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loaded && _dossier?.Profile.Id != Id)
+        {
+            await ReloadAsync();
+        }
+    }
+
+    private async Task ReloadAsync()
+    {
+        try
+        {
+            _role = await Access.GetRoleAsync() ?? WorkspaceSecurityRole.FirmManager;
+            _isAuthorized = DataSecurityAndPrivacyGuard.IsManagerRole(_role);
+            _membershipId = await Access.GetActiveMembershipIdAsync();
+            var account = await Access.GetAccountAsync();
+            _actorUserId = account?.Id;
+            if (!string.IsNullOrWhiteSpace(account?.FullName))
+                _actorName = account.FullName;
+
+            var allowedComms = await Access.GetAllowedCommunitiesAsync();
+            _allowedCommunityIds = allowedComms.Select(c => c.Id).ToList();
+            _firmId = await Access.GetFirmIdAsync() ?? allowedComms.FirstOrDefault()?.ManagementFirmId;
+
+            _dossier = await Workspace.GetResidentFullDossierAsync(Id);
+            if (_dossier is not null)
+            {
+                var p = _dossier.Profile;
+                _firstName = p.FirstName;
+                _lastName = p.LastName;
+                _email = p.PrimaryEmail;
+                _phone = p.Phone;
+                _dateOfBirth = p.DateOfBirth;
+                _additionalContact = p.AdditionalContactDetails;
+                _accountStatus = p.AccountStatus;
+                _verificationStatus = p.VerificationStatus;
+                _preferredLanguage = p.PreferredLanguage;
+                _preferredContactMethod = p.PreferredContactMethod;
+                _emergencyName = p.EmergencyContactName;
+                _emergencyPhone = p.EmergencyContactPhone;
+                _emergencyRelation = p.EmergencyContactRelation;
+                _notes = p.Notes;
+            }
+
+            if (_firmId.HasValue && _firmId.Value != Guid.Empty)
+            {
+                _dashboard = await Workspace.GetGlobalUnitsDashboardAsync(_firmId.Value, _allowedCommunityIds);
+                if (_assignCommunityId == Guid.Empty && _dashboard.Communities.Count > 0)
+                    _assignCommunityId = _dashboard.Communities[0].Id;
+                var units = QuickAssignUnits;
+                if (units.Count > 0 && !units.Any(u => u.UnitId == _assignUnitId))
+                    _assignUnitId = units[0].UnitId;
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loaded = true;
+        }
+    }
+
+    private async Task SaveIdentityAsync()
+    {
+        if (_dossier is null) return;
+        _error = string.Empty;
+        _message = string.Empty;
+        _isBusy = true;
+        try
+        {
+            var input = new ResidentProfileUpdateInput(
+                _firstName,
+                _lastName,
+                _email,
+                _phone,
+                _dateOfBirth,
+                _dossier.Profile.ProfilePhotoUrl,
+                _additionalContact,
+                _accountStatus,
+                _verificationStatus,
+                _preferredLanguage,
+                _preferredContactMethod,
+                _emergencyName,
+                _emergencyPhone,
+                _emergencyRelation,
+                _notes);
+            var updated = await Workspace.UpdateResidentFullProfileAsync(_dossier.Profile.Id, input, _role, _actorUserId);
+            _message = $"Resident profile {updated.FullName} ({updated.ResidentAccountNumber}) saved.";
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private void OnQuickAssignCommunityChanged(ChangeEventArgs e)
+    {
+        if (Guid.TryParse(e.Value?.ToString(), out var cid))
+        {
+            _assignCommunityId = cid;
+            var units = QuickAssignUnits;
+            if (units.Count > 0)
+                _assignUnitId = units[0].UnitId;
+        }
+    }
+
+    private async Task SubmitQuickAssignAsync()
+    {
+        if (_dossier is null || _assignCommunityId == Guid.Empty || _assignUnitId == Guid.Empty) return;
+        _error = string.Empty;
+        _message = string.Empty;
+        _isBusy = true;
+        try
+        {
+            var targetUnit = QuickAssignUnits.FirstOrDefault(u => u.UnitId == _assignUnitId);
+            var req = new ManualResidentAssignmentRequest(
+                _assignCommunityId,
+                targetUnit?.BuildingId ?? Guid.Empty,
+                _assignUnitId,
+                false,
+                _dossier.Profile.Id,
+                _dossier.Profile.FirstName,
+                _dossier.Profile.LastName,
+                _dossier.Profile.PrimaryEmail,
+                _dossier.Profile.Phone,
+                _dossier.Profile.PreferredLanguage,
+                _dossier.Profile.EmergencyContactName,
+                _dossier.Profile.EmergencyContactPhone,
+                _assignType,
+                UnitAssignmentStatus.Active,
+                true,
+                DateTime.UtcNow,
+                null,
+                _assignNotes,
+                string.IsNullOrWhiteSpace(_assignNotes) ? "Administrator assignment from Resident Profile" : _assignNotes);
+            await Workspace.AssignResidentToUnitManualAsync(req, _role, _actorName, _membershipId);
+            _showQuickAssign = false;
+            _message = $"Resident {_dossier.Profile.FullName} ({_dossier.Profile.ResidentAccountNumber}) assigned to Unit {targetUnit?.UnitNumber}.";
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task MoveOutNowAsync(ResidentUnitAssignment assignment)
+    {
+        _error = string.Empty;
+        _message = string.Empty;
+        _isBusy = true;
+        try
+        {
+            await Workspace.ExecuteMoveOutAsync(
+                assignment.CommunityId,
+                assignment.Id,
+                DateTime.UtcNow,
+                "Move-out executed from Resident Profile",
+                _role,
+                _actorName);
+            _message = $"Move-out recorded. Resident Account Number {_dossier?.Profile.ResidentAccountNumber} and historical assignment preserved.";
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task AddHouseholdMemberAsync()
+    {
+        if (_dossier is null || _dossier.ActiveAssignments.Count == 0 || string.IsNullOrWhiteSpace(_hhName)) return;
+        _error = string.Empty;
+        _message = string.Empty;
+        _isBusy = true;
+        try
+        {
+            var primary = _dossier.ActiveAssignments[0].Assignment;
+            await Workspace.UpsertHouseholdMemberAsync(
+                primary.CommunityId,
+                primary.UnitId,
+                null,
+                _hhName,
+                _hhRelation,
+                _hhPhone,
+                _hhEmail,
+                false,
+                string.Empty,
+                _role);
+            _hhName = string.Empty;
+            _hhPhone = string.Empty;
+            _hhEmail = string.Empty;
+            _message = "Household member added.";
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task RemoveHouseholdMemberAsync(ResidentHouseholdMember member)
+    {
+        _isBusy = true;
+        try
+        {
+            await Workspace.RemoveHouseholdMemberAsync(member.CommunityId, member.Id, _role);
+            _message = $"Household member {member.FullName} marked as ended.";
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task SendMessageToResidentAsync()
+    {
+        if (_dossier is null || _dossier.ActiveAssignments.Count == 0 || string.IsNullOrWhiteSpace(_msgSubject) || string.IsNullOrWhiteSpace(_msgBody))
+            return;
+        _isBusy = true;
+        try
+        {
+            var first = _dossier.ActiveAssignments[0];
+            await Workspace.PostResidentDirectMessageAsync(
+                first.Assignment.CommunityId,
+                _actorName,
+                "management@commonground.local",
+                _role,
+                first.UnitNumber,
+                "Resident",
+                $"{_dossier.Profile.FullName} <{_dossier.Profile.PrimaryEmail}>",
+                _msgSubject,
+                _msgBody);
+            _msgSubject = string.Empty;
+            _msgBody = string.Empty;
+            _message = "Direct message sent to resident.";
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task AddDocumentAsync()
+    {
+        if (_dossier is null || string.IsNullOrWhiteSpace(_docTitle)) return;
+        _isBusy = true;
+        try
+        {
+            var commId = _dossier.ActiveAssignments.FirstOrDefault()?.Assignment.CommunityId
+                ?? _dossier.PastAssignments.FirstOrDefault()?.Assignment.CommunityId
+                ?? _dashboard?.Communities.FirstOrDefault()?.Id
+                ?? Guid.Empty;
+            var unitId = _dossier.ActiveAssignments.FirstOrDefault()?.Assignment.UnitId;
+            if (commId == Guid.Empty)
+            {
+                _error = "Select or create a community before uploading documents.";
+                return;
+            }
+            await Workspace.AddResidentDocumentAsync(
+                commId,
+                unitId,
+                _dossier.Profile.Id,
+                _docCategory,
+                _docTitle,
+                _docFileName,
+                _docNotes,
+                true,
+                _actorName,
+                _role);
+            _docTitle = string.Empty;
+            _docFileName = string.Empty;
+            _docNotes = string.Empty;
+            _message = "Document added to Resident Vault.";
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+    }
+}

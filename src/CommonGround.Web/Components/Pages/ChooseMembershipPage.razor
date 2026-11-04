@@ -1,0 +1,60 @@
+@page "/choose-membership"
+@attribute [Authorize(Policy = "WorkspaceMember")]
+@inject WorkspaceLocalization Loc
+@inject WorkspaceAccessService Access
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>Choose membership - CommonGround</PageTitle>
+
+<div class="cg-page-header">
+    <div>
+        <h1>Choose membership</h1>
+        <p class="cg-page-lead">Select the active firm membership for this session.</p>
+    </div>
+</div>
+
+@if (!_loaded)
+{
+    <p role="status" aria-live="polite">Loading.</p>
+}
+else if (_memberships.Count == 0)
+{
+    <div class="cg-card"><p class="cg-empty-text">No memberships found. <a href="/pending">View pending status</a></p></div>
+}
+else
+{
+    <div class="cg-card">
+        <div class="cg-table-wrap"><table class="cg-table"><thead><tr><th>Firm</th><th>Role</th><th>Status</th></tr></thead><tbody>
+        @foreach (var m in _memberships)
+        {
+            <tr @key="m.Id">
+                <td class="mono">@m.ManagementFirmId</td>
+                <td><span class="cg-badge">@m.Role</span></td>
+                <td><span class="cg-badge">@m.ApprovalStatus</span></td>
+            </tr>
+        }
+        </tbody></table></div>
+    </div>
+}
+
+@code {
+    private IReadOnlyList<WorkspaceAccountMembership> _memberships = [];
+    private bool _loaded;
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+        try { _memberships = await Access.GetUserMembershipsAsync(); }
+        catch { }
+        finally { _loaded = true; }
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+    }
+}

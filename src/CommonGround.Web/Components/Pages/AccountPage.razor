@@ -1,0 +1,156 @@
+@page "/account"
+@attribute [Authorize(Policy = "WorkspaceMember")]
+@using CommonGround.Application.Services
+@inject WorkspaceLocalization Loc
+@inject WorkspaceAccessService Access
+@inject CommonGroundWorkspaceService Workspace
+@implements IDisposable
+
+<PageTitle>Account &amp; Resident Identity — CommonGround</PageTitle>
+
+<div class="cg-page-header">
+    <div>
+        <h1>Account &amp; Resident Identity</h1>
+        <p class="cg-page-lead">Personal profile, permanent Resident Account Number, unit assignment history, and password security.</p>
+    </div>
+</div>
+
+@if (!_loaded)
+{
+    <p role="status" aria-live="polite">Loading.</p>
+}
+else if (_account is null)
+{
+    <div class="cg-card"><p class="cg-empty-text">Account not found. <a href="/login">Sign in</a></p></div>
+}
+else
+{
+    <div class="cg-grid-2">
+        <div class="cg-card">
+            <div class="cg-section-header">
+                <h2>Personal Profile &amp; Resident Identity</h2>
+                <div style="display: flex; gap: 0.35rem;">
+                    @if (_residentDossier is not null)
+                    {
+                        <span class="cg-badge cg-badge-info mono">@_residentDossier.Profile.ResidentAccountNumber</span>
+                    }
+                    <span class="cg-badge">@_role</span>
+                </div>
+            </div>
+            <div class="cg-table-wrap">
+                <table class="cg-table">
+                    <tbody>
+                        @if (_residentDossier is not null)
+                        {
+                            <tr>
+                                <td>Resident Account Number</td>
+                                <td><strong class="mono">@_residentDossier.Profile.ResidentAccountNumber</strong> (Permanent &amp; Immutable)</td>
+                            </tr>
+                        }
+                        <tr><td>Name</td><td><strong>@_account.FullName</strong></td></tr>
+                        <tr><td>Email</td><td class="mono">@_account.Email</td></tr>
+                        <tr><td>Phone</td><td class="mono">@_account.Phone</td></tr>
+                        <tr><td>Provider</td><td>@_account.Provider</td></tr>
+                        @if (_residentDossier is not null)
+                        {
+                            <tr><td>Verification Status</td><td><span class="cg-badge">@_residentDossier.Profile.VerificationStatus</span></td></tr>
+                            <tr><td>Emergency Contact</td><td>@_residentDossier.Profile.EmergencyContactName · <span class="mono">@_residentDossier.Profile.EmergencyContactPhone</span></td></tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="cg-card">
+            <div class="cg-section-header"><h2>Password &amp; Security</h2></div>
+            <p style="color: var(--color-text-secondary); font-size: 0.78125rem;">
+                Password changes are handled through the account service. Email confirmation status: @(_account.EmailConfirmed ? "Confirmed" : "Pending confirmation").
+            </p>
+            <div class="cg-toolbar">
+                <a class="cg-btn" href="/verify-email">Verify email</a>
+                <a class="cg-btn" href="/my-unit">Open My Unit</a>
+            </div>
+        </div>
+    </div>
+
+    @if (_residentDossier is not null)
+    {
+        <div class="cg-card" style="margin-block-start: 0.75rem;">
+            <div class="cg-section-header">
+                <h2>Active &amp; Historical Unit Assignments (@(_residentDossier.ActiveAssignments.Count + _residentDossier.PastAssignments.Count))</h2>
+                <span class="cg-badge mono">@_residentDossier.Profile.ResidentAccountNumber</span>
+            </div>
+            @if (_residentDossier.ActiveAssignments.Count == 0 && _residentDossier.PastAssignments.Count == 0)
+            {
+                <p class="cg-empty-text">No unit assignments linked to this Resident Account Number yet.</p>
+            }
+            else
+            {
+                <div class="cg-table-wrap">
+                    <table class="cg-table">
+                        <thead>
+                            <tr>
+                                <th>Community</th>
+                                <th>Building &amp; Unit</th>
+                                <th>Assignment Role</th>
+                                <th>Status</th>
+                                <th>Tenancy Period</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var a in _residentDossier.ActiveAssignments.Concat(_residentDossier.PastAssignments))
+                            {
+                                <tr @key="a.Assignment.Id">
+                                    <td>
+                                        <strong>@a.CommunityName</strong>
+                                        <span class="mono" style="font-size: 0.72rem; color: var(--accent-primary);">@a.CommunityAccountNumber</span>
+                                    </td>
+                                    <td><strong>Unit @a.UnitNumber</strong> · @a.BuildingName</td>
+                                    <td><span class="cg-badge">@a.Assignment.AssignmentType</span></td>
+                                    <td><span class="cg-badge @(a.Assignment.Status == UnitAssignmentStatus.Active ? "cg-badge-ok" : "")">@a.Assignment.Status</span></td>
+                                    <td class="mono">@a.Assignment.MoveInDateUtc.ToString("yyyy-MM-dd") → @(a.Assignment.MoveOutDateUtc?.ToString("yyyy-MM-dd") ?? "Present")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    }
+}
+@if (!string.IsNullOrWhiteSpace(_message))
+{
+    <div role="status" aria-live="polite" class="cg-callout" style="margin-block-start: 0.75rem;">@_message</div>
+}
+
+@code {
+    private WorkspaceUserAccount? _account;
+    private ResidentFullDossier? _residentDossier;
+    private WorkspaceSecurityRole _role = WorkspaceSecurityRole.Resident;
+    private bool _loaded;
+    private string _message = string.Empty;
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+        try
+        {
+            _role = await Access.GetRoleAsync() ?? WorkspaceSecurityRole.Resident;
+            _account = await Access.GetAccountAsync();
+            if (_account is not null)
+            {
+                _residentDossier = await Workspace.GetResidentFullDossierByUserAsync(_account.Id, _account.Email, _account.CommunityId);
+            }
+        }
+        catch (Exception ex) { _message = ex.Message; }
+        finally { _loaded = true; }
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+    }
+}

@@ -6,13 +6,16 @@
 
 <div class="cg-auth-page">
     <div class="cg-auth-column">
-        <a class="cg-auth-brand" href="/" aria-label="CommonGround home">
-            <span class="cg-auth-mark">CG</span>
-            <span class="cg-auth-wordmark">
-                <strong>CommonGround</strong>
-                <small>@Loc.T("nav.workspace")</small>
-            </span>
-        </a>
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap;">
+            <a class="cg-auth-brand" href="/" aria-label="CommonGround home">
+                <span class="cg-auth-mark">PA</span>
+                <span class="cg-auth-wordmark">
+                    <strong>CommonGround</strong>
+                    <small>One Platform · Multiple Communities · Intelligent Operations</small>
+                </span>
+            </a>
+            <ThemeSwitcher Compact="false" />
+        </div>
         <main id="auth-main" class="cg-auth-card" tabindex="-1">
             @Body
         </main>

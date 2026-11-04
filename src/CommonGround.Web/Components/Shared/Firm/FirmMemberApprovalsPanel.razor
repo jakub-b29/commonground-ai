@@ -1,0 +1,277 @@
+@rendermode InteractiveServer
+@using CommonGround.Domain.Enums
+@inject CommonGroundWorkspaceService Workspace
+@inject WorkspaceAccessService Access
+@inject WorkspaceLocalization Loc
+@implements IDisposable
+
+<div class="cg-card">
+    <div class="cg-section-header">
+        <h2>Pending member approvals</h2>
+        <span class="cg-badge">@_queue.Count pending</span>
+    </div>
+    <p style="color: var(--color-text-secondary); font-size: 0.78125rem;">Review join requests for this firm. Approve or reject each member.</p>
+    @if (!_isManager)
+    {
+        <p class="cg-empty-text">Only a firm manager or property manager may review approvals.</p>
+    }
+    else
+    {
+        <div class="cg-table-wrap" style="max-height: 420px; overflow-y: auto;">
+            <table class="cg-table">
+                <thead>
+                    <tr>
+                        <th>Name and email</th>
+                        <th>Role</th>
+                        <th>Properties</th>
+                        <th>Permissions</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (_queue.Count == 0)
+                    {
+                        <tr><td colspan="6" style="color: var(--color-text-secondary);">No pending approvals.</td></tr>
+                    }
+                    @foreach (var m in _queue)
+                    {
+                        var editor = GetEditor(m.Id, m);
+                        <tr @key="m.Id">
+                            <td>
+                                <strong>@GetMemberName(m)</strong>
+                                <div class="mono num" style="font-size: 0.72rem; color: var(--color-text-secondary); font-variant-numeric: tabular-nums;">@GetMemberEmail(m) · @m.UserAccountId.ToString("N").AsSpan(0, 8).ToString()</div>
+                                <div style="font-size: 0.72rem; color: var(--color-text-secondary);">Trade: @(string.IsNullOrWhiteSpace(editor.Trade) ? "None" : editor.Trade) · Units: @(string.IsNullOrWhiteSpace(editor.Units) ? "None" : editor.Units)</div>
+                            </td>
+                            <td><span class="cg-badge">@m.Role</span></td>
+                            <td>
+                                <div style="font-size: 0.75rem; max-inline-size: 14rem;">@GetPropertyScopeText(m)</div>
+                                <div style="margin-block-start: 0.375rem;">
+                                    <label style="display: block; font-weight: 500; font-size: 0.75rem;" for="ap-prop-@m.Id">Property scope</label>
+                                    <input id="ap-prop-@m.Id" @bind="editor.AllowedIdsCsv" placeholder="Comma separated property ids or blank for all" style="inline-size: 100%;" />
+                                </div>
+                                <div style="margin-block-start: 0.25rem; display: flex; gap: 0.375rem; flex-wrap: wrap;">
+                                    <input style="inline-size: 6rem;" placeholder="Unit csv" aria-label="Linked units" @bind="editor.Units" />
+                                    <input style="inline-size: 8rem;" placeholder="Company or trade" aria-label="Company or trade" @bind="editor.Trade" />
+                                </div>
+                            </td>
+                            <td>
+                                <fieldset style="border: 0; padding: 0; margin: 0;">
+                                    <legend style="font-size: 0.75rem; font-weight: 500;">Permissions</legend>
+                                    @foreach (var flag in RelevantFlags(m.Role))
+                                    {
+                                        <label style="display: flex; align-items: center; gap: 0.375rem; font-weight: 400; font-size: 0.75rem; margin-block-end: 0.125rem;">
+                                            <input type="checkbox" checked="@editor.Granted.HasFlag(flag)" @onchange="(e) => OnPermissionToggled(editor, flag, (bool?)e.Value == true)" />
+                                            <span>@PermissionLabel(flag)</span>
+                                        </label>
+                                    }
+                                </fieldset>
+                            </td>
+                            <td>
+                                <span class="cg-badge cg-badge-warn">@m.ApprovalStatus</span>
+                                <div class="mono num" style="font-size: 0.72rem; color: var(--color-text-secondary); font-variant-numeric: tabular-nums;">@m.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm")</div>
+                            </td>
+                            <td>
+                                <div style="display: flex; gap: 0.375rem; flex-wrap: wrap;">
+                                    <button type="button" class="cg-btn cg-btn-primary" disabled="@(_isBusy || !_isManager)" @onclick="() => OnDecide(m.Id, true)">Approve</button>
+                                    <button type="button" class="cg-btn" disabled="@(_isBusy || !_isManager)" @onclick="() => OnDecide(m.Id, false)">Reject</button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    @if (!string.IsNullOrWhiteSpace(_message))
+    {
+        <div role="status" aria-live="polite" class="cg-callout" style="margin-block-start: 0.75rem;">@_message</div>
+    }
+    else
+    {
+        <div role="status" aria-live="polite" class="cg-empty-text" style="margin-block-start: 0.5rem;">@_statusLine</div>
+    }
+</div>
+
+@code {
+    [Parameter] [EditorRequired] public Guid FirmId { get; set; }
+
+    private List<WorkspaceAccountMembership> _queue = new();
+    private Dictionary<Guid, WorkspaceUserAccount?> _accounts = new();
+    private Dictionary<Guid, ApprovalEditor> _editors = new();
+    private IReadOnlyList<Community> _firmProperties = new List<Community>();
+    private bool _isManager;
+    private bool _isBusy;
+    private string _message = string.Empty;
+    private string _statusLine = "Approval queue loaded.";
+    private WorkspaceSecurityRole _actorRole = WorkspaceSecurityRole.PropertyManager;
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+        try
+        {
+            _actorRole = await Access.GetRoleAsync() ?? WorkspaceSecurityRole.PropertyManager;
+            _isManager = _actorRole == WorkspaceSecurityRole.FirmManager || _actorRole == WorkspaceSecurityRole.PropertyManager;
+        }
+        catch { }
+        await ReloadAsync();
+    }
+
+    protected override async Task OnParametersSetAsync() => await ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        if (FirmId == Guid.Empty) return;
+        try
+        {
+            var myFirm = await Access.GetFirmIdAsync();
+            if (myFirm is null || myFirm.Value != FirmId) return;
+            _firmProperties = await Workspace.GetFirmCommunitiesAsync(FirmId);
+            _queue = (await Workspace.GetFirmMembershipQueueAsync(FirmId)).ToList();
+            _accounts.Clear();
+            foreach (var m in _queue)
+            {
+                if (!_accounts.ContainsKey(m.UserAccountId))
+                    _accounts[m.UserAccountId] = await Workspace.GetWorkspaceAccountAsync(m.UserAccountId);
+                GetEditor(m.Id, m);
+            }
+            _statusLine = $"Approval queue loaded. {_queue.Count} pending.";
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+        }
+        StateHasChanged();
+    }
+
+    private ApprovalEditor GetEditor(Guid membershipId, WorkspaceAccountMembership membership)
+    {
+        if (!_editors.TryGetValue(membershipId, out var editor))
+        {
+            editor = new ApprovalEditor
+            {
+                Granted = membership.GrantedPermissions != 0
+                    ? membership.GrantedPermissions
+                    : WorkspacePermissionPresets.DefaultForRole(membership.Role),
+                AllowedIdsCsv = membership.AllowedCommunityIdsCsv ?? string.Empty,
+                Units = membership.LinkedUnitNumbersCsv ?? string.Empty,
+                Trade = membership.ContractorCompanyOrTrade ?? string.Empty
+            };
+            _editors[membershipId] = editor;
+        }
+        return editor;
+    }
+
+    private static IReadOnlyList<WorkspacePermissionFlags> RelevantFlags(WorkspaceSecurityRole role) =>
+        Enum.GetValues<WorkspacePermissionFlags>()
+            .Where(f => f != 0 && WorkspacePermissionPresets.DefaultForRole(role).HasFlag(f))
+            .ToList();
+
+    private static string PermissionLabel(WorkspacePermissionFlags flag)
+    {
+        var raw = flag.ToString();
+        if (string.IsNullOrWhiteSpace(raw)) return string.Empty;
+        var chars = new System.Text.StringBuilder();
+        for (var i = 0; i < raw.Length; i++)
+        {
+            var c = raw[i];
+            if (i > 0 && char.IsUpper(c) && !char.IsUpper(raw[i - 1]))
+                chars.Append(' ');
+            chars.Append(i == 0 ? c : char.ToLowerInvariant(c));
+        }
+        return chars.ToString();
+    }
+
+    private string GetMemberName(WorkspaceAccountMembership membership) =>
+        _accounts.TryGetValue(membership.UserAccountId, out var account) && account is not null && !string.IsNullOrWhiteSpace(account.FullName)
+            ? account.FullName
+            : membership.UserAccount?.FullName ?? "Member";
+
+    private string GetMemberEmail(WorkspaceAccountMembership membership) =>
+        _accounts.TryGetValue(membership.UserAccountId, out var account) && account is not null && !string.IsNullOrWhiteSpace(account.Email)
+            ? account.Email
+            : membership.UserAccount?.Email ?? string.Empty;
+
+    private string GetPropertyScopeText(WorkspaceAccountMembership membership)
+    {
+        if (string.IsNullOrWhiteSpace(membership.AllowedCommunityIdsCsv))
+            return "All firm properties";
+        var names = new List<string>();
+        foreach (var part in membership.AllowedCommunityIdsCsv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (!Guid.TryParse(part, out var id)) continue;
+            var match = _firmProperties.FirstOrDefault(p => p.Id == id);
+            names.Add(match?.Name ?? id.ToString("N").Substring(0, 8));
+        }
+        return names.Count == 0 ? "All firm properties" : string.Join(", ", names);
+    }
+
+    private static void OnPermissionToggled(ApprovalEditor editor, WorkspacePermissionFlags flag, bool isChecked)
+    {
+        if (isChecked)
+            editor.Granted |= flag;
+        else
+            editor.Granted &= ~flag;
+    }
+
+    private async Task OnDecide(Guid membershipId, bool approve)
+    {
+        var editor = _editors.TryGetValue(membershipId, out var existing)
+            ? existing
+            : new ApprovalEditor { Granted = 0, AllowedIdsCsv = string.Empty, Units = string.Empty, Trade = string.Empty };
+        var allowed = ParseGuidList(editor.AllowedIdsCsv);
+        _isBusy = true;
+        try
+        {
+            await Workspace.ApproveOrUpdateMembershipAsync(
+                membershipId,
+                approve,
+                editor.Granted,
+                allowed,
+                string.IsNullOrWhiteSpace(editor.Units) ? null : editor.Units.Trim(),
+                string.IsNullOrWhiteSpace(editor.Trade) ? null : editor.Trade.Trim(),
+                _actorRole);
+            _editors.Remove(membershipId);
+            _message = approve ? "Membership approved." : "Membership rejected.";
+            _statusLine = _message;
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private static IReadOnlyList<Guid>? ParseGuidList(string csv)
+    {
+        if (string.IsNullOrWhiteSpace(csv)) return null;
+        var parsed = csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(s => Guid.TryParse(s, out var g) ? g : (Guid?)null)
+            .Where(g => g.HasValue)
+            .Select(g => g!.Value)
+            .Distinct()
+            .ToList();
+        return parsed;
+    }
+
+    private sealed class ApprovalEditor
+    {
+        public WorkspacePermissionFlags Granted { get; set; }
+        public string AllowedIdsCsv { get; set; } = string.Empty;
+        public string Units { get; set; } = string.Empty;
+        public string Trade { get; set; } = string.Empty;
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+    }
+}

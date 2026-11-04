@@ -1,0 +1,202 @@
+@page "/properties/{id:guid}/overview"
+@attribute [Authorize(Policy = "WorkspaceMember")]
+@using CommonGround.Web.Components.Shared.Overview
+@inject WorkspaceLocalization Loc
+@inject CommonGroundWorkspaceService Workspace
+@implements IDisposable
+
+<PageTitle>Property overview — CommonGround</PageTitle>
+
+<RequirePropertyAccess PropertyId="Id">
+    @if (!_loaded)
+    {
+        <p role="status" aria-live="polite">Loading.</p>
+    }
+    else if (_snapshot is null)
+    {
+        <div class="cg-card"><p class="cg-empty-text">Property not found.</p></div>
+    }
+    else
+    {
+        <PageHeader Category="Community Command Center"
+                    ContextCode="@($"{_snapshot.Community.CommunityAccountNumber} · {_snapshot.Community.TaxIdOrEin}")"
+                    Title="@_snapshot.Community.Name"
+                    Subtitle="@($"{_snapshot.Community.StreetAddress}, {_snapshot.Community.PostalOrZipCode} {_snapshot.Community.City} · {_snapshot.Community.PropertyTypeConfiguration} · Buildings: {_snapshot.Community.Buildings.Count} · Units: {_snapshot.Community.Units.Count}")">
+            <Badges>
+                <StatusBadge Text="@_snapshot.Community.CommunityAccountNumber" Variant="info" />
+                <StatusBadge Text="@_snapshot.Community.Status.ToString()" Variant="ok" />
+                <AIBadge Label="Autonomous Monitoring" Model="muse-spark-1.3" />
+            </Badges>
+            <Actions>
+                <a class="cg-btn cg-btn-sm cg-btn-ai" href="@($"/properties/{Id}/units")">Units &amp; occupancy (@_snapshot.Community.Units.Count)</a>
+                <a class="cg-btn cg-btn-sm" href="@($"/properties/{Id}/maintenance")">Work orders (@_snapshot.OpenWorkOrders)</a>
+                <a class="cg-btn cg-btn-sm" href="@($"/properties/{Id}/financials")">Financials &amp; ledger</a>
+                <a class="cg-btn cg-btn-sm" href="@($"/properties/{Id}/settings")">Community profile &amp; contacts</a>
+                <button type="button" class="cg-btn cg-btn-sm cg-btn-primary" @onclick="OnScan">@Loc.T("action.scanNow")</button>
+            </Actions>
+        </PageHeader>
+
+        <ExecutiveKpiRow Snapshot="_snapshot" />
+
+        <BentoGrid Style="margin-block-end: 1rem;">
+            <BentoCard Span="6"
+                       Title="Community Account &amp; Unified Profile"
+                       Subtitle="Permanent Community Account Number, buildings, occupancy, and unified HOA capabilities"
+                       BadgeText="@_snapshot.Community.CommunityAccountNumber"
+                       BadgeVariant="info">
+                <HeaderActions>
+                    <a class="cg-btn cg-btn-sm" href="@($"/properties/{Id}/settings")">Edit community</a>
+                </HeaderActions>
+                <ChildContent>
+                    <div class="cg-grid-3" style="font-size: 0.8rem;">
+                        <div>
+                            <div style="color: var(--text-muted); font-size: 0.7rem;">Community Account No.</div>
+                            <strong class="mono num">@_snapshot.Community.CommunityAccountNumber</strong>
+                        </div>
+                        <div>
+                            <div style="color: var(--text-muted); font-size: 0.7rem;">Status &amp; Configuration</div>
+                            <strong>@_snapshot.Community.Status · @_snapshot.Community.PropertyTypeConfiguration</strong>
+                        </div>
+                        <div>
+                            <div style="color: var(--text-muted); font-size: 0.7rem;">Buildings &amp; Units</div>
+                            <strong class="mono num">@_snapshot.Community.Buildings.Count buildings · @_snapshot.Community.Units.Count units</strong>
+                        </div>
+                        <div>
+                            <div style="color: var(--text-muted); font-size: 0.7rem;">Administrative Email</div>
+                            <span class="mono">@(string.IsNullOrWhiteSpace(_snapshot.Community.AdministrativeEmail) ? "office@commonground.local" : _snapshot.Community.AdministrativeEmail)</span>
+                        </div>
+                        <div>
+                            <div style="color: var(--text-muted); font-size: 0.7rem;">Administrative Phone</div>
+                            <span class="mono num">@(string.IsNullOrWhiteSpace(_snapshot.Community.AdministrativePhone) ? "+1 (800) 555-0199" : _snapshot.Community.AdministrativePhone)</span>
+                        </div>
+                        <div>
+                            <div style="color: var(--text-muted); font-size: 0.7rem;">Registration Link Policy</div>
+                            <span class="cg-badge cg-badge-neutral">@_snapshot.Community.DefaultRegistrationApprovalMode</span>
+                        </div>
+                    </div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.75rem;">
+                        @if (_snapshot.Community.EnableHoaGovernance) { <span class="cg-badge cg-badge-info">HOA &amp; Board Governance</span> }
+                        @if (_snapshot.Community.EnableShareWeightedVoting) { <span class="cg-badge cg-badge-info">Share-Weighted Voting</span> }
+                        @if (_snapshot.Community.EnableArcRequests) { <span class="cg-badge cg-badge-info">ARC &amp; Remodeling</span> }
+                        @if (_snapshot.Community.EnableSubMeterReconciliation) { <span class="cg-badge cg-badge-info">Sub-Meter &amp; RUBS</span> }
+                        @if (_snapshot.Community.EnableReserveStudy) { <span class="cg-badge cg-badge-info">Reserve Study &amp; SIRS</span> }
+                    </div>
+                </ChildContent>
+            </BentoCard>
+
+            <BentoCard Span="6"
+                       Title="Community Contacts Directory"
+                       Subtitle="Management office, property manager, association board, emergency, and accounting contacts"
+                       BadgeText="@($"{_contacts.Count} contacts")"
+                       BadgeVariant="neutral"
+                       BodyStyle="padding: 0;">
+                <HeaderActions>
+                    <a class="cg-btn cg-btn-sm" href="@($"/properties/{Id}/settings")">Manage contacts</a>
+                </HeaderActions>
+                <ChildContent>
+                    <div class="cg-table-wrap">
+                        <table class="cg-table">
+                            <thead>
+                                <tr>
+                                    <th>Category</th>
+                                    <th>Contact &amp; Role</th>
+                                    <th>Phone &amp; Email</th>
+                                    <th>Hours</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var ctItem in _contacts.Take(5))
+                                {
+                                    <tr @key="ctItem.Id">
+                                        <td><span class="cg-badge cg-badge-neutral">@ctItem.Category</span></td>
+                                        <td>
+                                            <strong>@ctItem.ContactName</strong>
+                                            <div style="font-size: 0.72rem; color: var(--text-secondary);">@ctItem.RoleTitle</div>
+                                        </td>
+                                        <td class="mono num" style="font-size: 0.75rem;">
+                                            <div>@ctItem.Phone</div>
+                                            <div style="color: var(--text-secondary);">@ctItem.Email</div>
+                                        </td>
+                                        <td style="font-size: 0.74rem; color: var(--text-secondary);">@ctItem.OfficeHours</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </ChildContent>
+            </BentoCard>
+        </BentoGrid>
+
+        @if (!string.IsNullOrWhiteSpace(_message))
+        {
+            <div role="status" aria-live="polite" class="ai-callout" style="margin-block-end: 1rem;">@_message</div>
+        }
+
+        <BentoGrid>
+            <div class="bento-span-7">
+                <UtilitySourcesTable Sources="_snapshot.UtilitySources" OnRefreshSources="OnRefresh" OnScanNow="OnScan" />
+            </div>
+            <div class="bento-span-5">
+                <OutageWeatherAndWastePanel Snapshot="_snapshot" />
+            </div>
+        </BentoGrid>
+
+        <div style="margin-block-start: 1rem;">
+            <PendingApprovalsAndAuditPanel Snapshot="_snapshot" OnChanged="ReloadAsync" />
+        </div>
+    }
+</RequirePropertyAccess>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    private CommunityWorkspaceSnapshot? _snapshot;
+    private IReadOnlyList<CommunityContact> _contacts = [];
+    private bool _loaded;
+    private string _message = string.Empty;
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        try
+        {
+            _snapshot = await Workspace.GetSnapshotAsync(Id);
+            _contacts = await Workspace.GetCommunityContactsAsync(Id);
+        }
+        catch (Exception ex) { _message = ex.Message; }
+        finally { _loaded = true; }
+    }
+
+    private async Task OnRefresh()
+    {
+        try
+        {
+            var result = await Workspace.TriggerWebAutoEnrichmentAsync(Id, string.Empty);
+            _message = result.SummaryReport;
+            await ReloadAsync();
+        }
+        catch (Exception ex) { _message = ex.Message; }
+    }
+
+    private async Task OnScan()
+    {
+        try
+        {
+            _message = await Workspace.ScanUtilitySourcesAndWeatherAsync(Id);
+            await ReloadAsync();
+        }
+        catch (Exception ex) { _message = ex.Message; }
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+    }
+}

@@ -1,0 +1,53 @@
+@using CommonGround.Domain.Entities
+@inject WorkspaceLocalization Loc
+@implements IDisposable
+
+@if (Unit is not null)
+{
+    var hasLeak = Unit.Meters.Any(m => m.HasSilentLeakAnomaly);
+    <button type="button" class="cg-btn @(IsSelected ? "cg-btn-primary" : "")" style="width: 100%; justify-content: space-between;" @onclick="() => OnSelect.InvokeAsync(Unit.Id)" aria-pressed="@IsSelected">
+        <span class="mono">@Unit.UnitNumber</span>
+        @if (hasLeak)
+        {
+            <span class="cg-badge cg-badge-err" style="font-size: 0.65rem; padding: 0.05rem 0.3rem;">@Loc.T("riser.leak")</span>
+        }
+        else if (Unit.CurrentBalance > 0)
+        {
+            <span class="cg-badge cg-badge-warn" style="font-size: 0.65rem; padding: 0.05rem 0.3rem;">@Loc.T("riser.arrears")</span>
+        }
+    </button>
+}
+else if (CanEdit)
+{
+    <button type="button" class="cg-btn" style="width: 100%; color: var(--color-text-muted);" @onclick="() => OnAddCell.InvokeAsync((Floor, StackCode))" title="@Loc.T("builder.addUnit")">–</button>
+}
+else
+{
+    <span style="color: var(--color-text-muted);">–</span>
+}
+
+@code {
+    [Parameter] public Unit? Unit { get; set; }
+    [Parameter] public bool IsSelected { get; set; }
+    [Parameter] public bool CanEdit { get; set; }
+    [Parameter] public int Floor { get; set; }
+    [Parameter] public string StackCode { get; set; } = string.Empty;
+    [Parameter] public EventCallback<Guid> OnSelect { get; set; }
+    [Parameter] public EventCallback<(int Floor, string StackCode)> OnAddCell { get; set; }
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null)
+        {
+            Loc.OnChange -= _locHandler;
+        }
+    }
+}

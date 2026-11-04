@@ -1,44 +1,18 @@
 @page "/governance/regulations"
 @page "/regulations"
 @attribute [Authorize(Policy = "WorkspaceMember")]
-@using CommonGround.Web.Components.Shared.Governance
-@inject WorkspaceLocalization Loc
-@implements IDisposable
+@inject NavigationManager Nav
+@inject WorkspaceAccessService Access
 
-<PageTitle>@Loc.T("panel.legalCorpus") - CommonGround</PageTitle>
+<PageTitle>Moved - CommonGround</PageTitle>
 
-<div class="cg-page-header">
-    <div>
-        <h1>@Loc.T("page.regulationsTitle")</h1>
-        <p class="cg-page-lead">@Loc.T("page.regulationsLead")</p>
-    </div>
-    <a class="cg-btn" href="/governance/mediation">@Loc.T("panel.mediation")</a>
-</div>
-
-<ScopedCommunityPage @ref="_loader">
-    <ChildContent>
-        <RegulationsAndMediationPanel Documents="context.Community.LegalDocuments" CommunityId="context.Community.Id" OnChanged="OnReload" />
-    </ChildContent>
-</ScopedCommunityPage>
+<p role="status" aria-live="polite">Governance has moved to the property workspace. Redirecting.</p>
 
 @code {
-    private ScopedCommunityPage? _loader;
-    private Action? _locHandler;
-
     protected override async Task OnInitializedAsync()
     {
-        _locHandler = () => InvokeAsync(StateHasChanged);
-        Loc.OnChange += _locHandler;
-        await Loc.EnsureLoadedAsync();
-    }
-
-    private async Task OnReload()
-    {
-        if (_loader is not null) await _loader.ReloadAsync();
-    }
-
-    public void Dispose()
-    {
-        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+        var communities = await Access.GetAllowedCommunitiesAsync();
+        var first = communities.FirstOrDefault();
+        Nav.NavigateTo(first is null ? "/admin" : $"/properties/{first.Id}/governance", forceLoad: false);
     }
 }

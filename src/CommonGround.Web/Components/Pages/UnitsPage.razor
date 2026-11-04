@@ -1,101 +1,340 @@
 @page "/units"
 @page "/apartments"
 @attribute [Authorize(Policy = "WorkspaceMember")]
+@using CommonGround.Application.Services
 @using CommonGround.Web.Components.Shared.Units
-@inject WorkspaceUiState UiState
 @inject WorkspaceLocalization Loc
 @inject WorkspaceAccessService Access
 @inject CommonGroundWorkspaceService Workspace
+@inject NavigationManager Nav
 @implements IDisposable
 
-<PageTitle>@Loc.T("nav.units") - CommonGround</PageTitle>
+<PageTitle>Global units &amp; occupancy registry — CommonGround</PageTitle>
 
-<div class="cg-page-header">
-    <div>
-        <h1>@Loc.T("page.unitsTitle")</h1>
-        <p class="cg-page-lead">@Loc.T("page.unitsLead")</p>
+@if (!_loaded)
+{
+    <p role="status" aria-live="polite">Loading global units registry...</p>
+}
+else if (_dashboard is null)
+{
+    <div class="cg-card"><p class="cg-empty-text">No communities or units available for the active membership.</p></div>
+}
+else
+{
+    <PageHeader Category="Unified Portfolio · Units, Ownership &amp; Occupancy"
+                ContextCode="@($"{_dashboard.Communities.Count} communities · {_dashboard.TotalUnits} units")"
+                Title="Global Units &amp; Occupancy Registry"
+                Subtitle="Cross-community registry of residential, commercial, garage, and storage units with 5-step Unit Creation Wizard, ownership &amp; residency separation, and zero-disclosure registration links.">
+        <Badges>
+            <StatusBadge Text="@($"{_dashboard.Communities.Count} Communities")" Variant="info" />
+            <StatusBadge Text="@($"{_dashboard.OccupiedUnits} Occupied")" Variant="ok" />
+            <AIBadge Label="Unified Community &amp; Unit Engine" Model="muse-spark-1.3" />
+        </Badges>
+        <Actions>
+            @if (_isManager && _dashboard.Communities.Count > 0)
+            {
+                <button type="button" class="cg-btn cg-btn-sm cg-btn-primary" @onclick="() => _showWizard = !_showWizard">
+                    @(_showWizard ? "Close Unit Wizard" : "+ Add Unit (5-Step Wizard)")
+                </button>
+            }
+            <a class="cg-btn cg-btn-sm" href="/admin/residents">Residents &amp; Registrations</a>
+            <a class="cg-btn cg-btn-sm" href="/admin/properties">All Communities</a>
+        </Actions>
+    </PageHeader>
+
+    @if (!string.IsNullOrWhiteSpace(_message))
+    {
+        <div class="ai-callout" style="margin-bottom: 1rem;" role="status" aria-live="polite">@_message</div>
+    }
+
+    <div class="cg-grid-4" style="margin-bottom: 1rem;">
+        <MetricCard Label="Total Units"
+                    Value="@_dashboard.TotalUnits.ToString()"
+                    Subtitle="@($"Across {_dashboard.Communities.Count} communities & {_dashboard.Buildings.Count} buildings")"
+                    BadgeText="Portfolio"
+                    StatusVariant="info" />
+        <MetricCard Label="Occupied Units"
+                    Value="@_dashboard.OccupiedUnits.ToString()"
+                    Subtitle="@($"{_dashboard.TotalActiveResidents} active assigned residents")"
+                    BadgeText="Active"
+                    StatusVariant="ok" />
+        <MetricCard Label="Vacant Units"
+                    Value="@_dashboard.VacantUnits.ToString()"
+                    Subtitle="Available for assignment or registration link"
+                    BadgeText="Vacant"
+                    StatusVariant="neutral" />
+        <MetricCard Label="Pending Registrations"
+                    Value="@_dashboard.PendingRegistrationUnits.ToString()"
+                    Subtitle="@($"{_dashboard.ArrearsUnitsCount} units with open balance")"
+                    BadgeText="@(_dashboard.PendingRegistrationUnits > 0 ? "Links active" : "Clear")"
+                    StatusVariant="@(_dashboard.PendingRegistrationUnits > 0 ? "warn" : "ok")" />
     </div>
-</div>
 
-<ScopedCommunityPage @ref="_loader" OnSnapshotLoaded="OnSnapshot">
-    <ChildContent>
-        <AuthorizeView Roles="Resident" Context="resident">
-            <Authorized>
-                <div class="cg-callout" role="status" aria-live="polite">@Loc.T("msg.residentOwnOnly")</div>
-            </Authorized>
-        </AuthorizeView>
-        <AuthorizeView Roles="Contractor" Context="contractor">
-            <Authorized>
-                <div class="cg-callout" role="status" aria-live="polite">@Loc.T("msg.contractorLimited")</div>
-            </Authorized>
-        </AuthorizeView>
-        @if (!string.IsNullOrWhiteSpace(_message))
-        {
-            <div class="cg-callout" role="status" aria-live="polite">@_message</div>
-        }
-        <div class="cg-split-sidebar-main">
-            <RiserStackCrossSectionGrid Units="_units" SelectedUnitId="_selectedUnitId" OnSelectUnit="OnSelectUnit" OnBroadcastStackAlert="OnBroadcastStackAlert" />
-            <UnitDossierPanel Unit="_selectedUnit" Community="context.Community" OnChanged="OnReload" />
+    @if (_showWizard && _isManager && _dashboard.Communities.Count > 0)
+    {
+        <UnitCreationWizardModal Communities="_dashboard.Communities"
+                                 Buildings="_dashboard.Buildings"
+                                 ExistingResidents="_residents"
+                                 InitialCommunityId="@(_filterCommunityId != Guid.Empty ? _filterCommunityId : _dashboard.Communities[0].Id)"
+                                 LockCommunity="false"
+                                 OnUnitCreated="OnWizardCreatedAsync"
+                                 OnCancel="() => _showWizard = false" />
+    }
+
+    <div class="cg-card">
+        <div class="cg-section-header">
+            <h2>Portfolio Units Directory (@FilteredUnits.Count of @_dashboard.Units.Count)</h2>
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                <input style="min-width: 240px;"
+                       placeholder="Search unit, COM-..., RES-..., owner, resident..."
+                       @bind="_searchQuery"
+                       @bind:event="oninput" />
+                <select @bind="_filterCommunityId">
+                    <option value="@Guid.Empty">All Communities (@_dashboard.Communities.Count)</option>
+                    @foreach (var c in _dashboard.Communities)
+                    {
+                        <option value="@c.Id" @key="c.Id">@c.Name (@c.CommunityAccountNumber)</option>
+                    }
+                </select>
+                <select @bind="_filterBuildingId">
+                    <option value="@Guid.Empty">All Buildings (@FilteredBuildings.Count)</option>
+                    @foreach (var b in FilteredBuildings)
+                    {
+                        <option value="@b.Id" @key="b.Id">@b.Name</option>
+                    }
+                </select>
+                <select @bind="_filterOccupancy">
+                    <option value="">All Occupancy Statuses</option>
+                    @foreach (var st in Enum.GetValues<UnitOccupancyStatus>())
+                    {
+                        <option value="@st.ToString()" @key="st">@st</option>
+                    }
+                </select>
+                <select @bind="_filterKind">
+                    <option value="">All Unit Types</option>
+                    @foreach (var k in Enum.GetValues<UnitKind>())
+                    {
+                        <option value="@k.ToString()" @key="k">@k</option>
+                    }
+                </select>
+            </div>
         </div>
-    </ChildContent>
-</ScopedCommunityPage>
+
+        <div class="cg-table-wrap">
+            <table class="cg-table">
+                <thead>
+                    <tr>
+                        <th>Community</th>
+                        <th>Unit No.</th>
+                        <th>Building · Floor · Stack</th>
+                        <th>Type &amp; Area</th>
+                        <th class="num">Share</th>
+                        <th>Legal Owner</th>
+                        <th>Active Resident(s)</th>
+                        <th>Occupancy</th>
+                        <th class="num">Balance</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var u in FilteredUnits)
+                    {
+                        var isSelected = _selectedUnitId == u.UnitId;
+                        <tr @key="u.UnitId" style="@(isSelected ? "background: var(--bg-elevated);" : "")">
+                            <td>
+                                <div style="font-weight: 600;">@u.CommunityName</div>
+                                <div class="mono" style="font-size: 0.72rem; color: var(--accent-primary);">@u.CommunityAccountNumber</div>
+                            </td>
+                            <td class="mono"><strong>@u.UnitNumber</strong></td>
+                            <td>
+                                <div>@u.BuildingName · Floor <span class="num">@u.FloorNumber</span> · Stair <span class="num">@u.StairwellNumber</span></div>
+                                <div class="mono" style="font-size: 0.72rem; color: var(--text-secondary);">@u.VerticalStackCode</div>
+                            </td>
+                            <td>
+                                <div><span class="cg-badge">@u.Kind</span> <span class="num">@u.FloorAreaM2.ToString("F1") m²</span></div>
+                                <div style="font-size: 0.72rem; color: var(--text-secondary);"><span class="num">@u.RoomsCount</span> rooms · cap <span class="num">@u.OccupancyCapacity</span></div>
+                            </td>
+                            <td class="num mono">@u.ShareNumerator / @u.ShareDenominator</td>
+                            <td>
+                                <div><strong>@(string.IsNullOrWhiteSpace(u.PrimaryOwnerName) ? "—" : u.PrimaryOwnerName)</strong></div>
+                                <div class="mono" style="font-size: 0.72rem; color: var(--text-secondary);">@u.PrimaryOwnerEmail</div>
+                            </td>
+                            <td>
+                                @if (u.ActiveResidentNames.Count == 0)
+                                {
+                                    <span style="color: var(--text-secondary); font-size: 0.78rem;">No assigned resident</span>
+                                }
+                                else
+                                {
+                                    <div><strong>@string.Join(", ", u.ActiveResidentNames)</strong></div>
+                                    <div class="mono" style="font-size: 0.72rem; color: var(--accent-primary);">@string.Join(", ", u.ActiveResidentAccountNumbers)</div>
+                                }
+                            </td>
+                            <td>
+                                <span class="cg-badge @(u.OccupancyStatus is UnitOccupancyStatus.OwnerOccupied or UnitOccupancyStatus.TenantOccupied ? "cg-badge-ok" : u.OccupancyStatus == UnitOccupancyStatus.PendingRegistration ? "cg-badge-warn" : "")">
+                                    @u.OccupancyStatus
+                                </span>
+                                @if (u.ActiveRegistrationLinksCount > 0)
+                                {
+                                    <span class="cg-badge cg-badge-info" style="margin-left: 0.25rem;">@u.ActiveRegistrationLinksCount link</span>
+                                }
+                            </td>
+                            <td class="num mono" style="color: @(u.CurrentBalance > 0 ? "var(--color-danger)" : "var(--color-success)");">
+                                @u.CurrentBalance.ToString("N2")
+                            </td>
+                            <td>
+                                <div style="display: flex; gap: 0.35rem; flex-wrap: wrap;">
+                                    <button type="button" class="cg-btn cg-btn-sm @(isSelected ? "cg-btn-primary" : "")" @onclick="() => SelectUnitAsync(u.CommunityId, u.UnitId)">
+                                        @(isSelected ? "Dossier Open" : "Open Dossier")
+                                    </button>
+                                    <a class="cg-btn cg-btn-sm" href="@($"/properties/{u.CommunityId}/units/{u.UnitId}")">Property View</a>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    @if (_selectedUnitId.HasValue && _selectedCommunityId.HasValue)
+    {
+        <UnitDossierPanel CommunityId="_selectedCommunityId.Value"
+                          UnitId="_selectedUnitId.Value"
+                          ExistingResidents="_residents"
+                          OnChanged="ReloadSelectedDossierAsync"
+                          OnClose="CloseDossier" />
+    }
+}
 
 @code {
-    private ScopedCommunityPage? _loader;
-    private CommunityWorkspaceSnapshot? _snapshot;
-    private IReadOnlyList<Unit> _units = [];
-    private Guid _selectedUnitId = Guid.Empty;
-    private Unit? _selectedUnit;
+    private GlobalUnitsDashboardSnapshot? _dashboard;
+    private IReadOnlyList<ResidentDirectoryRow> _residents = [];
+    private Guid? _selectedUnitId;
+    private Guid? _selectedCommunityId;
+    private WorkspaceSecurityRole _role = WorkspaceSecurityRole.FirmManager;
+    private bool _isManager;
+    private string _actorName = "Property Manager";
+    private Guid? _membershipId;
+    private Guid? _firmId;
+    private IReadOnlyList<Guid> _allowedCommunityIds = [];
+    private bool _loaded;
+    private bool _showWizard;
     private string _message = string.Empty;
+
+    private string _searchQuery = string.Empty;
+    private Guid _filterCommunityId = Guid.Empty;
+    private Guid _filterBuildingId = Guid.Empty;
+    private string _filterOccupancy = string.Empty;
+    private string _filterKind = string.Empty;
+
     private Action? _locHandler;
+
+    private IReadOnlyList<Building> FilteredBuildings =>
+        _dashboard is null
+            ? []
+            : _filterCommunityId == Guid.Empty
+                ? _dashboard.Buildings
+                : _dashboard.Buildings.Where(b => b.CommunityId == _filterCommunityId).ToList();
+
+    private IReadOnlyList<UnitSummaryRow> FilteredUnits
+    {
+        get
+        {
+            if (_dashboard is null) return [];
+            var q = _dashboard.Units.AsEnumerable();
+            if (_filterCommunityId != Guid.Empty)
+                q = q.Where(u => u.CommunityId == _filterCommunityId);
+            if (_filterBuildingId != Guid.Empty)
+                q = q.Where(u => u.BuildingId == _filterBuildingId);
+            if (!string.IsNullOrWhiteSpace(_filterOccupancy) && Enum.TryParse<UnitOccupancyStatus>(_filterOccupancy, out var occ))
+                q = q.Where(u => u.OccupancyStatus == occ);
+            if (!string.IsNullOrWhiteSpace(_filterKind) && Enum.TryParse<UnitKind>(_filterKind, out var kind))
+                q = q.Where(u => u.Kind == kind);
+            if (!string.IsNullOrWhiteSpace(_searchQuery))
+            {
+                var term = _searchQuery.Trim();
+                q = q.Where(u =>
+                    u.CommunityName.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                    u.CommunityAccountNumber.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                    u.UnitNumber.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                    u.BuildingName.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                    u.VerticalStackCode.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                    u.PrimaryOwnerName.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                    u.PrimaryOwnerEmail.Contains(term, StringComparison.OrdinalIgnoreCase) ||
+                    u.ActiveResidentNames.Any(n => n.Contains(term, StringComparison.OrdinalIgnoreCase)) ||
+                    u.ActiveResidentAccountNumbers.Any(r => r.Contains(term, StringComparison.OrdinalIgnoreCase)));
+            }
+            return q.ToList();
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
         _locHandler = () => InvokeAsync(StateHasChanged);
         Loc.OnChange += _locHandler;
         await Loc.EnsureLoadedAsync();
+        await ReloadAsync();
     }
 
-    private async Task OnSnapshot(CommunityWorkspaceSnapshot snapshot)
+    private async Task ReloadAsync()
     {
-        _snapshot = snapshot;
-        var linked = await Access.GetLinkedUnitAsync();
-        var role = await Access.GetRoleAsync();
-        _units = role == WorkspaceSecurityRole.Resident && !string.IsNullOrWhiteSpace(linked)
-            ? snapshot.Community.Units.Where(u => string.Equals(u.UnitNumber, linked.Trim(), StringComparison.OrdinalIgnoreCase)).ToList()
-            : snapshot.Community.Units;
-        if (_selectedUnitId == Guid.Empty)
+        try
         {
-            var preferred = _units.FirstOrDefault(u => u.FloorNumber > 0) ?? _units.FirstOrDefault();
-            if (preferred is not null)
+            _role = await Access.GetRoleAsync() ?? WorkspaceSecurityRole.FirmManager;
+            _isManager = DataSecurityAndPrivacyGuard.IsManagerRole(_role);
+            _membershipId = await Access.GetActiveMembershipIdAsync();
+            var account = await Access.GetAccountAsync();
+            if (!string.IsNullOrWhiteSpace(account?.FullName))
+                _actorName = account.FullName;
+
+            var allowedComms = await Access.GetAllowedCommunitiesAsync();
+            _allowedCommunityIds = allowedComms.Select(c => c.Id).ToList();
+            _firmId = await Access.GetFirmIdAsync() ?? allowedComms.FirstOrDefault()?.ManagementFirmId;
+
+            if (_firmId.HasValue && _firmId.Value != Guid.Empty)
             {
-                _selectedUnitId = preferred.Id;
-                _selectedUnit = preferred;
+                _dashboard = await Workspace.GetGlobalUnitsDashboardAsync(_firmId.Value, _allowedCommunityIds);
+                _residents = await Workspace.GetFirmResidentsDirectoryAsync(_firmId.Value, _allowedCommunityIds);
             }
         }
-        else
+        catch (Exception ex)
         {
-            _selectedUnit = _units.FirstOrDefault(u => u.Id == _selectedUnitId);
+            _message = ex.Message;
+        }
+        finally
+        {
+            _loaded = true;
         }
     }
 
-    private Task OnSelectUnit(Guid id)
+    private Task SelectUnitAsync(Guid communityId, Guid unitId)
     {
-        _selectedUnitId = id;
-        _selectedUnit = _units.FirstOrDefault(u => u.Id == id);
+        _selectedCommunityId = communityId;
+        _selectedUnitId = unitId;
         return Task.CompletedTask;
     }
 
-    private async Task OnBroadcastStackAlert(string stack)
+    private void CloseDossier()
     {
-        if (_snapshot is null) return;
-        var action = await Workspace.TriggerOneClickSosBroadcastAsync(_snapshot.Community.Id, stack);
-        _message = $"{action.Title}. {action.Rationale}";
+        _selectedUnitId = null;
+        _selectedCommunityId = null;
     }
 
-    private async Task OnReload()
+    private async Task ReloadSelectedDossierAsync()
     {
-        if (_loader is not null) await _loader.ReloadAsync();
+        await ReloadAsync();
+    }
+
+    private async Task OnWizardCreatedAsync(UnitCreationWizardResult result)
+    {
+        _showWizard = false;
+        _selectedCommunityId = result.Unit.CommunityId;
+        _selectedUnitId = result.Unit.Id;
+        _message = $"Unit {result.Unit.UnitNumber} created in {result.Building.Name}."
+            + (result.Resident is not null ? $" Assigned Resident {result.Resident.FullName} ({result.Resident.ResidentAccountNumber})." : string.Empty)
+            + (!string.IsNullOrWhiteSpace(result.GeneratedRegistrationTokenPlaintext) ? $" Registration link: /register-resident/{result.GeneratedRegistrationTokenPlaintext}" : string.Empty);
+        await ReloadAsync();
     }
 
     public void Dispose()

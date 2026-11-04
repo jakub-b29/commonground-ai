@@ -1,37 +1,17 @@
 @page "/utilities/outages"
 @attribute [Authorize(Policy = "WorkspaceMember")]
-@using CommonGround.Web.Components.Shared.Overview
-@inject WorkspaceLocalization Loc
-@implements IDisposable
+@inject NavigationManager Nav
+@inject WorkspaceAccessService Access
 
-<PageTitle>@Loc.T("panel.outages") - CommonGround</PageTitle>
+<PageTitle>Moved - CommonGround</PageTitle>
 
-<div class="cg-page-header">
-    <div>
-        <h1>@Loc.T("panel.outages")</h1>
-        <p class="cg-page-lead">@Loc.T("page.utilitiesOutagesLead")</p>
-    </div>
-    <a class="cg-btn" href="/utilities/sources">@Loc.T("panel.utilitySources")</a>
-</div>
-
-<ScopedCommunityPage>
-    <ChildContent>
-        <OutageWeatherAndWastePanel Snapshot="context" />
-    </ChildContent>
-</ScopedCommunityPage>
+<p role="status" aria-live="polite">Utility outages have moved to the property workspace. Redirecting.</p>
 
 @code {
-    private Action? _locHandler;
-
     protected override async Task OnInitializedAsync()
     {
-        _locHandler = () => InvokeAsync(StateHasChanged);
-        Loc.OnChange += _locHandler;
-        await Loc.EnsureLoadedAsync();
-    }
-
-    public void Dispose()
-    {
-        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+        var communities = await Access.GetAllowedCommunitiesAsync();
+        var first = communities.FirstOrDefault();
+        Nav.NavigateTo(first is null ? "/admin" : $"/properties/{first.Id}/overview", forceLoad: false);
     }
 }

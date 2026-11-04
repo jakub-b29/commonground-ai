@@ -1,0 +1,124 @@
+@inject WorkspaceUiState UiState
+@inject WorkspaceAccessService Access
+@implements IDisposable
+
+@if (_memberships.Count > 1)
+{
+    <div class="cg-topbar-field">
+        <label for="firm-select">Firm</label>
+        <select id="firm-select" value="@UiState.ActiveMembershipId" @onchange="OnMembershipChanged" disabled="@_isBusy">
+            @foreach (var membership in _memberships)
+            {
+                <option value="@membership.FirmMembershipId" selected="@(UiState.ActiveMembershipId == membership.FirmMembershipId)" @key="membership.FirmMembershipId">@membership.FirmName · @membership.Role</option>
+            }
+        </select>
+    </div>
+}
+else if (!string.IsNullOrWhiteSpace(_firmName))
+{
+    <span class="cg-badge" title="@_firmName">@_firmName</span>
+}
+
+@code {
+    private Action? _stateHandler;
+    private List<MembershipOption> _memberships = new();
+    private string _firmName = string.Empty;
+    private bool _isBusy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _stateHandler = () => InvokeAsync(ReloadAsync);
+        UiState.OnChange += _stateHandler;
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        try
+        {
+            var approved = (await Access.GetApprovedMembershipsAsync()).ToList();
+            var options = new List<MembershipOption>();
+            string? activeFirmName = null;
+            try
+            {
+                var activeFirm = await Access.GetFirmAsync();
+                if (activeFirm is not null)
+                {
+                    activeFirmName = activeFirm.Name;
+                }
+            }
+            catch
+            {
+            }
+
+            foreach (var membership in approved)
+            {
+                var firmName = membership.ManagementFirmId.ToString();
+                if (activeFirmName is not null && UiState.ActiveMembershipId == membership.Id)
+                {
+                    firmName = activeFirmName;
+                }
+
+                options.Add(new MembershipOption(membership.Id, membership.ManagementFirmId, firmName, membership.Role));
+            }
+
+            _memberships = options;
+            if (options.Count == 1)
+            {
+                _firmName = options[0].FirmName;
+            }
+            else if (options.Count == 0)
+            {
+                _firmName = string.Empty;
+            }
+        }
+        catch
+        {
+            _memberships = new List<MembershipOption>();
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task OnMembershipChanged(ChangeEventArgs e)
+    {
+        if (_isBusy)
+        {
+            return;
+        }
+
+        if (Guid.TryParse(e.Value?.ToString(), out var membershipId))
+        {
+            var option = _memberships.FirstOrDefault(m => m.FirmMembershipId == membershipId);
+            if (option is not null)
+            {
+                _isBusy = true;
+                try
+                {
+                    UiState.SwitchActiveMembership(membershipId, null);
+                    UiState.ClearCommunitySelection();
+                    var allowed = await Access.GetAllowedCommunitiesAsync();
+                    var first = allowed.FirstOrDefault();
+                    if (first is not null)
+                    {
+                        UiState.SelectCommunity(first.Id, first.OperatingMode == SystemOperatingMode.UsHoa ? "US HOA & Condo Mode" : "Housing Association Mode");
+                    }
+                }
+                finally
+                {
+                    _isBusy = false;
+                }
+            }
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_stateHandler is not null)
+        {
+            UiState.OnChange -= _stateHandler;
+        }
+    }
+
+    private sealed record MembershipOption(Guid FirmMembershipId, Guid ManagementFirmId, string FirmName, WorkspaceSecurityRole Role);
+}

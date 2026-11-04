@@ -99,6 +99,7 @@ public sealed partial class CommonGroundWorkspaceService
         string clubhouseOrOfficeAddress = "",
         string hoaBoardEmail = "",
         string hoaHotlinePhone = "",
+        bool requireEmailConfirmation = false,
         CancellationToken ct = default)
     {
         var scan = DataSecurityAndPrivacyGuard.InspectAndSanitizeUntrustedInput($"{firmName} {managerFullName} {managerEmail} {officeAddress}");
@@ -132,12 +133,20 @@ public sealed partial class CommonGroundWorkspaceService
             HoaHotlinePhone = hoaHotlinePhone.Trim()
         };
         db.ManagementFirms.Add(firm);
+        firm.RequireEmailConfirmation = requireEmailConfirmation;
+        firm.IsEmailConfirmed = !requireEmailConfirmation;
+        firm.AcceptedAtUtc = requireEmailConfirmation ? null : DateTime.UtcNow;
+        if (requireEmailConfirmation)
+        {
+            var etok = NewInvitationToken();
+            firm.EmailConfirmationTokenHash = HashInvitationToken(etok);
+        }
 
         
 
         var manager = new WorkspaceUserAccount
         {
-            CommunityId = System.Guid.Empty,
+            CommunityId = null,
             ManagementFirmId = firm.Id,
             FirmGroupCode = firm.FirmGroupCode,
             FullName = managerFullName.Trim(),
@@ -147,6 +156,10 @@ public sealed partial class CommonGroundWorkspaceService
             ProviderSubjectId = $"{provider.ToString().ToLowerInvariant()}-{Guid.NewGuid():N}",
             PasswordSaltAndHash = DataSecurityAndPrivacyGuard.HashPasswordPbkdf2(password),
             Role = WorkspaceSecurityRole.FirmManager,
+            AccountKind = WorkspaceAccountKind.FirmAccount,
+            EmailConfirmed = !requireEmailConfirmation,
+            EmailConfirmationTokenHash = firm.EmailConfirmationTokenHash,
+            AcceptedAtUtc = requireEmailConfirmation ? null : DateTime.UtcNow,
             AllowedCommunityIdsCsv = string.Empty,
             GrantedByPropertyManager = true
         };
@@ -181,6 +194,115 @@ public sealed partial class CommonGroundWorkspaceService
         firm.ManagerMessages.Add(welcome);
         defaultGroup.Messages.Add(welcome);
 
+        await db.SaveChangesAsync(ct);
+        var membership = new WorkspaceAccountMembership
+        {
+            UserAccountId = manager.Id,
+            ManagementFirmId = firm.Id,
+            Role = WorkspaceSecurityRole.FirmManager,
+            ApprovalStatus = requireEmailConfirmation ? WorkspaceMembershipStatus.PendingEmailConfirmation : WorkspaceMembershipStatus.Approved,
+            GrantedPermissions = WorkspacePermissionPresets.DefaultForRole(WorkspaceSecurityRole.FirmManager),
+            AllowedCommunityIdsCsv = string.Empty,
+            DecidedAtUtc = requireEmailConfirmation ? null : DateTime.UtcNow
+        };
+        db.AccountMemberships.Add(membership);
+        await db.SaveChangesAsync(ct);
+        return firm;
+    }
+
+    public sealed record FirmEmailConfirmationPreview(
+        Guid FirmId,
+        string FirmName,
+        string FirmGroupCode,
+        string ManagerEmail,
+        bool RequireEmailConfirmation,
+        bool IsEmailConfirmed,
+        DateTime? AcceptedAtUtc);
+
+    public async Task<FirmEmailConfirmationPreview?> GetFirmEmailConfirmationPreviewAsync(Guid firmId, CancellationToken ct = default)
+    {
+        await using var db = await CreateDbAsync(ct);
+        var firm = await db.ManagementFirms.AsNoTracking().FirstOrDefaultAsync(f => f.Id == firmId, ct);
+        if (firm is null) return null;
+        var manager = await db.UserAccounts.AsNoTracking()
+            .Where(u => u.ManagementFirmId == firmId && u.Role == WorkspaceSecurityRole.FirmManager)
+            .OrderBy(u => u.FullName)
+            .FirstOrDefaultAsync(ct);
+        return new FirmEmailConfirmationPreview(
+            firm.Id,
+            firm.Name,
+            firm.FirmGroupCode,
+            manager?.Email ?? string.Empty,
+            firm.RequireEmailConfirmation,
+            firm.IsEmailConfirmed,
+            firm.AcceptedAtUtc);
+    }
+
+    public async Task<ManagementFirm> ConfirmFirmEmailAsync(string token, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(token))
+            throw new InvalidOperationException("Confirmation token is required.");
+        var trimmed = token.Trim();
+        var hash = HashInvitationToken(trimmed);
+        await using var db = await CreateDbAsync(ct);
+        var firm = await db.ManagementFirms.FirstOrDefaultAsync(f => f.EmailConfirmationTokenHash == hash, ct)
+            ?? throw new InvalidOperationException("Confirmation token is invalid.");
+        firm.IsEmailConfirmed = true;
+        firm.AcceptedAtUtc ??= DateTime.UtcNow;
+        firm.EmailConfirmationTokenHash = null;
+        var managers = await db.UserAccounts
+            .Where(u => u.ManagementFirmId == firm.Id && u.Role == WorkspaceSecurityRole.FirmManager)
+            .ToListAsync(ct);
+        foreach (var account in managers)
+        {
+            if (account.EmailConfirmationTokenHash is not null
+                && !string.Equals(account.EmailConfirmationTokenHash, hash, StringComparison.Ordinal))
+                continue;
+            account.EmailConfirmed = true;
+            account.AcceptedAtUtc ??= DateTime.UtcNow;
+            account.EmailConfirmationTokenHash = null;
+        }
+        var pendingMemberships = await db.AccountMemberships
+            .Where(m => m.ManagementFirmId == firm.Id && m.ApprovalStatus == WorkspaceMembershipStatus.PendingEmailConfirmation)
+            .ToListAsync(ct);
+        foreach (var pending in pendingMemberships)
+        {
+            pending.ApprovalStatus = WorkspaceMembershipStatus.Approved;
+            pending.DecidedAtUtc ??= DateTime.UtcNow;
+        }
+        await db.SaveChangesAsync(ct);
+        return firm;
+    }
+
+    public async Task<ManagementFirm> SetFirmEmailConfirmationPolicyAsync(Guid firmId, bool enabled, WorkspaceSecurityRole actorRole, CancellationToken ct = default)
+    {
+        if (actorRole != WorkspaceSecurityRole.FirmManager)
+            throw new UnauthorizedAccessException("Only a firm manager may change the email confirmation policy.");
+        await using var db = await CreateDbAsync(ct);
+        var firm = await db.ManagementFirms.FirstOrDefaultAsync(f => f.Id == firmId, ct)
+            ?? throw new InvalidOperationException("Firm not found.");
+        firm.RequireEmailConfirmation = enabled;
+        if (!enabled)
+        {
+            firm.IsEmailConfirmed = true;
+            firm.AcceptedAtUtc ??= DateTime.UtcNow;
+            firm.EmailConfirmationTokenHash = null;
+            var accounts = await db.UserAccounts.Where(u => u.ManagementFirmId == firmId).ToListAsync(ct);
+            foreach (var account in accounts)
+            {
+                account.EmailConfirmed = true;
+                account.AcceptedAtUtc ??= DateTime.UtcNow;
+                account.EmailConfirmationTokenHash = null;
+            }
+            var pending = await db.AccountMemberships
+                .Where(m => m.ManagementFirmId == firmId && m.ApprovalStatus == WorkspaceMembershipStatus.PendingEmailConfirmation)
+                .ToListAsync(ct);
+            foreach (var entry in pending)
+            {
+                entry.ApprovalStatus = WorkspaceMembershipStatus.Approved;
+                entry.DecidedAtUtc ??= DateTime.UtcNow;
+            }
+        }
         await db.SaveChangesAsync(ct);
         return firm;
     }
@@ -246,19 +368,71 @@ public sealed partial class CommonGroundWorkspaceService
             ?? throw new InvalidOperationException("Firm not found.");
         var scan = DataSecurityAndPrivacyGuard.InspectAndSanitizeUntrustedInput($"{propertyName} {streetAddress} {city}");
         if (scan.IsInjectionDetected) throw new InvalidOperationException("Property creation blocked by security guard.");
+        var defaultManager = await db.UserAccounts
+            .Where(u => u.ManagementFirmId == firm.Id && u.Role == WorkspaceSecurityRole.FirmManager)
+            .OrderBy(u => u.Email)
+            .FirstOrDefaultAsync(ct);
+        var existingNumbers = await db.Communities.AsNoTracking().Select(c => c.CommunityAccountNumber).ToListAsync(ct);
         var community = new Community
         {
+            CommunityAccountNumber = AccountNumberGenerator.NextCommunityAccountNumber(existingNumbers),
             ManagementFirmId = firm.Id,
             FirmGroupCode = firm.FirmGroupCode,
             Name = propertyName.Trim(),
             StreetAddress = streetAddress.Trim(),
             City = city.Trim(),
             OperatingMode = operatingMode,
-            TaxIdOrEin = taxIdOrEin.Trim()
+            TaxIdOrEin = taxIdOrEin.Trim(),
+            AssignedPropertyManagerId = defaultManager?.Id,
+            AssignedPropertyManagerName = defaultManager?.FullName ?? string.Empty,
+            AssignedPropertyManagerEmail = defaultManager?.Email ?? string.Empty,
+            AssignedPropertyManagerPhone = defaultManager?.Phone ?? string.Empty,
+            AdministrativeEmail = defaultManager?.Email ?? firm.SupportEmail,
+            AdministrativePhone = defaultManager?.Phone ?? firm.EmergencyDispatchPhone
         };
         db.Communities.Add(community);
+        var defaultBuilding = new Building
+        {
+            CommunityId = community.Id,
+            Name = "Building A",
+            StreetAddress = community.StreetAddress,
+            FloorsCount = 4,
+            StairwellsCount = 2
+        };
+        community.Buildings.Add(defaultBuilding);
+        db.Buildings.Add(defaultBuilding);
+        foreach (var stackCode in new[] { "STACK-A1", "STACK-A2", "STACK-B1" })
+        {
+            var stack = new VerticalRiserStack
+            {
+                BuildingId = defaultBuilding.Id,
+                Code = stackCode,
+                Description = stackCode.Contains('B') ? "Heating riser" : "Cold water riser",
+                ShutoffValveLocation = "Basement manifold"
+            };
+            defaultBuilding.RiserStacks.Add(stack);
+            db.RiserStacks.Add(stack);
+        }
         await db.SaveChangesAsync(ct);
         return community;
+    }
+
+    public async Task<IReadOnlyList<WorkspaceUserAccount>> GetFirmPropertyManagerCandidatesAsync(Guid firmId, CancellationToken ct = default)
+    {
+        await using var db = await CreateDbAsync(ct);
+        return await db.UserAccounts.AsNoTracking()
+            .Where(u => u.ManagementFirmId == firmId && (u.Role == WorkspaceSecurityRole.PropertyManager || u.Role == WorkspaceSecurityRole.FirmManager))
+            .OrderBy(u => u.FullName)
+            .ToListAsync(ct);
+    }
+
+    public async Task<WorkspaceUserAccount?> GetFirmDefaultManagerAsync(Guid firmId, CancellationToken ct = default)
+    {
+        await using var db = await CreateDbAsync(ct);
+        return await db.UserAccounts.AsNoTracking()
+            .Where(u => u.ManagementFirmId == firmId && u.Role == WorkspaceSecurityRole.FirmManager)
+            .OrderBy(u => u.Email)
+            .FirstOrDefaultAsync(ct);
     }
 
     public async Task<Community> UpdatePropertySettingsAsync(
@@ -368,6 +542,9 @@ public sealed partial class CommonGroundWorkspaceService
         string? contractorCompanyOrTrade,
         string issuedByName,
         WorkspaceSecurityRole actorRole,
+        IReadOnlyList<Guid>? targetCommunityIds = null,
+        WorkspacePermissionFlags grantedPermissions = (WorkspacePermissionFlags)0,
+        bool requiresManagerApproval = true,
         CancellationToken ct = default)
     {
         var canInvite = actorRole == WorkspaceSecurityRole.FirmManager
@@ -396,6 +573,13 @@ public sealed partial class CommonGroundWorkspaceService
         var scan = DataSecurityAndPrivacyGuard.InspectAndSanitizeUntrustedInput($"{recipientEmail} {recipientName} {contractorCompanyOrTrade}");
         if (scan.IsInjectionDetected) throw new InvalidOperationException("Invitation blocked by security guard.");
         var token = NewInvitationToken();
+        var communityIds = targetCommunityIds ?? (targetCommunityId.HasValue ? new[] { targetCommunityId.Value } : Array.Empty<Guid>());
+        var preAssigned = grantedPermissions == (WorkspacePermissionFlags)0
+            ? WorkspacePermissionPresets.DefaultForRole(targetRole)
+            : grantedPermissions;
+        Guid? compatTargetCommunityId = target?.Id ?? (communityIds.Count > 0 ? communityIds[0] : null);
+        if (compatTargetCommunityId == Guid.Empty)
+            compatTargetCommunityId = null;
         var invitation = new WorkspaceInvitation
         {
             ManagementFirmId = firm.Id,
@@ -407,8 +591,11 @@ public sealed partial class CommonGroundWorkspaceService
             RecipientPhone = (recipientPhone ?? string.Empty).Trim(),
             TargetRole = targetRole,
             AssignmentMode = assignmentMode,
-            TargetCommunityId = target?.Id,
+            TargetCommunityId = compatTargetCommunityId,
             TargetCommunityName = target?.Name ?? string.Empty,
+            TargetCommunityIdsCsv = string.Join(",", communityIds),
+            PreAssignedPermissions = preAssigned,
+            RequiresManagerApproval = requiresManagerApproval,
             TargetUnitNumber = targetUnitNumber?.Trim(),
             ContractorCompanyOrTrade = contractorCompanyOrTrade?.Trim(),
             IssuedByManagerName = issuedByName.Trim(),
@@ -524,6 +711,54 @@ public sealed partial class CommonGroundWorkspaceService
         var scan = DataSecurityAndPrivacyGuard.InspectAndSanitizeUntrustedInput($"{fullName} {email} {phone}");
         if (scan.IsInjectionDetected) throw new InvalidOperationException("Registration blocked by security guard.");
 
+        var resolvedEmail = string.IsNullOrWhiteSpace(email) ? invitation.RecipientEmail : email.Trim();
+        var normalized = resolvedEmail.Trim().ToLowerInvariant();
+        var existing = await db.UserAccounts.FirstOrDefaultAsync(u => u.Email.ToLower() == normalized, ct);
+        var allowedCsv = !string.IsNullOrWhiteSpace(invitation.TargetCommunityIdsCsv)
+            ? invitation.TargetCommunityIdsCsv
+            : target.Id.ToString();
+        var perms = invitation.PreAssignedPermissions != (WorkspacePermissionFlags)0
+            ? invitation.PreAssignedPermissions
+            : WorkspacePermissionPresets.DefaultForRole(invitation.TargetRole);
+        var membershipStatus = invitation.RequiresManagerApproval
+            ? WorkspaceMembershipStatus.PendingApproval
+            : WorkspaceMembershipStatus.Approved;
+        var membershipDecidedAt = invitation.RequiresManagerApproval
+            ? (DateTime?)null
+            : DateTime.UtcNow;
+        var linkedUnits = unitNumber?.Trim() ?? invitation.TargetUnitNumber?.Trim() ?? string.Empty;
+
+        if (existing is not null)
+        {
+            var verified = DataSecurityAndPrivacyGuard.VerifyPasswordPbkdf2(password, existing.PasswordSaltAndHash);
+            if (!verified)
+                throw new InvalidOperationException("Password does not match the existing account.");
+            var existingMembership = new WorkspaceAccountMembership
+            {
+                UserAccountId = existing.Id,
+                ManagementFirmId = firm.Id,
+                Role = invitation.TargetRole,
+                ApprovalStatus = membershipStatus,
+                GrantedPermissions = perms,
+                AllowedCommunityIdsCsv = allowedCsv,
+                LinkedUnitNumbersCsv = linkedUnits,
+                ContractorCompanyOrTrade = invitation.ContractorCompanyOrTrade,
+                DecidedAtUtc = membershipDecidedAt
+            };
+            db.AccountMemberships.Add(existingMembership);
+            if (invitation.TargetRole == WorkspaceSecurityRole.PropertyManager)
+            {
+                target.AssignedPropertyManagerId = existing.Id;
+                target.AssignedPropertyManagerName = existing.FullName;
+                target.AssignedPropertyManagerEmail = existing.Email;
+                target.AssignedPropertyManagerPhone = existing.Phone;
+            }
+            invitation.Status = WorkspaceInvitationStatus.Accepted;
+            invitation.AcceptedAtUtc = DateTime.UtcNow;
+            await db.SaveChangesAsync(ct);
+            return existing;
+        }
+
         var isContractor = invitation.TargetRole == WorkspaceSecurityRole.Contractor;
         var isManager = invitation.TargetRole == WorkspaceSecurityRole.PropertyManager;
         var account = new WorkspaceUserAccount
@@ -532,10 +767,10 @@ public sealed partial class CommonGroundWorkspaceService
             ManagementFirmId = firm.Id,
             FirmGroupCode = firm.FirmGroupCode,
             FullName = string.IsNullOrWhiteSpace(fullName) ? invitation.RecipientName : fullName.Trim(),
-            Email = string.IsNullOrWhiteSpace(email) ? invitation.RecipientEmail : email.Trim(),
+            Email = resolvedEmail,
             Phone = string.IsNullOrWhiteSpace(phone) ? invitation.RecipientPhone : phone.Trim(),
             Provider = provider,
-            ProviderSubjectId = $"{provider.ToString().ToLowerInvariant()}-{Guid.NewGuid():N}",
+            ProviderSubjectId = string.Concat(provider.ToString().ToLowerInvariant(), "-", Guid.NewGuid().ToString("N", System.Globalization.CultureInfo.InvariantCulture)),
             PasswordSaltAndHash = DataSecurityAndPrivacyGuard.HashPasswordPbkdf2(password),
             Role = invitation.TargetRole,
             LinkedUnitNumber = isContractor || isManager ? null : (unitNumber?.Trim() ?? invitation.TargetUnitNumber?.Trim()),
@@ -547,7 +782,10 @@ public sealed partial class CommonGroundWorkspaceService
                 ? string.Join(",", firm.Communities.Select(c => c.Id).Concat(new[] { target.Id }).Distinct())
                 : target.Id.ToString(),
             IsBlankRegisteredPendingAssignment = invitation.AssignmentMode == InvitationAssignmentMode.BlankManualAssign,
-            GrantedByPropertyManager = true
+            GrantedByPropertyManager = true,
+            AccountKind = WorkspaceAccountKind.RegularAccount,
+            EmailConfirmed = true,
+            AcceptedAtUtc = DateTime.UtcNow
         };
         db.UserAccounts.Add(account);
         target.UserAccounts.Add(account);
@@ -560,10 +798,47 @@ public sealed partial class CommonGroundWorkspaceService
             target.AssignedPropertyManagerPhone = account.Phone;
         }
 
+        var membership = new WorkspaceAccountMembership
+        {
+            UserAccountId = account.Id,
+            ManagementFirmId = firm.Id,
+            Role = invitation.TargetRole,
+            ApprovalStatus = membershipStatus,
+            GrantedPermissions = perms,
+            AllowedCommunityIdsCsv = allowedCsv,
+            LinkedUnitNumbersCsv = linkedUnits,
+            ContractorCompanyOrTrade = invitation.ContractorCompanyOrTrade,
+            DecidedAtUtc = membershipDecidedAt
+        };
+        db.AccountMemberships.Add(membership);
+
         invitation.Status = WorkspaceInvitationStatus.Accepted;
         invitation.AcceptedAtUtc = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
         return account;
+    }
+
+    public async Task<WorkspaceUserAccount?> AuthenticateUserByEmailAsync(
+        string email,
+        string? passwordOrProviderToken,
+        IdentityProvider provider = IdentityProvider.EmailPassword,
+        CancellationToken ct = default)
+    {
+        if (provider != IdentityProvider.EmailPassword)
+            throw new InvalidOperationException("Social sign-in is not configured. Use email and password.");
+        if (string.IsNullOrWhiteSpace(email))
+            return null;
+        await using var db = await CreateDbAsync(ct);
+        var normalized = email.Trim().ToLowerInvariant();
+        var user = await db.UserAccounts.FirstOrDefaultAsync(u => u.Email.ToLower() == normalized, ct);
+        if (user is null)
+            return null;
+        var success = passwordOrProviderToken is not null && DataSecurityAndPrivacyGuard.VerifyPasswordPbkdf2(passwordOrProviderToken, user.PasswordSaltAndHash);
+        if (!success)
+            return null;
+        user.LastLoginAtUtc = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+        return user;
     }
 
     public async Task<WorkspaceUserAccount?> AuthenticateUserWithFirmCodeAsync(
@@ -587,8 +862,12 @@ public sealed partial class CommonGroundWorkspaceService
         if (user is null) return null;
         if (!string.Equals(NormalizeFirmGroupCode(user.FirmGroupCode), code, StringComparison.Ordinal))
         {
-            var community = await db.Communities.FirstOrDefaultAsync(c => c.Id == user.CommunityId, ct);
-            var communityCode = community is null ? string.Empty : NormalizeFirmGroupCode(community.FirmGroupCode);
+            var communityCode = string.Empty;
+            if (user.CommunityId.HasValue)
+            {
+                var community = await db.Communities.FirstOrDefaultAsync(c => c.Id == user.CommunityId.Value, ct);
+                communityCode = community is null ? string.Empty : NormalizeFirmGroupCode(community.FirmGroupCode);
+            }
             if (!string.Equals(communityCode, code, StringComparison.Ordinal))
                 throw new InvalidOperationException("Firm group code does not match this account. Signing always requires the correct firm group code.");
         }
@@ -627,7 +906,7 @@ public sealed partial class CommonGroundWorkspaceService
                 .ToList();
             if (parsed.Count > 0) return parsed;
         }
-        return account.CommunityId == Guid.Empty ? [] : [account.CommunityId];
+        return account.CommunityId.HasValue && account.CommunityId.Value != Guid.Empty ? [account.CommunityId.Value] : [];
     }
 
     public async Task<FirmManagerGroup> CreateFirmManagerGroupAsync(Guid firmId, string name, string topic, WorkspaceSecurityRole actorRole, CancellationToken ct = default)
@@ -769,5 +1048,137 @@ public sealed partial class CommonGroundWorkspaceService
             user.LinkedUnitNumber = linkedUnitNumber.Trim();
         await db.SaveChangesAsync(ct);
         return user;
+    }
+
+    public async Task<WorkspaceAccountMembership> RequestJoinFirmWithCodeAsync(
+        string firmGroupCode,
+        string fullName,
+        string email,
+        string phone,
+        string password,
+        IdentityProvider provider,
+        string? unitNumber = null,
+        string? contractorCompanyOrTrade = null,
+        IReadOnlyList<Guid>? targetCommunityIds = null,
+        WorkspaceSecurityRole role = WorkspaceSecurityRole.Resident,
+        CancellationToken ct = default)
+    {
+        if (provider != IdentityProvider.EmailPassword)
+            throw new InvalidOperationException("Social sign-in is not configured. Use email and password.");
+        var code = NormalizeFirmGroupCode(firmGroupCode);
+        if (string.IsNullOrWhiteSpace(code))
+            throw new InvalidOperationException("Firm group code is required.");
+        var scan = DataSecurityAndPrivacyGuard.InspectAndSanitizeUntrustedInput($"{fullName} {email} {phone} {contractorCompanyOrTrade}");
+        if (scan.IsInjectionDetected) throw new InvalidOperationException("Registration blocked by security guard.");
+        await using var db = await CreateDbAsync(ct);
+        var firm = await db.ManagementFirms.Include(f => f.Communities).FirstOrDefaultAsync(f => f.FirmGroupCode.ToUpper() == code, ct)
+            ?? throw new InvalidOperationException("Firm group code is invalid.");
+        var normalized = (email ?? string.Empty).Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(normalized))
+            throw new InvalidOperationException("Email is required.");
+        var existing = await db.UserAccounts.FirstOrDefaultAsync(u => u.Email.ToLower() == normalized, ct);
+        WorkspaceUserAccount account;
+        if (existing is not null)
+        {
+            var verified = DataSecurityAndPrivacyGuard.VerifyPasswordPbkdf2(password ?? string.Empty, existing.PasswordSaltAndHash);
+            if (!verified)
+                throw new InvalidOperationException("Password does not match the existing account.");
+            account = existing;
+        }
+        else
+        {
+            var firstTarget = targetCommunityIds is not null && targetCommunityIds.Count > 0
+                ? targetCommunityIds[0]
+                : (Guid?)null;
+            if (firstTarget == Guid.Empty)
+                firstTarget = null;
+            var fallback = firm.Communities.OrderBy(c => c.Name).FirstOrDefault()
+                ?? await db.Communities.Where(c => c.ManagementFirmId == firm.Id).OrderBy(c => c.Name).FirstOrDefaultAsync(ct);
+            account = new WorkspaceUserAccount
+            {
+                CommunityId = firstTarget ?? fallback?.Id,
+                ManagementFirmId = firm.Id,
+                FirmGroupCode = firm.FirmGroupCode,
+                FullName = (fullName ?? string.Empty).Trim(),
+                Email = (email ?? string.Empty).Trim(),
+                Phone = (phone ?? string.Empty).Trim(),
+                Provider = provider,
+                ProviderSubjectId = string.Concat(provider.ToString().ToLowerInvariant(), "-", Guid.NewGuid().ToString("N", System.Globalization.CultureInfo.InvariantCulture)),
+                PasswordSaltAndHash = DataSecurityAndPrivacyGuard.HashPasswordPbkdf2(password ?? string.Empty),
+                Role = role,
+                AccountKind = WorkspaceAccountKind.RegularAccount,
+                EmailConfirmed = true,
+                AcceptedAtUtc = DateTime.UtcNow,
+                GrantedByPropertyManager = false
+            };
+            db.UserAccounts.Add(account);
+        }
+        var allowedCsv = targetCommunityIds is not null && targetCommunityIds.Count > 0
+            ? string.Join(",", targetCommunityIds)
+            : string.Empty;
+        var membership = new WorkspaceAccountMembership
+        {
+            UserAccountId = account.Id,
+            ManagementFirmId = firm.Id,
+            Role = role,
+            ApprovalStatus = WorkspaceMembershipStatus.PendingApproval,
+            GrantedPermissions = WorkspacePermissionPresets.DefaultForRole(role),
+            AllowedCommunityIdsCsv = allowedCsv,
+            LinkedUnitNumbersCsv = (unitNumber ?? string.Empty).Trim(),
+            ContractorCompanyOrTrade = contractorCompanyOrTrade?.Trim()
+        };
+        db.AccountMemberships.Add(membership);
+        await db.SaveChangesAsync(ct);
+        return membership;
+    }
+
+    public async Task<WorkspaceAccountMembership> ApproveOrUpdateMembershipAsync(
+        Guid membershipId,
+        bool approve,
+        WorkspacePermissionFlags grantedPermissions,
+        IReadOnlyList<Guid>? allowedCommunityIds,
+        string? linkedUnitNumbersCsv,
+        string? contractorCompanyOrTrade,
+        WorkspaceSecurityRole actorRole,
+        CancellationToken ct = default)
+    {
+        if (actorRole != WorkspaceSecurityRole.FirmManager && actorRole != WorkspaceSecurityRole.PropertyManager)
+            throw new UnauthorizedAccessException("Only a Firm Manager or Property Manager may approve memberships.");
+        await using var db = await CreateDbAsync(ct);
+        var membership = await db.AccountMemberships.FirstOrDefaultAsync(m => m.Id == membershipId, ct)
+            ?? throw new InvalidOperationException("Membership not found.");
+        if (actorRole == WorkspaceSecurityRole.PropertyManager
+            && (membership.Role == WorkspaceSecurityRole.PropertyManager || membership.Role == WorkspaceSecurityRole.FirmManager))
+            throw new UnauthorizedAccessException("Property Managers may only approve Resident and Contractor memberships.");
+        membership.ApprovalStatus = approve ? WorkspaceMembershipStatus.Approved : WorkspaceMembershipStatus.Rejected;
+        if (grantedPermissions != (WorkspacePermissionFlags)0)
+            membership.GrantedPermissions = grantedPermissions;
+        if (allowedCommunityIds is not null)
+            membership.AllowedCommunityIdsCsv = string.Join(",", allowedCommunityIds);
+        if (linkedUnitNumbersCsv is not null)
+            membership.LinkedUnitNumbersCsv = linkedUnitNumbersCsv;
+        if (contractorCompanyOrTrade is not null)
+            membership.ContractorCompanyOrTrade = contractorCompanyOrTrade;
+        membership.DecidedAtUtc = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+        return membership;
+    }
+
+    public async Task<IReadOnlyList<WorkspaceAccountMembership>> GetFirmMembershipQueueAsync(Guid firmId, CancellationToken ct = default)
+    {
+        await using var db = await CreateDbAsync(ct);
+        return await db.AccountMemberships.AsNoTracking()
+            .Where(m => m.ManagementFirmId == firmId && m.ApprovalStatus == WorkspaceMembershipStatus.PendingApproval)
+            .OrderBy(m => m.CreatedAtUtc)
+            .ToListAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<WorkspaceAccountMembership>> GetUserMembershipsAsync(Guid userAccountId, CancellationToken ct = default)
+    {
+        await using var db = await CreateDbAsync(ct);
+        return await db.AccountMemberships.AsNoTracking()
+            .Where(m => m.UserAccountId == userAccountId)
+            .OrderBy(m => m.CreatedAtUtc)
+            .ToListAsync(ct);
     }
 }

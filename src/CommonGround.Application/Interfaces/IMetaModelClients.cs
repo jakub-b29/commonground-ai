@@ -87,8 +87,21 @@ public sealed record WebEnrichmentDiscoveryResult(
     int LatencyMs,
     bool UsedLiveApi);
 
+public sealed record AddressLookupRequest(
+    string StreetAddress,
+    string PostalOrZipCode,
+    string City,
+    string CountryOrState,
+    SystemOperatingMode OperatingModeHint = SystemOperatingMode.HousingAssociation);
+
+public sealed record DiscoveryProgressStep(string Stage, string Detail, int Percent, string? Thinking = null);
+
 public interface IMuseSparkClient
 {
+    // Chosen host for structured AI web discovery per plan 3.1 and 6.2:
+    // muse-spark-1.3 with web_search grounding returns the typed PropertyAiDiscoveryDossier.
+    // IMuseWonderClient keeps the legacy coarser WebEnrichmentDiscoveryResult for compat.
+    Task<PropertyAiDiscoveryDossier> DiscoverPropertyDossierFromAddressAsync(AddressLookupRequest request, CancellationToken ct = default, IProgress<DiscoveryProgressStep>? progress = null);
     Task<TriageModelResult> TriageResidentRequestAsync(Community community, Unit? unit, string messageText, string languageHint, CancellationToken ct = default);
     Task<StatuteComplianceModelResult> VerifyFullCorpusComplianceAsync(Community community, Resolution draftResolution, CancellationToken ct = default);
     Task<MeterOcrModelResult> ReadSubMeterFromPhotoAsync(UtilityMeter meter, decimal? simulatedReadingOverride, CancellationToken ct = default);

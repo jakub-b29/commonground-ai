@@ -1,0 +1,303 @@
+@page "/admin/properties"
+@using CommonGround.Application.Interfaces
+@using CommonGround.Application.Persistence
+@using Microsoft.EntityFrameworkCore
+@inject WorkspaceAccessService Access
+@inject IAppDbContextFactory DbFactory
+@inject NavigationManager Nav
+
+<PageTitle>Property registry — CommonGround</PageTitle>
+
+<PageHeader Category="Firm Administration"
+            ContextCode="@($"{_properties.Count} communities")"
+            Title="Properties registry"
+            Subtitle="Registered associations and condominium communities with primary manager assignment and workspace routing.">
+    <Actions>
+        <a class="cg-btn" href="/admin">Back to overview</a>
+        <a class="cg-btn cg-btn-primary" href="/admin/properties/new">Create property</a>
+    </Actions>
+</PageHeader>
+
+@if (!_loaded)
+{
+    <p role="status" aria-live="polite">Loading properties.</p>
+}
+else if (!_isAuthorized)
+{
+    <div class="cg-card"><p class="cg-empty-text">Access denied. Firm manager permission is required.</p></div>
+}
+else
+{
+    <div class="bento-card">
+        <div class="bento-card-header">
+            <div class="cg-panel-title">
+                <span>Firm properties</span>
+                <span class="cg-badge cg-badge-info">@_properties.Count registered</span>
+            </div>
+        </div>
+        <div class="bento-card-body" style="padding: 0;">
+            <div class="cg-table-wrap">
+                <table class="cg-table">
+                    <thead>
+                        <tr>
+                            <th>Community &amp; Account Number</th>
+                            <th>Configuration &amp; Status</th>
+                            <th>Primary manager</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (_properties.Count == 0)
+                        {
+                            <tr><td colspan="4" style="color: var(--text-secondary);">No properties registered yet.</td></tr>
+                        }
+                        @foreach (var property in _properties)
+                        {
+                            var editor = GetEditor(property.Id);
+                            <tr @key="property.Id">
+                                <td>
+                                    <div style="display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap;">
+                                        <strong>@property.Name</strong>
+                                        <span class="cg-badge cg-badge-info mono num">@property.CommunityAccountNumber</span>
+                                    </div>
+                                    <div style="font-size: 0.72rem; color: var(--text-secondary);">@property.StreetAddress, @property.City</div>
+                                    <div class="mono num" style="font-size: 0.72rem; color: var(--text-muted);">Tariffs: @property.OperatingRatePerM2.ToString("N2") / @property.RepairFundRatePerM2.ToString("N2") · @property.UnitsCount units</div>
+                                </td>
+                                <td>
+                                    <div style="display: flex; flex-direction: column; gap: 0.25rem; align-items: flex-start;">
+                                        <span class="cg-badge cg-badge-ok">@property.Status</span>
+                                        <span style="font-size: 0.74rem; color: var(--text-secondary);">@property.PropertyTypeConfiguration</span>
+                                    </div>
+                                </td>
+                                <td>
+                                    <label for="pm-@property.Id" class="visually-hidden">Primary manager</label>
+                                    <select id="pm-@property.Id" @bind="editor.SelectedMembershipId">
+                                        <option value="">No primary assignment</option>
+                                        @foreach (var manager in _managers)
+                                        {
+                                            <option value="@manager.MembershipId" @key="manager.MembershipId">@manager.DisplayName</option>
+                                        }
+                                    </select>
+                                    @if (!string.IsNullOrWhiteSpace(editor.CurrentLabel))
+                                    {
+                                        <div style="font-size: 0.72rem; color: var(--text-secondary); margin-top: 0.2rem;">Current: @editor.CurrentLabel</div>
+                                    }
+                                </td>
+                                <td>
+                                    <div style="display: flex; gap: 0.4rem; flex-wrap: wrap;">
+                                        <button type="button" class="cg-btn cg-btn-sm cg-btn-primary" disabled="@_isBusy" @onclick="() => OnSavePrimaryAsync(property.Id)">Save primary</button>
+                                        <a class="cg-btn cg-btn-sm cg-btn-ai" href="@($"/properties/{property.Id}/overview")">Workspace</a>
+                                        <a class="cg-btn cg-btn-sm" href="@($"/properties/{property.Id}/units")">Units</a>
+                                        <a class="cg-btn cg-btn-sm" href="@($"/properties/{property.Id}/settings")">Profile &amp; contacts</a>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(_message))
+        {
+            <div class="bento-card-footer">
+                <div role="status" aria-live="polite" class="ai-callout" style="width: 100%;">@_message</div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private bool _loaded;
+    private bool _isAuthorized;
+    private bool _isBusy;
+    private Guid? _firmId;
+    private List<PropertyRow> _properties = new();
+    private List<ManagerOption> _managers = new();
+    private readonly Dictionary<Guid, PrimaryEditor> _editors = new();
+    private string _message = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var firmId = await Access.GetFirmIdAsync();
+            if (firmId is null)
+            {
+                _loaded = true;
+                return;
+            }
+            _firmId = firmId.Value;
+            var role = await Access.GetRoleAsync();
+            var hasAdmin = role == WorkspaceSecurityRole.FirmManager
+                || await Access.HasPermissionAsync(WorkspacePermissionFlags.FirmFullAdministration);
+            if (!hasAdmin)
+            {
+                Nav.NavigateTo("/no-access", forceLoad: false);
+                return;
+            }
+            _isAuthorized = true;
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+        }
+        finally
+        {
+            _loaded = true;
+        }
+    }
+
+    private PrimaryEditor GetEditor(Guid propertyId)
+    {
+        if (!_editors.TryGetValue(propertyId, out var editor))
+        {
+            editor = new PrimaryEditor();
+            Guid? primary = _primaries.TryGetValue(propertyId, out var membershipId) ? membershipId : null;
+            editor.SelectedMembershipId = primary?.ToString() ?? string.Empty;
+            editor.CurrentLabel = primary.HasValue
+                ? _managers.FirstOrDefault(m => m.MembershipId == primary.Value)?.DisplayName ?? string.Empty
+                : string.Empty;
+            _editors[propertyId] = editor;
+        }
+        return editor;
+    }
+
+    private readonly Dictionary<Guid, Guid> _primaries = new();
+
+    private async Task ReloadAsync()
+    {
+        if (_firmId is null)
+        {
+            return;
+        }
+        var firmId = _firmId.Value;
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _properties = await db.Communities.AsNoTracking()
+            .Where(c => c.ManagementFirmId == firmId)
+            .OrderBy(c => c.Name)
+            .Select(c => new PropertyRow(
+                c.Id,
+                c.CommunityAccountNumber,
+                c.Name,
+                c.City,
+                c.StreetAddress,
+                c.Status,
+                c.PropertyTypeConfiguration,
+                c.OperatingMode,
+                c.OperatingRatePerM2,
+                c.RepairFundRatePerM2,
+                c.Units.Count))
+            .ToListAsync();
+        var memberships = await db.FirmMemberships.AsNoTracking()
+            .Where(m => m.ManagementFirmId == firmId && m.Status == WorkspaceMembershipStatus.Approved
+                && (m.Role == WorkspaceSecurityRole.FirmManager || m.Role == WorkspaceSecurityRole.PropertyManager))
+            .ToListAsync();
+        var userIds = memberships.Select(m => m.UserId).Distinct().ToList();
+        var users = await db.Users.AsNoTracking()
+            .Where(u => userIds.Contains(u.Id))
+            .ToDictionaryAsync(u => u.Id);
+        _managers = memberships
+            .Select(m => new ManagerOption(
+                m.Id,
+                users.TryGetValue(m.UserId, out var account) ? $"{account.FullName} ({m.Role})" : m.Role.ToString()))
+            .OrderBy(m => m.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var propertyIds = _properties.Select(p => p.Id).ToList();
+        var primaries = await db.MembershipPropertyAccesses.AsNoTracking()
+            .Where(a => propertyIds.Contains(a.CommunityId) && a.IsPrimaryManager)
+            .ToListAsync();
+        _primaries.Clear();
+        foreach (var primary in primaries.Take(500))
+        {
+            _primaries[primary.CommunityId] = primary.FirmMembershipId;
+        }
+        _editors.Clear();
+    }
+
+    private async Task OnSavePrimaryAsync(Guid propertyId)
+    {
+        if (!_editors.TryGetValue(propertyId, out var editor))
+        {
+            return;
+        }
+        _isBusy = true;
+        try
+        {
+            var actorId = await Access.GetActiveMembershipIdAsync()
+                ?? throw new InvalidOperationException("Active membership is required.");
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var actor = await db.FirmMemberships.FirstOrDefaultAsync(m => m.Id == actorId)
+                ?? throw new InvalidOperationException("Actor membership not found.");
+            if (actor.Role != WorkspaceSecurityRole.FirmManager)
+            {
+                throw new UnauthorizedAccessException("Only the Firm Manager may assign a primary manager.");
+            }
+            var rows = await db.MembershipPropertyAccesses
+                .Where(a => a.CommunityId == propertyId)
+                .ToListAsync();
+            foreach (var row in rows)
+            {
+                row.IsPrimaryManager = false;
+            }
+            Guid? selected = Guid.TryParse(editor.SelectedMembershipId, out var parsed) && parsed != Guid.Empty ? parsed : null;
+            if (selected.HasValue)
+            {
+                var targetFirm = await db.FirmMemberships.AsNoTracking()
+                    .Where(m => m.Id == selected.Value)
+                    .Select(m => m.ManagementFirmId)
+                    .FirstOrDefaultAsync();
+                if (_firmId is null || targetFirm != _firmId.Value)
+                {
+                    throw new InvalidOperationException("Selected manager belongs to a different firm.");
+                }
+                var existing = rows.FirstOrDefault(r => r.FirmMembershipId == selected.Value);
+                if (existing is null)
+                {
+                    db.MembershipPropertyAccesses.Add(new MembershipPropertyAccess
+                    {
+                        FirmMembershipId = selected.Value,
+                        CommunityId = propertyId,
+                        IsPrimaryManager = true
+                    });
+                }
+                else
+                {
+                    existing.IsPrimaryManager = true;
+                }
+            }
+            await db.SaveChangesAsync();
+            _message = "Primary manager assignment saved.";
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private sealed record PropertyRow(
+        Guid Id,
+        string CommunityAccountNumber,
+        string Name,
+        string City,
+        string StreetAddress,
+        CommunityStatus Status,
+        string PropertyTypeConfiguration,
+        SystemOperatingMode OperatingMode,
+        decimal OperatingRatePerM2,
+        decimal RepairFundRatePerM2,
+        int UnitsCount);
+
+    private sealed record ManagerOption(Guid MembershipId, string DisplayName);
+
+    private sealed class PrimaryEditor
+    {
+        public string SelectedMembershipId { get; set; } = string.Empty;
+        public string CurrentLabel { get; set; } = string.Empty;
+    }
+}

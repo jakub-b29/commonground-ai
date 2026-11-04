@@ -32,16 +32,31 @@ public sealed class ManagementFirm
     public string HoaBoardEmail { get; set; } = string.Empty;
     public string HoaHotlinePhone { get; set; } = string.Empty;
 
+    public bool RequireEmailConfirmation { get; set; } = false;
+    public bool IsEmailConfirmed { get; set; } = true;
+    public string? EmailConfirmationTokenHash { get; set; }
+    public DateTime? AcceptedAtUtc { get; set; }
+
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public List<Community> Communities { get; set; } = [];
+    public List<FirmMembership> FirmMemberships { get; set; } = [];
+    public List<Invitation> FirmInvitations { get; set; } = [];
+    public List<JoinRequest> JoinRequests { get; set; } = [];
+    public List<ResidentProfile> ResidentProfiles { get; set; } = [];
+    public List<ResidentRegistrationToken> RegistrationTokens { get; set; } = [];
+    public List<ResidentRegistrationRequest> RegistrationRequests { get; set; } = [];
+    // Legacy compat for persistence migration wave. Use FirmMemberships instead.
+    public List<WorkspaceInvitation> Invitations { get; set; } = [];
+    // Legacy compat for persistence migration wave. Use FirmMemberships instead.
+    public List<WorkspaceAccountMembership> AccountMemberships { get; set; } = [];
     public List<FirmManagerGroup> ManagerGroups { get; set; } = [];
     public List<FirmManagerMessage> ManagerMessages { get; set; } = [];
-    public List<WorkspaceInvitation> Invitations { get; set; } = [];
 }
 
 public sealed class Community
 {
     public Guid Id { get; set; } = Guid.NewGuid();
+    public string CommunityAccountNumber { get; set; } = Calculators.AccountNumberGenerator.NewCommunityAccountNumber();
     public Guid? ManagementFirmId { get; set; }
     public string FirmGroupCode { get; set; } = "CG-FIRM-2026";
     public Guid? AssignedPropertyManagerId { get; set; }
@@ -49,6 +64,17 @@ public sealed class Community
     public string AssignedPropertyManagerEmail { get; set; } = string.Empty;
     public string AssignedPropertyManagerPhone { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
+    public CommunityStatus Status { get; set; } = CommunityStatus.Active;
+    public string PropertyTypeConfiguration { get; set; } = "Residential Condominium & HOA";
+    public string AdministrativeEmail { get; set; } = string.Empty;
+    public string AdministrativePhone { get; set; } = string.Empty;
+    public bool EnableHoaGovernance { get; set; } = true;
+    public bool EnableShareWeightedVoting { get; set; } = true;
+    public bool EnableArcRequests { get; set; } = true;
+    public bool EnableSubMeterReconciliation { get; set; } = true;
+    public bool EnableReserveStudy { get; set; } = true;
+    public RegistrationApprovalMode DefaultRegistrationApprovalMode { get; set; } = RegistrationApprovalMode.ManualFirmApproval;
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public SystemOperatingMode OperatingMode { get; set; } = SystemOperatingMode.HousingAssociation;
     public string StreetAddress { get; set; } = string.Empty;
     public string City { get; set; } = string.Empty;
@@ -105,12 +131,106 @@ public sealed class Community
     public List<AmenityBooking> AmenityBookings { get; set; } = [];
     public List<LegalDocumentSource> LegalDocuments { get; set; } = [];
     public List<SecurityAuditEvent> SecurityAuditEvents { get; set; } = [];
+    public List<PropertyAnnouncement> Announcements { get; set; } = [];
+    public List<MembershipPropertyAccess> PropertyAccessGrants { get; set; } = [];
+    public List<MembershipUnitLink> UnitLinks { get; set; } = [];
     public List<WorkspaceUserAccount> UserAccounts { get; set; } = [];
     public List<ResidentMembershipApplication> ResidentMemberships { get; set; } = [];
     public List<ResidentGroup> ResidentGroups { get; set; } = [];
     public List<CommunityMessage> CommunityMessages { get; set; } = [];
     public List<AiAction> AiActions { get; set; } = [];
     public List<AgentRun> AgentRuns { get; set; } = [];
+    public List<CommunityContact> CommunityContacts { get; set; } = [];
+    public List<UnitOwnership> UnitOwnerships { get; set; } = [];
+    public List<ResidentUnitAssignment> ResidentAssignments { get; set; } = [];
+    public List<ResidentHouseholdMember> HouseholdMembers { get; set; } = [];
+    public List<ResidentDocument> ResidentDocuments { get; set; } = [];
+    public List<ResidentRegistrationToken> RegistrationTokens { get; set; } = [];
+    public List<ResidentRegistrationRequest> RegistrationRequests { get; set; } = [];
+}
+
+public sealed class User
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string FullName { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public string Phone { get; set; } = string.Empty;
+    public string PasswordSaltAndHash { get; set; } = string.Empty;
+    public bool EmailConfirmed { get; set; }
+    public string? EmailConfirmationTokenHash { get; set; }
+    public IdentityProvider Provider { get; set; } = IdentityProvider.EmailPassword;
+    public List<FirmMembership> Memberships { get; set; } = [];
+}
+
+public sealed class FirmMembership
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid UserId { get; set; }
+    public Guid ManagementFirmId { get; set; }
+    public WorkspaceSecurityRole Role { get; set; } = WorkspaceSecurityRole.Resident;
+    public WorkspaceMembershipStatus Status { get; set; } = WorkspaceMembershipStatus.PendingApproval;
+    public WorkspacePermissionFlags GrantedPermissions { get; set; }
+    public Guid? InvitedByMembershipId { get; set; }
+    public Guid? DecidedByMembershipId { get; set; }
+    public DateTime? DecidedAtUtc { get; set; }
+    public User? User { get; set; }
+    public ManagementFirm? ManagementFirm { get; set; }
+    public List<MembershipPropertyAccess> PropertyAccesses { get; set; } = [];
+    public List<MembershipUnitLink> UnitLinks { get; set; } = [];
+}
+
+public sealed class MembershipPropertyAccess : ICommunityScoped
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid FirmMembershipId { get; set; }
+    public Guid CommunityId { get; set; }
+    public bool IsPrimaryManager { get; set; }
+    public FirmMembership? FirmMembership { get; set; }
+    public Community? Community { get; set; }
+}
+
+public sealed class MembershipUnitLink : ICommunityScoped
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid FirmMembershipId { get; set; }
+    public Guid CommunityId { get; set; }
+    public Guid UnitId { get; set; }
+    public MembershipUnitRelationshipKind RelationshipKind { get; set; } = MembershipUnitRelationshipKind.Owner;
+    public FirmMembership? FirmMembership { get; set; }
+    public Unit? Unit { get; set; }
+}
+
+public sealed class Invitation
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid ManagementFirmId { get; set; }
+    public string TokenHash { get; set; } = string.Empty;
+    public string RecipientEmail { get; set; } = string.Empty;
+    public string RecipientName { get; set; } = string.Empty;
+    public WorkspaceSecurityRole TargetRole { get; set; } = WorkspaceSecurityRole.Resident;
+    public WorkspacePermissionFlags GrantedPermissions { get; set; }
+    public bool RequiresApproval { get; set; } = true;
+    public string PropertyIdsJson { get; set; } = "[]";
+    public Guid? TargetUnitId { get; set; }
+    public DateTime ExpiresAtUtc { get; set; } = DateTime.UtcNow.AddDays(7);
+    public InvitationStatus Status { get; set; } = InvitationStatus.Pending;
+    public ManagementFirm? ManagementFirm { get; set; }
+    public bool IsExpired => DateTime.UtcNow > ExpiresAtUtc;
+}
+
+public sealed class JoinRequest
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid ManagementFirmId { get; set; }
+    public Guid FirmMembershipId { get; set; }
+    public WorkspaceSecurityRole RequestedRole { get; set; } = WorkspaceSecurityRole.Resident;
+    public Guid? RequestedCommunityId { get; set; }
+    public string RequestedUnitNumber { get; set; } = string.Empty;
+    public string ProofOrCompanyNote { get; set; } = string.Empty;
+    public JoinRequestStatus Status { get; set; } = JoinRequestStatus.PendingApproval;
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+    public FirmMembership? FirmMembership { get; set; }
+    public ManagementFirm? ManagementFirm { get; set; }
 }
 
 public sealed class Building : ICommunityScoped
@@ -169,8 +289,19 @@ public sealed class Unit : ICommunityScoped
     public decimal CurrentBalance { get; set; }
     public int DaysPastDue { get; set; }
     public ArrearsStage ArrearsStage { get; set; } = ArrearsStage.Current;
+    public int RoomsCount { get; set; } = 3;
+    public int BathroomsCount { get; set; } = 1;
+    public int OccupancyCapacity { get; set; } = 4;
+    public UnitOccupancyStatus OccupancyStatus { get; set; } = UnitOccupancyStatus.OwnerOccupied;
+    public string Notes { get; set; } = string.Empty;
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public List<UtilityMeter> Meters { get; set; } = [];
     public List<MonthlyAssessment> Assessments { get; set; } = [];
+    public List<UnitOwnership> Ownerships { get; set; } = [];
+    public List<ResidentUnitAssignment> ResidentAssignments { get; set; } = [];
+    public List<ResidentHouseholdMember> HouseholdMembers { get; set; } = [];
+    public List<ResidentDocument> Documents { get; set; } = [];
+    public List<ResidentRegistrationToken> RegistrationTokens { get; set; } = [];
 }
 
 public sealed class UtilityMeter
@@ -232,13 +363,109 @@ public sealed class EmergencyAndAuthorityContact : ICommunityScoped
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid CommunityId { get; set; }
-    public string Category { get; set; } = "EmergencyService";
+    public string Category { get; set; } = EmergencyContactCategories.EmergencyService;
     public string Name { get; set; } = string.Empty;
     public string PhoneNumber { get; set; } = string.Empty;
     public string? AddressOrNotes { get; set; }
     public int SortOrder { get; set; }
     public bool IsAiDiscovered { get; set; } = true;
 }
+
+public static class EmergencyContactCategories
+{
+    public const string EmergencyService = "EmergencyService";
+    public const string PolicePrecinct = "PolicePrecinct";
+    public const string DistrictPoliceOfficer = "DistrictPoliceOfficer";
+    public const string MunicipalGuard = "MunicipalGuard";
+    public const string FireStation = "FireStation";
+    public const string BuildingInspectorate = "BuildingInspectorate";
+    public const string RecyclingDepot = "RecyclingDepot";
+}
+
+/// <summary>
+/// Strongly typed AI web discovery harvest covering all 11 plan section 3.2 categories.
+/// Persisted indirectly via Community and related entity rows; this DTO carries the parsed model output.
+/// </summary>
+public sealed record PropertyAiDiscoveryDossier(
+    string SuggestedAssociationName,
+    SystemOperatingMode SuggestedOperatingMode,
+    string CountryCode,
+    string CurrencyCode,
+    string LocalMunicipalityOrCounty,
+    string CompetentCourtOrRecorder,
+    string LocalTaxOffice,
+    string RegistryNumber,
+    IReadOnlyList<DiscoveredUtilityOperator> ElectricityOperator,
+    IReadOnlyList<DiscoveredUtilityOperator> GasOperator,
+    IReadOnlyList<DiscoveredUtilityOperator> WaterOperator,
+    IReadOnlyList<DiscoveredUtilityOperator> HeatingOperator,
+    IReadOnlyList<DiscoveredUtilityOperator> WasteOperator,
+    IReadOnlyList<DiscoveredAuthorityContact> PolicePrecinct,
+    IReadOnlyList<DiscoveredAuthorityContact> DistrictOfficer,
+    IReadOnlyList<DiscoveredAuthorityContact> MunicipalGuard,
+    IReadOnlyList<DiscoveredAuthorityContact> FireStation,
+    IReadOnlyList<DiscoveredAuthorityContact> BuildingInspectorate,
+    IReadOnlyList<DiscoveredAuthorityContact> RecyclingDepot,
+    IReadOnlyList<DiscoveredContractor> Contractors,
+    DiscoveredBuildingProfile BuildingProfile,
+    IReadOnlyList<DiscoveredGrantOrOrdinance> GrantsAndOrdinances,
+    decimal OperatingRatePerM2,
+    decimal RepairFundRatePerM2,
+    decimal WasteFeePerOccupant,
+    decimal ColdWaterTariffPerM3,
+    decimal HotWaterHeatingCostPerM3,
+    decimal DistrictHeatingTariffPerGj,
+    decimal CommonElectricityTariffPerKwh,
+    decimal ContractedHeatingPowerMw,
+    decimal ContractedElectricalPowerKw,
+    IReadOnlyList<string> SourceUrls);
+
+public sealed record DiscoveredUtilityOperator(
+    string UtilityKind,
+    string ProviderName,
+    string EmergencyPhone,
+    string OutageBulletinUrl,
+    string LiveFaultMapUrl,
+    string TariffScheduleUrl,
+    decimal CurrentUnitTariff,
+    string TariffUnit);
+
+public sealed record DiscoveredAuthorityContact(
+    string Category,
+    string Name,
+    string PhoneNumber,
+    string AddressOrNotes,
+    int SortOrder);
+
+public sealed record DiscoveredContractor(
+    string Trade,
+    string CompanyName,
+    string Phone,
+    string Email,
+    string Website,
+    decimal TypicalHourlyRate);
+
+public sealed record DiscoveredBuildingProfile(
+    int EstimatedConstructionYear,
+    int FloorsCount,
+    int StairwellsCount,
+    string HeatingType,
+    string RoofType,
+    double RooftopSolarPotentialKwp,
+    string FloodZone,
+    string WindZone,
+    string AcousticZone,
+    string AirQualityNote);
+
+public sealed record DiscoveredGrantOrOrdinance(
+    string Kind,
+    string ProgramOrDocumentCode,
+    string Title,
+    string IssuingAuthority,
+    string OfficialCitation,
+    string SourceUrl,
+    string Summary,
+    string VerbatimText);
 
 public sealed class StatutoryInspection : ICommunityScoped
 {
@@ -252,4 +479,207 @@ public sealed class StatutoryInspection : ICommunityScoped
     public string Status { get; set; } = "Valid";
     public string SummaryOfDefects { get; set; } = string.Empty;
     public int ExtractedWorkOrdersCount { get; set; }
+}
+
+/// <summary>
+/// Permanent Resident identity independent of apartment assignment, Community, or ManagementFirm.
+/// Holds the immutable ResidentAccountNumber (e.g. RES-00001284).
+/// </summary>
+public sealed class ResidentProfile
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string ResidentAccountNumber { get; set; } = Calculators.AccountNumberGenerator.NewResidentAccountNumber();
+    public Guid? UserId { get; set; }
+    public Guid? ManagementFirmId { get; set; }
+    public string FirstName { get; set; } = string.Empty;
+    public string LastName { get; set; } = string.Empty;
+    public string FullName { get; set; } = string.Empty;
+    public string? ProfilePhotoUrl { get; set; }
+    public DateTime? DateOfBirth { get; set; }
+    public string PrimaryEmail { get; set; } = string.Empty;
+    public string Phone { get; set; } = string.Empty;
+    public string AdditionalContactDetails { get; set; } = string.Empty;
+    public ResidentAccountStatus AccountStatus { get; set; } = ResidentAccountStatus.Active;
+    public ResidentVerificationStatus VerificationStatus { get; set; } = ResidentVerificationStatus.Verified;
+    public string PreferredLanguage { get; set; } = "EN";
+    public string PreferredContactMethod { get; set; } = "Email";
+    public string EmergencyContactName { get; set; } = string.Empty;
+    public string EmergencyContactPhone { get; set; } = string.Empty;
+    public string EmergencyContactRelation { get; set; } = string.Empty;
+    public DateTime RegistrationDateUtc { get; set; } = DateTime.UtcNow;
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+    public DateTime? LastLoginAtUtc { get; set; }
+    public string Notes { get; set; } = string.Empty;
+    public List<ResidentUnitAssignment> Assignments { get; set; } = [];
+    public List<UnitOwnership> Ownerships { get; set; } = [];
+    public List<ResidentDocument> Documents { get; set; } = [];
+}
+
+/// <summary>
+/// Time-bounded occupancy/tenancy relationship between a ResidentProfile and a Unit.
+/// </summary>
+public sealed class ResidentUnitAssignment : ICommunityScoped
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid ResidentProfileId { get; set; }
+    public Guid CommunityId { get; set; }
+    public Guid BuildingId { get; set; }
+    public Guid UnitId { get; set; }
+    public Guid? ManagementFirmId { get; set; }
+    public ResidentAssignmentType AssignmentType { get; set; } = ResidentAssignmentType.PrimaryResident;
+    public UnitAssignmentStatus Status { get; set; } = UnitAssignmentStatus.Active;
+    public bool IsPrimaryResident { get; set; } = true;
+    public DateTime MoveInDateUtc { get; set; } = DateTime.UtcNow;
+    public DateTime? MoveOutDateUtc { get; set; }
+    public Guid? ApprovedByMembershipId { get; set; }
+    public string ApprovedByName { get; set; } = string.Empty;
+    public DateTime AssignedAtUtc { get; set; } = DateTime.UtcNow;
+    public DateTime? EndedAtUtc { get; set; }
+    public string AssignmentReasonOrNotes { get; set; } = string.Empty;
+    public string? ConflictOverrideReason { get; set; }
+    public ResidentProfile? ResidentProfile { get; set; }
+    public Unit? Unit { get; set; }
+}
+
+/// <summary>
+/// Legal or administrative ownership record for a Unit, separate from occupancy/residency.
+/// </summary>
+public sealed class UnitOwnership : ICommunityScoped
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid CommunityId { get; set; }
+    public Guid BuildingId { get; set; }
+    public Guid UnitId { get; set; }
+    public Guid? ResidentProfileId { get; set; }
+    public string OwnerFullName { get; set; } = string.Empty;
+    public string OwnerEmail { get; set; } = string.Empty;
+    public string OwnerPhone { get; set; } = string.Empty;
+    public UnitOwnershipRole OwnershipRole { get; set; } = UnitOwnershipRole.PrimaryOwner;
+    public int ShareNumerator { get; set; } = 625;
+    public int ShareDenominator { get; set; } = 10000;
+    public decimal OwnershipPercentage { get; set; } = 100.0m;
+    public DateTime EffectiveStartDateUtc { get; set; } = DateTime.UtcNow.AddYears(-1);
+    public DateTime? EffectiveEndDateUtc { get; set; }
+    public bool IsActive { get; set; } = true;
+    public string Notes { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Household member or additional occupant associated with a Unit and/or Primary Resident Assignment.
+/// </summary>
+public sealed class ResidentHouseholdMember : ICommunityScoped
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid CommunityId { get; set; }
+    public Guid UnitId { get; set; }
+    public Guid? PrimaryAssignmentId { get; set; }
+    public Guid? LinkedResidentProfileId { get; set; }
+    public string FullName { get; set; } = string.Empty;
+    public string RelationshipToPrimary { get; set; } = "Household Member";
+    public string Phone { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public bool HasPortalAccess { get; set; }
+    public DateTime OccupancyStartDateUtc { get; set; } = DateTime.UtcNow;
+    public DateTime? OccupancyEndDateUtc { get; set; }
+    public bool IsActive { get; set; } = true;
+    public string Notes { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Document vault entry linked to a ResidentProfile, Unit, and/or Community.
+/// </summary>
+public sealed class ResidentDocument : ICommunityScoped
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid CommunityId { get; set; }
+    public Guid? UnitId { get; set; }
+    public Guid? ResidentProfileId { get; set; }
+    public ResidentDocumentCategory Category { get; set; } = ResidentDocumentCategory.Other;
+    public string Title { get; set; } = string.Empty;
+    public string FileName { get; set; } = string.Empty;
+    public string MimeType { get; set; } = "application/pdf";
+    public long FileSizeBytes { get; set; }
+    public string StoragePathOrDataUrl { get; set; } = string.Empty;
+    public string SummaryOrNotes { get; set; } = string.Empty;
+    public string UploadedByName { get; set; } = string.Empty;
+    public string UploadedByRole { get; set; } = string.Empty;
+    public DateTime UploadedAtUtc { get; set; } = DateTime.UtcNow;
+    public bool IsVisibleToResident { get; set; } = true;
+}
+
+/// <summary>
+/// Structured Community Contact directory entry (Management Office, Property Manager, Board, Emergency, Technical, Accounting, Maintenance, Other).
+/// </summary>
+public sealed class CommunityContact : ICommunityScoped
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid CommunityId { get; set; }
+    public CommunityContactCategory Category { get; set; } = CommunityContactCategory.ManagementOffice;
+    public string ContactName { get; set; } = string.Empty;
+    public string RoleTitle { get; set; } = string.Empty;
+    public string Phone { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public string OfficeHours { get; set; } = "Mon-Fri 08:00-17:00";
+    public string AddressOrLocation { get; set; } = string.Empty;
+    public string Notes { get; set; } = string.Empty;
+    public int SortOrder { get; set; }
+    public bool IsVisibleToResidents { get; set; } = true;
+}
+
+/// <summary>
+/// Cryptographically hashed registration-only link token for Resident registration.
+/// Never exposes Community, Unit, Building, Owner, or Financial information to the public page.
+/// </summary>
+public sealed class ResidentRegistrationToken : ICommunityScoped
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid ManagementFirmId { get; set; }
+    public Guid CommunityId { get; set; }
+    public Guid BuildingId { get; set; }
+    public Guid TargetUnitId { get; set; }
+    public string TokenHash { get; set; } = string.Empty;
+    public string LabelOrReference { get; set; } = string.Empty;
+    public RegistrationApprovalMode ApprovalMode { get; set; } = RegistrationApprovalMode.ManualFirmApproval;
+    public ResidentAssignmentType IntendedAssignmentType { get; set; } = ResidentAssignmentType.PrimaryResident;
+    public WorkspaceSecurityRole IntendedRole { get; set; } = WorkspaceSecurityRole.Resident;
+    public int MaxUses { get; set; } = 1;
+    public int UseCount { get; set; }
+    public DateTime ExpiresAtUtc { get; set; } = DateTime.UtcNow.AddDays(14);
+    public RegistrationTokenStatus Status { get; set; } = RegistrationTokenStatus.Active;
+    public Guid? CreatedByMembershipId { get; set; }
+    public string CreatedByName { get; set; } = string.Empty;
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+    public DateTime? RevokedAtUtc { get; set; }
+    public bool IsUsable => Status == RegistrationTokenStatus.Active && DateTime.UtcNow <= ExpiresAtUtc && UseCount < MaxUses;
+}
+
+/// <summary>
+/// Submitted Resident registration request resolved strictly server-side from a ResidentRegistrationToken.
+/// </summary>
+public sealed class ResidentRegistrationRequest : ICommunityScoped
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid ManagementFirmId { get; set; }
+    public Guid CommunityId { get; set; }
+    public Guid BuildingId { get; set; }
+    public Guid TargetUnitId { get; set; }
+    public Guid RegistrationTokenId { get; set; }
+    public string SubmittedFirstName { get; set; } = string.Empty;
+    public string SubmittedLastName { get; set; } = string.Empty;
+    public string SubmittedFullName { get; set; } = string.Empty;
+    public string SubmittedEmail { get; set; } = string.Empty;
+    public string SubmittedPhone { get; set; } = string.Empty;
+    public string PreferredLanguage { get; set; } = "EN";
+    public string EmergencyContactName { get; set; } = string.Empty;
+    public string EmergencyContactPhone { get; set; } = string.Empty;
+    public string ResidentNotes { get; set; } = string.Empty;
+    public Guid? UserId { get; set; }
+    public Guid? MatchedOrCreatedResidentProfileId { get; set; }
+    public RegistrationApprovalMode ApprovalMode { get; set; } = RegistrationApprovalMode.ManualFirmApproval;
+    public RegistrationRequestStatus Status { get; set; } = RegistrationRequestStatus.PendingApproval;
+    public DateTime SubmittedAtUtc { get; set; } = DateTime.UtcNow;
+    public DateTime? ReviewedAtUtc { get; set; }
+    public Guid? ReviewedByMembershipId { get; set; }
+    public string ReviewedByName { get; set; } = string.Empty;
+    public string DecisionNotesOrRejectionReason { get; set; } = string.Empty;
 }

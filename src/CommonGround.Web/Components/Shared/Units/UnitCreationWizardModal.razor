@@ -1,0 +1,482 @@
+@using CommonGround.Application.Services
+@inject CommonGroundWorkspaceService Workspace
+@inject WorkspaceAccessService Access
+
+<div class="cg-card" style="border: 1px solid var(--accent-primary); margin-block-end: 1rem;">
+    <div class="cg-section-header">
+        <div>
+            <span class="cg-badge cg-badge-info mono">5-STEP UNIT WIZARD · STEP @_step OF 5</span>
+            <h2 style="margin-top: 0.25rem;">Create Unit in Community</h2>
+        </div>
+        <div style="display: flex; gap: 0.4rem;">
+            @for (var s = 1; s <= 5; s++)
+            {
+                var stepNum = s;
+                <button type="button"
+                        class="cg-btn cg-btn-sm @(_step == stepNum ? "cg-btn-primary" : "")"
+                        @onclick="() => GoToStep(stepNum)">
+                    @stepNum. @GetStepTitle(stepNum)
+                </button>
+            }
+            <button type="button" class="cg-btn cg-btn-sm" @onclick="OnCancel">Close</button>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <div role="alert" class="cg-callout" style="border-color: var(--color-danger); margin-block: 0.65rem;">@_error</div>
+    }
+
+    @if (_createdResult is not null)
+    {
+        <div role="status" aria-live="polite" class="cg-subcard" style="border-color: var(--color-success); margin-block: 0.75rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+                <div>
+                    <span class="cg-badge cg-badge-ok">UNIT CREATED</span>
+                    <strong style="margin-left: 0.45rem;">Unit @_createdResult.Unit.UnitNumber (@_createdResult.Building.Name)</strong>
+                    @if (_createdResult.Resident is not null)
+                    {
+                        <span class="cg-badge cg-badge-info mono num" style="margin-left: 0.45rem;">Assigned: @_createdResult.Resident.FullName (@_createdResult.Resident.ResidentAccountNumber)</span>
+                    }
+                </div>
+                <div style="display: flex; gap: 0.4rem;">
+                    <button type="button" class="cg-btn cg-btn-sm cg-btn-primary" @onclick="FinishAfterCreationAsync">Done &amp; View Units</button>
+                </div>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(_createdResult.GeneratedRegistrationTokenPlaintext))
+            {
+                <div style="margin-top: 0.65rem; font-size: 0.8rem;">
+                    <strong>Zero-Disclosure Resident Registration Link (copy now — shown once):</strong>
+                    <div class="mono num" style="padding: 0.45rem 0.65rem; background: var(--bg-canvas); border-radius: 6px; margin-top: 0.25rem; word-break: break-all;">
+                        @($"/register-resident/{_createdResult.GeneratedRegistrationTokenPlaintext}")
+                    </div>
+                </div>
+            }
+        </div>
+    }
+    else if (_step == 1)
+    {
+        <div class="cg-subcard">
+            <strong>Step 1 — Select Community &amp; Building</strong>
+            <div class="cg-grid-3" style="margin-top: 0.65rem;">
+                <div>
+                    <label for="wiz-comm">Community</label>
+                    <select id="wiz-comm" value="@_communityId" @onchange="OnCommunityChanged" disabled="@LockCommunity">
+                        @foreach (var c in Communities)
+                        {
+                            <option value="@c.Id" @key="c.Id">@c.Name (@c.CommunityAccountNumber)</option>
+                        }
+                    </select>
+                </div>
+                <div>
+                    <label for="wiz-bld">Building</label>
+                    <select id="wiz-bld" @bind="_buildingId">
+                        @foreach (var b in CurrentCommunityBuildings)
+                        {
+                            <option value="@b.Id" @key="b.Id">@b.Name (@b.FloorsCount floors, @b.StairwellsCount stairwells)</option>
+                        }
+                        <option value="@Guid.Empty">+ Create new building...</option>
+                    </select>
+                </div>
+                @if (_buildingId == Guid.Empty)
+                {
+                    <div>
+                        <label for="wiz-new-bld">New Building Name</label>
+                        <input id="wiz-new-bld" @bind="_newBuildingName" placeholder="e.g. Building B" />
+                    </div>
+                }
+            </div>
+        </div>
+    }
+    else if (_step == 2)
+    {
+        <div class="cg-subcard">
+            <strong>Step 2 — Unit Specifications &amp; Engineering</strong>
+            <div class="cg-grid-4" style="margin-top: 0.65rem;">
+                <div><label for="wiz-num">Unit Number *</label><input id="wiz-num" @bind="_unitNumber" placeholder="e.g. A-304" /></div>
+                <div>
+                    <label for="wiz-kind">Unit Type</label>
+                    <select id="wiz-kind" @bind="_kind">
+                        <option value="@UnitKind.Apartment">Residential Apartment</option>
+                        <option value="@UnitKind.CommercialPremise">Commercial Premise</option>
+                        <option value="@UnitKind.GarageBay">Garage Bay</option>
+                        <option value="@UnitKind.StorageCell">Storage Cell</option>
+                    </select>
+                </div>
+                <div><label for="wiz-floor">Floor Number</label><input id="wiz-floor" type="number" min="0" max="100" @bind="_floorNumber" /></div>
+                <div><label for="wiz-stair">Stairwell / Entrance</label><input id="wiz-stair" type="number" min="1" max="20" @bind="_stairwellNumber" /></div>
+                <div><label for="wiz-stack">Vertical Riser Stack</label><input id="wiz-stack" class="mono" @bind="_stackCode" placeholder="STACK-A1" /></div>
+                <div><label for="wiz-area">Floor Area (m²) *</label><input id="wiz-area" type="number" step="0.1" min="1" @bind="_floorAreaM2" /></div>
+                <div><label for="wiz-storage">Storage Area (m²)</label><input id="wiz-storage" type="number" step="0.1" min="0" @bind="_storageAreaM2" /></div>
+                <div><label for="wiz-rooms">Rooms Count</label><input id="wiz-rooms" type="number" min="0" max="30" @bind="_roomsCount" /></div>
+                <div><label for="wiz-bath">Bathrooms Count</label><input id="wiz-bath" type="number" min="0" max="15" @bind="_bathroomsCount" /></div>
+                <div><label for="wiz-cap">Occupancy Capacity</label><input id="wiz-cap" type="number" min="1" max="30" @bind="_occupancyCapacity" /></div>
+                <div><label for="wiz-sh-num">Share Numerator</label><input id="wiz-sh-num" type="number" min="1" @bind="_shareNumerator" /></div>
+                <div><label for="wiz-sh-den">Share Denominator</label><input id="wiz-sh-den" type="number" min="1" @bind="_shareDenominator" /></div>
+                <div><label for="wiz-park">Parking Bay Number</label><input id="wiz-park" @bind="_parkingBay" placeholder="P-12" /></div>
+                <div><label for="wiz-fob">Access Fob Code</label><input id="wiz-fob" class="mono" @bind="_accessFob" placeholder="FOB-304" /></div>
+                <div><label for="wiz-iban">Virtual IBAN / Lockbox</label><input id="wiz-iban" class="mono" @bind="_virtualIban" placeholder="Auto-generated if blank" /></div>
+                <div><label for="wiz-notes">Unit Notes</label><input id="wiz-notes" @bind="_notes" placeholder="Optional engineering or layout notes" /></div>
+            </div>
+        </div>
+    }
+    else if (_step == 3)
+    {
+        <div class="cg-subcard">
+            <strong>Step 3 — Legal Ownership Information</strong>
+            <p style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 0.2rem;">
+                Legal ownership is tracked separately from apartment residency/tenancy. Leave blank if ownership will be recorded later.
+            </p>
+            <div class="cg-grid-3" style="margin-top: 0.65rem;">
+                <div><label for="wiz-own-name">Primary Owner Full Name</label><input id="wiz-own-name" @bind="_ownerFullName" placeholder="e.g. Marek Kowalski" /></div>
+                <div><label for="wiz-own-email">Primary Owner Email</label><input id="wiz-own-email" type="email" @bind="_ownerEmail" placeholder="owner@example.com" /></div>
+                <div><label for="wiz-own-phone">Primary Owner Phone</label><input id="wiz-own-phone" type="tel" @bind="_ownerPhone" placeholder="+48 600 100 200" /></div>
+                <div>
+                    <label for="wiz-own-role">Ownership Role</label>
+                    <select id="wiz-own-role" @bind="_ownershipRole">
+                        <option value="@UnitOwnershipRole.PrimaryOwner">Primary Owner</option>
+                        <option value="@UnitOwnershipRole.CoOwner">Co-Owner</option>
+                        <option value="@UnitOwnershipRole.CorporateOwner">Corporate / Institutional Owner</option>
+                        <option value="@UnitOwnershipRole.AuthorizedRepresentative">Authorized Representative</option>
+                    </select>
+                </div>
+                <div><label for="wiz-own-pct">Ownership Percentage (%)</label><input id="wiz-own-pct" type="number" step="0.01" min="1" max="100" @bind="_ownershipPercentage" /></div>
+                <div><label for="wiz-coowner">Co-Owner Name (Optional)</label><input id="wiz-coowner" @bind="_coOwnerName" /></div>
+                <div><label for="wiz-proxy">Voting Proxy Name (Optional)</label><input id="wiz-proxy" @bind="_votingProxyName" /></div>
+            </div>
+        </div>
+    }
+    else if (_step == 4)
+    {
+        <div class="cg-subcard">
+            <strong>Step 4 — Initial Resident Assignment &amp; Registration Link</strong>
+            <div class="cg-grid-3" style="margin-top: 0.65rem;">
+                <div>
+                    <label for="wiz-res-opt">Resident Assignment Mode</label>
+                    <select id="wiz-res-opt" @bind="_residentOption">
+                        <option value="@WizardResidentAssignmentOption.None">Leave Unit Vacant (No Resident Assigned Yet)</option>
+                        <option value="@WizardResidentAssignmentOption.AssignExistingResident">Assign Existing Resident Profile (RES-XXXXXXXX)</option>
+                        <option value="@WizardResidentAssignmentOption.CreateAndAssignNewResident">Create &amp; Assign New Resident Profile</option>
+                    </select>
+                </div>
+                @if (_residentOption != WizardResidentAssignmentOption.None)
+                {
+                    <div>
+                        <label for="wiz-res-type">Occupancy / Assignment Type</label>
+                        <select id="wiz-res-type" @bind="_assignmentType">
+                            <option value="@ResidentAssignmentType.OwnerResident">Owner-Resident</option>
+                            <option value="@ResidentAssignmentType.PrimaryResident">Primary Resident</option>
+                            <option value="@ResidentAssignmentType.Tenant">Tenant</option>
+                            <option value="@ResidentAssignmentType.CoResident">Co-Resident</option>
+                            <option value="@ResidentAssignmentType.AuthorizedOccupant">Authorized Occupant</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="wiz-movein">Move-In Date</label>
+                        <input id="wiz-movein" type="date" @bind="_moveInDate" />
+                    </div>
+                }
+            </div>
+
+            @if (_residentOption == WizardResidentAssignmentOption.AssignExistingResident)
+            {
+                <div class="cg-grid-2" style="margin-top: 0.65rem;">
+                    <div>
+                        <label for="wiz-existing-res">Select Existing Resident (by Name or RES-XXXXXXXX)</label>
+                        <select id="wiz-existing-res" @bind="_existingResidentId">
+                            <option value="@Guid.Empty">-- Select Resident Profile --</option>
+                            @foreach (var r in ExistingResidents)
+                            {
+                                <option value="@r.Profile.Id" @key="r.Profile.Id">@r.Profile.FullName · @r.Profile.ResidentAccountNumber (@r.Profile.PrimaryEmail)</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+            }
+            else if (_residentOption == WizardResidentAssignmentOption.CreateAndAssignNewResident)
+            {
+                <div class="cg-grid-3" style="margin-top: 0.65rem;">
+                    <div><label for="wiz-nr-fn">Resident First Name *</label><input id="wiz-nr-fn" @bind="_newResidentFirstName" placeholder="Jan" /></div>
+                    <div><label for="wiz-nr-ln">Resident Last Name *</label><input id="wiz-nr-ln" @bind="_newResidentLastName" placeholder="Nowak" /></div>
+                    <div><label for="wiz-nr-em">Resident Email *</label><input id="wiz-nr-em" type="email" @bind="_newResidentEmail" placeholder="resident@example.com" /></div>
+                    <div><label for="wiz-nr-ph">Resident Phone</label><input id="wiz-nr-ph" type="tel" @bind="_newResidentPhone" placeholder="+48 500 200 300" /></div>
+                    <div>
+                        <label for="wiz-nr-lang">Preferred Language</label>
+                        <select id="wiz-nr-lang" @bind="_newResidentLang">
+                            <option value="EN">English (EN)</option>
+                            <option value="PL">Polski (PL)</option>
+                            <option value="ES">Español (ES)</option>
+                            <option value="FR">Français (FR)</option>
+                            <option value="DE">Deutsch (DE)</option>
+                        </select>
+                    </div>
+                </div>
+            }
+
+            <div class="cg-subcard" style="margin-top: 0.75rem;">
+                <label class="cg-check-row">
+                    <input type="checkbox" @bind="_generateRegistrationLink" />
+                    <span>Also generate a Zero-Disclosure Resident Registration Link for this unit</span>
+                </label>
+                @if (_generateRegistrationLink)
+                {
+                    <div style="margin-top: 0.45rem; max-width: 420px;">
+                        <label for="wiz-reg-mode">Registration Approval Policy</label>
+                        <select id="wiz-reg-mode" @bind="_registrationApprovalMode">
+                            <option value="@RegistrationApprovalMode.ManualFirmApproval">Mode B — Manual Firm Approval Queue</option>
+                            <option value="@RegistrationApprovalMode.AutomaticAuthorized">Mode A — Automatic Authorized Activation</option>
+                        </select>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+    else if (_step == 5)
+    {
+        var selectedComm = Communities.FirstOrDefault(c => c.Id == _communityId);
+        var selectedBld = CurrentCommunityBuildings.FirstOrDefault(b => b.Id == _buildingId);
+        <div class="cg-subcard">
+            <strong>Step 5 — Review &amp; Confirm Unit Creation</strong>
+            <div class="cg-grid-3" style="margin-top: 0.65rem; font-size: 0.82rem;">
+                <div>
+                    <div style="color: var(--text-muted);">Community</div>
+                    <strong>@(selectedComm?.Name ?? "Selected Community")</strong>
+                    <span class="mono num">(@(selectedComm?.CommunityAccountNumber ?? "COM"))</span>
+                </div>
+                <div>
+                    <div style="color: var(--text-muted);">Building &amp; Riser Stack</div>
+                    <strong>@(selectedBld?.Name ?? (string.IsNullOrWhiteSpace(_newBuildingName) ? "Building A" : _newBuildingName)) · Floor @_floorNumber · Stairwell @_stairwellNumber · @_stackCode</strong>
+                </div>
+                <div>
+                    <div style="color: var(--text-muted);">Unit Number &amp; Type</div>
+                    <strong class="mono num">@_unitNumber (@_kind)</strong>
+                </div>
+                <div>
+                    <div style="color: var(--text-muted);">Area &amp; Layout</div>
+                    <strong class="mono num">@_floorAreaM2.ToString("N1") m² + @_storageAreaM2.ToString("N1") m² storage · @_roomsCount rooms · Capacity @_occupancyCapacity</strong>
+                </div>
+                <div>
+                    <div style="color: var(--text-muted);">Ownership Share</div>
+                    <strong class="mono num">@_shareNumerator / @_shareDenominator (@(string.IsNullOrWhiteSpace(_ownerFullName) ? "No owner specified" : _ownerFullName))</strong>
+                </div>
+                <div>
+                    <div style="color: var(--text-muted);">Resident Assignment</div>
+                    <strong>@_residentOption (@(_residentOption == WizardResidentAssignmentOption.None ? "Vacant" : _assignmentType.ToString()))</strong>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (_createdResult is null)
+    {
+        <div class="cg-toolbar" style="margin-top: 0.85rem; display: flex; justify-content: space-between;">
+            <div>
+                @if (_step > 1)
+                {
+                    <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="PrevStep">Previous step</button>
+                }
+            </div>
+            <div style="display: flex; gap: 0.5rem;">
+                @if (_step < 5)
+                {
+                    <button type="button" class="cg-btn cg-btn-primary" @onclick="NextStep">Continue to Step @(_step + 1)</button>
+                }
+                <button type="button" class="cg-btn cg-btn-ai" disabled="@_isBusy" @onclick="SubmitUnitAsync">
+                    @(_isBusy ? "Creating unit..." : "Create Unit & Save")
+                </button>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<Community> Communities { get; set; } = [];
+    [Parameter, EditorRequired] public IReadOnlyList<Building> Buildings { get; set; } = [];
+    [Parameter] public IReadOnlyList<ResidentDirectoryRow> ExistingResidents { get; set; } = [];
+    [Parameter] public Guid? InitialCommunityId { get; set; }
+    [Parameter] public bool LockCommunity { get; set; }
+    [Parameter] public EventCallback<UnitCreationWizardResult> OnUnitCreated { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private int _step = 1;
+    private bool _isBusy;
+    private string _error = string.Empty;
+    private UnitCreationWizardResult? _createdResult;
+
+    private Guid _communityId;
+    private Guid _buildingId;
+    private string _newBuildingName = string.Empty;
+    private string _unitNumber = string.Empty;
+    private int _floorNumber = 1;
+    private int _stairwellNumber = 1;
+    private string _stackCode = "STACK-A1";
+    private UnitKind _kind = UnitKind.Apartment;
+    private decimal _floorAreaM2 = 58.0m;
+    private decimal _storageAreaM2 = 4.5m;
+    private int _roomsCount = 3;
+    private int _bathroomsCount = 1;
+    private int _occupancyCapacity = 4;
+    private int _shareNumerator = 625;
+    private int _shareDenominator = 10000;
+    private string _parkingBay = string.Empty;
+    private string _accessFob = string.Empty;
+    private string _virtualIban = string.Empty;
+    private string _notes = string.Empty;
+
+    private string _ownerFullName = string.Empty;
+    private string _ownerEmail = string.Empty;
+    private string _ownerPhone = string.Empty;
+    private UnitOwnershipRole _ownershipRole = UnitOwnershipRole.PrimaryOwner;
+    private decimal _ownershipPercentage = 100.0m;
+    private string _coOwnerName = string.Empty;
+    private string _votingProxyName = string.Empty;
+
+    private WizardResidentAssignmentOption _residentOption = WizardResidentAssignmentOption.None;
+    private Guid _existingResidentId;
+    private string _newResidentFirstName = string.Empty;
+    private string _newResidentLastName = string.Empty;
+    private string _newResidentEmail = string.Empty;
+    private string _newResidentPhone = string.Empty;
+    private string _newResidentLang = "EN";
+    private ResidentAssignmentType _assignmentType = ResidentAssignmentType.OwnerResident;
+    private DateTime _moveInDate = DateTime.UtcNow.Date;
+    private bool _generateRegistrationLink;
+    private RegistrationApprovalMode _registrationApprovalMode = RegistrationApprovalMode.ManualFirmApproval;
+
+    private IReadOnlyList<Building> CurrentCommunityBuildings =>
+        Buildings.Where(b => b.CommunityId == _communityId).OrderBy(b => b.Name).ToList();
+
+    protected override void OnParametersSet()
+    {
+        if (_communityId == Guid.Empty)
+        {
+            _communityId = InitialCommunityId.HasValue && InitialCommunityId.Value != Guid.Empty
+                ? InitialCommunityId.Value
+                : Communities.FirstOrDefault()?.Id ?? Guid.Empty;
+        }
+        if (_buildingId == Guid.Empty && CurrentCommunityBuildings.Count > 0)
+        {
+            _buildingId = CurrentCommunityBuildings[0].Id;
+        }
+    }
+
+    private void OnCommunityChanged(ChangeEventArgs e)
+    {
+        if (Guid.TryParse(e.Value?.ToString(), out var cid))
+        {
+            _communityId = cid;
+            _buildingId = CurrentCommunityBuildings.FirstOrDefault()?.Id ?? Guid.Empty;
+        }
+    }
+
+    private static string GetStepTitle(int step) => step switch
+    {
+        1 => "Community & Building",
+        2 => "Unit Specs",
+        3 => "Ownership",
+        4 => "Resident & Link",
+        5 => "Confirm",
+        _ => "Step"
+    };
+
+    private void GoToStep(int step)
+    {
+        _error = string.Empty;
+        _step = Math.Clamp(step, 1, 5);
+    }
+
+    private void NextStep()
+    {
+        _error = string.Empty;
+        if (_step == 2 && string.IsNullOrWhiteSpace(_unitNumber))
+        {
+            _error = "Please enter a Unit Number (e.g. A-101) before continuing.";
+            return;
+        }
+        if (_step < 5) _step++;
+    }
+
+    private void PrevStep()
+    {
+        _error = string.Empty;
+        if (_step > 1) _step--;
+    }
+
+    private async Task SubmitUnitAsync()
+    {
+        _error = string.Empty;
+        if (string.IsNullOrWhiteSpace(_unitNumber))
+        {
+            _error = "Unit Number is required (Step 2).";
+            _step = 2;
+            return;
+        }
+        _isBusy = true;
+        try
+        {
+            var role = await Access.GetRoleAsync() ?? WorkspaceSecurityRole.FirmManager;
+            var membershipId = await Access.GetActiveMembershipIdAsync();
+            var req = new UnitCreationWizardRequest(
+                _communityId,
+                _buildingId,
+                _buildingId == Guid.Empty ? _newBuildingName : null,
+                _unitNumber,
+                _floorNumber,
+                _stairwellNumber,
+                _stackCode,
+                _kind,
+                _floorAreaM2,
+                _storageAreaM2,
+                _roomsCount,
+                _bathroomsCount,
+                _occupancyCapacity,
+                UnitOccupancyStatus.Vacant,
+                _shareNumerator,
+                _shareDenominator,
+                _parkingBay,
+                _accessFob,
+                _virtualIban,
+                _notes,
+                _ownerFullName,
+                _ownerEmail,
+                _ownerPhone,
+                _ownershipRole,
+                _ownershipPercentage,
+                _coOwnerName,
+                _votingProxyName,
+                _residentOption,
+                _existingResidentId == Guid.Empty ? null : _existingResidentId,
+                _newResidentFirstName,
+                _newResidentLastName,
+                _newResidentEmail,
+                _newResidentPhone,
+                _newResidentLang,
+                _assignmentType,
+                _moveInDate,
+                _generateRegistrationLink,
+                _registrationApprovalMode);
+
+            _createdResult = await Workspace.CreateUnitFromWizardAsync(req, role, role.ToString(), membershipId);
+            if (!_generateRegistrationLink)
+            {
+                await OnUnitCreated.InvokeAsync(_createdResult);
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task FinishAfterCreationAsync()
+    {
+        if (_createdResult is not null)
+        {
+            await OnUnitCreated.InvokeAsync(_createdResult);
+        }
+    }
+}

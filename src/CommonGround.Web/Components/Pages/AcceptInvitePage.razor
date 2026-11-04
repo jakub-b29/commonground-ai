@@ -38,6 +38,35 @@ else if (_preview is null)
         </div>
         <button type="submit" class="cg-btn cg-btn-primary cg-btn-block" disabled="@_lookupBusy">@Loc.T("action.verify")</button>
     </form>
+    @if (string.IsNullOrWhiteSpace(Token) && string.IsNullOrWhiteSpace(_effectiveToken))
+    {
+        <div class="cg-auth-note" role="status" aria-live="polite">
+            <p>Join with firm code</p>
+        </div>
+        <form method="post" action="/auth/accept-invite" class="cg-form-stack">
+            <div>
+                <label for="ai-join-code">Firm code</label>
+                <input id="ai-join-code" name="firmCode" value="@FirmCode" required autocomplete="off" />
+            </div>
+            <div>
+                <label for="ai-join-name">Full name</label>
+                <input id="ai-join-name" name="fullName" required autocomplete="name" />
+            </div>
+            <div>
+                <label for="ai-join-email">Work email</label>
+                <input id="ai-join-email" name="email" type="email" required autocomplete="username" />
+            </div>
+            <div>
+                <label for="ai-join-phone">Phone number</label>
+                <input id="ai-join-phone" name="phone" type="tel" autocomplete="tel" />
+            </div>
+            <div>
+                <label for="ai-join-pass">Password</label>
+                <input id="ai-join-pass" name="password" type="password" required minlength="8" autocomplete="new-password" />
+            </div>
+            <button type="submit" class="cg-btn cg-btn-primary cg-btn-block">Join with firm code</button>
+        </form>
+    }
     <div class="cg-auth-links">
         <a href="/login">@Loc.T("nav.signin")</a>
         <a href="/register-firm">@Loc.T("auth.createFirmLink")</a>

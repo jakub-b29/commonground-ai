@@ -1,0 +1,15 @@
+<span class="cg-badge cg-badge-@Variant @CssClass">
+    @if (ShowDot)
+    {
+        <span style="width: 5px; height: 5px; border-radius: 50%; background: currentColor; display: inline-block;" aria-hidden="true"></span>
+    }
+    <span>@Text</span>
+</span>
+
+@code {
+    [Parameter, EditorRequired] public string Text { get; set; } = string.Empty;
+    [Parameter] public string Variant { get; set; } = "neutral";
+    [Parameter] public bool ShowDot { get; set; }
+    [Parameter] public string? CssClass { get; set; }
+}
+

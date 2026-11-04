@@ -1,0 +1,234 @@
+@page "/admin"
+@using CommonGround.Application.Interfaces
+@using CommonGround.Application.Persistence
+@using Microsoft.EntityFrameworkCore
+@inject WorkspaceAccessService Access
+@inject IAppDbContextFactory DbFactory
+@inject IMembershipService MembershipService
+@inject NavigationManager Nav
+
+<PageTitle>Portfolio overview — CommonGround</PageTitle>
+
+<PageHeader Category="Firm Administration"
+            Title="Portfolio overview"
+            Subtitle="Multi-community command center with pending human-in-the-loop AI actions, member approvals, and property registry.">
+    <Badges>
+        <AIBadge Label="CommonGround" Model="muse-spark-1.3" />
+    </Badges>
+    <Actions>
+        <a class="cg-btn" href="/admin/members">Review approvals (@_pendingCount)</a>
+        <a class="cg-btn cg-btn-primary" href="/admin/properties/new">Create property</a>
+    </Actions>
+</PageHeader>
+
+@if (!_loaded)
+{
+    <p role="status" aria-live="polite">Loading portfolio.</p>
+}
+else if (!_isAuthorized)
+{
+    <div class="cg-card"><p class="cg-empty-text">Access denied. Firm manager permission is required.</p></div>
+}
+else
+{
+    <div class="cg-grid-4" style="margin-bottom: 1rem;">
+        <MetricCard Label="Managed properties"
+                    Value="@_properties.Count.ToString()"
+                    Subtitle="Active communities in firm registry"
+                    BadgeText="Active"
+                    StatusVariant="ok" />
+        <MetricCard Label="Pending member approvals"
+                    Value="@_pendingCount.ToString()"
+                    Subtitle="Join requests & invitation acceptances"
+                    BadgeText="@(_pendingCount > 0 ? "Needs review" : "Clear")"
+                    StatusVariant="@(_pendingCount > 0 ? "warn" : "ok")" />
+        <MetricCard Label="Pending AI actions"
+                    Value="@_pendingActions.ToString()"
+                    Subtitle="Proposed agent actions awaiting decision"
+                    BadgeText="Human-in-the-loop"
+                    StatusVariant="ai"
+                    IsAi="true" />
+        <MetricCard Label="Active invitations"
+                    Value="@_activeInvitations.ToString()"
+                    Subtitle="Onboarding links awaiting acceptance"
+                    BadgeText="Outbox"
+                    StatusVariant="info" />
+    </div>
+
+    <BentoGrid>
+        <BentoCard Span="8"
+                   Title="Managed communities & associations"
+                   Subtitle="Direct workspace launchpad across all registered properties"
+                   BadgeText="@($"{_properties.Count} registered")"
+                   BadgeVariant="neutral"
+                   BodyStyle="padding: 0;">
+            <HeaderActions>
+                <a class="cg-btn cg-btn-sm" href="/admin/properties">Open registry</a>
+            </HeaderActions>
+            <ChildContent>
+                <div class="cg-table-wrap">
+                    <table class="cg-table">
+                        <thead>
+                            <tr>
+                                <th>Property</th>
+                                <th>City</th>
+                                <th class="num">Units</th>
+                                <th>Quick workspace modules</th>
+                                <th>Registry</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (_properties.Count == 0)
+                            {
+                                <tr><td colspan="5" style="color: var(--text-secondary);">No properties registered yet.</td></tr>
+                            }
+                            @foreach (var property in _properties)
+                            {
+                                <tr @key="property.Id">
+                                    <td>
+                                        <div style="display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap;">
+                                            <strong>@property.Name</strong>
+                                            <span class="cg-badge cg-badge-info mono num">@property.CommunityAccountNumber</span>
+                                        </div>
+                                        <div style="font-size: 0.74rem; color: var(--text-secondary);">@property.StreetAddress</div>
+                                    </td>
+                                    <td>@property.City</td>
+                                    <td class="num">@property.UnitCount</td>
+                                    <td>
+                                        <div style="display: flex; flex-wrap: wrap; gap: 0.3rem;">
+                                            <a class="cg-btn cg-btn-sm cg-btn-ai" href="@($"/properties/{property.Id}/overview")">Overview</a>
+                                            <a class="cg-btn cg-btn-sm" href="@($"/properties/{property.Id}/units")">Units</a>
+                                            <a class="cg-btn cg-btn-sm" href="@($"/properties/{property.Id}/financials")">Financials</a>
+                                            <a class="cg-btn cg-btn-sm" href="@($"/properties/{property.Id}/maintenance")">Maintenance</a>
+                                        </div>
+                                    </td>
+                                    <td><a class="cg-btn cg-btn-sm" href="/admin/properties">Open registry</a></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </ChildContent>
+        </BentoCard>
+
+        <BentoCard Span="4"
+                   IsAi="true"
+                   Title="Intelligent operations & governance"
+                   Subtitle="Firm-wide administration, AI onboarding, and SHA-256 audit controls"
+                   BadgeText="CommonGround Core"
+                   BadgeVariant="ai">
+            <ChildContent>
+                <div style="display: flex; flex-direction: column; gap: 0.55rem;">
+                    <a class="cg-btn cg-btn-ai cg-btn-block" style="justify-content: space-between;" href="/admin/properties/new">
+                        <span>Create property with AI discovery</span>
+                        <span class="mono" style="font-size: 0.7rem;">muse-spark-1.3</span>
+                    </a>
+                    <a class="cg-btn cg-btn-block" style="justify-content: space-between;" href="/admin/residents">
+                        <span>Resident directory &amp; registrations</span>
+                        <span class="mono" style="font-size: 0.7rem; color: var(--text-muted);">RES-XXXXXXXX</span>
+                    </a>
+                    <a class="cg-btn cg-btn-block" style="justify-content: space-between;" href="/units">
+                        <span>Global units &amp; occupancy</span>
+                        <span class="mono" style="font-size: 0.7rem; color: var(--text-muted);">All buildings</span>
+                    </a>
+                    <a class="cg-btn cg-btn-block" style="justify-content: space-between;" href="/admin/members">
+                        <span>Review pending approvals</span>
+                        <span class="cg-badge cg-badge-warn mono">@_pendingCount</span>
+                    </a>
+                    <a class="cg-btn cg-btn-block" style="justify-content: space-between;" href="/admin/properties">
+                        <span>Open property registry</span>
+                        <span class="cg-badge cg-badge-neutral mono">@_properties.Count</span>
+                    </a>
+                    <a class="cg-btn cg-btn-block" style="justify-content: space-between;" href="/admin/contacts">
+                        <span>Edit firm emergency contacts</span>
+                        <span class="mono" style="font-size: 0.7rem; color: var(--text-muted);">24/7 Dispatch</span>
+                    </a>
+                    <a class="cg-btn cg-btn-block" style="justify-content: space-between;" href="/admin/audit">
+                        <span>Open security audit trail</span>
+                        <span class="mono" style="font-size: 0.7rem; color: var(--text-muted);">SHA-256 Chain</span>
+                    </a>
+                </div>
+                @if (!string.IsNullOrWhiteSpace(_message))
+                {
+                    <div role="status" aria-live="polite" class="cg-callout" style="margin-top: 0.75rem;">@_message</div>
+                }
+            </ChildContent>
+            <FooterContent>
+                <span>Multi-tenant isolation enforced</span>
+                <span class="mono">DataSecurityAndPrivacyGuard</span>
+            </FooterContent>
+        </BentoCard>
+    </BentoGrid>
+}
+
+@code {
+    private bool _loaded;
+    private bool _isAuthorized;
+    private Guid? _firmId;
+    private List<PropertyRow> _properties = new();
+    private int _pendingCount;
+    private int _pendingActions;
+    private int _activeInvitations;
+    private string _message = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var firmId = await Access.GetFirmIdAsync();
+            if (firmId is null)
+            {
+                _loaded = true;
+                return;
+            }
+            _firmId = firmId.Value;
+            var role = await Access.GetRoleAsync();
+            var hasAdmin = role == WorkspaceSecurityRole.FirmManager
+                || await Access.HasPermissionAsync(WorkspacePermissionFlags.FirmFullAdministration);
+            if (!hasAdmin)
+            {
+                Nav.NavigateTo("/no-access", forceLoad: false);
+                return;
+            }
+            _isAuthorized = true;
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+        }
+        finally
+        {
+            _loaded = true;
+        }
+    }
+
+    private async Task ReloadAsync()
+    {
+        if (_firmId is null)
+        {
+            return;
+        }
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var firmId = _firmId.Value;
+            _properties = await db.Communities.AsNoTracking()
+                .Where(c => c.ManagementFirmId == firmId)
+                .OrderBy(c => c.Name)
+                .Select(c => new PropertyRow(c.Id, c.CommunityAccountNumber, c.Name, c.City, c.StreetAddress, c.Units.Count))
+                .ToListAsync();
+            _pendingCount = (await MembershipService.GetPendingApprovalsAsync(firmId)).Count;
+            _pendingActions = await db.AiActions.AsNoTracking()
+                .CountAsync(a => a.Status == AiActionStatus.Proposed && _properties.Select(p => p.Id).Contains(a.CommunityId));
+            _activeInvitations = await db.Invitations.AsNoTracking()
+                .CountAsync(i => i.ManagementFirmId == firmId && i.Status == InvitationStatus.Pending);
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+        }
+    }
+
+    private sealed record PropertyRow(Guid Id, string CommunityAccountNumber, string Name, string City, string StreetAddress, int UnitCount);
+}

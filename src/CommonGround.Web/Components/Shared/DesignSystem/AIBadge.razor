@@ -1,0 +1,20 @@
+<span class="ai-badge @CssClass" title="@Title">
+    @if (ShowPulseDot)
+    {
+        <span class="ai-dot" aria-hidden="true"></span>
+    }
+    <span>@Label</span>
+    @if (!string.IsNullOrWhiteSpace(Model))
+    {
+        <span class="mono" style="opacity: 0.85;">· @Model</span>
+    }
+</span>
+
+@code {
+    [Parameter] public string Label { get; set; } = "CommonGround";
+    [Parameter] public string? Model { get; set; }
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public bool ShowPulseDot { get; set; } = true;
+    [Parameter] public string? CssClass { get; set; }
+}
+

@@ -1,0 +1,77 @@
+@page "/properties/{id:guid}/governance"
+@attribute [Authorize(Policy = "WorkspaceMember")]
+@using CommonGround.Web.Components.Shared.Governance
+@inject WorkspaceLocalization Loc
+@inject CommonGroundWorkspaceService Workspace
+@implements IDisposable
+
+<PageTitle>Property governance — CommonGround</PageTitle>
+
+<RequirePropertyAccess PropertyId="Id">
+    @if (!_loaded)
+    {
+        <p role="status" aria-live="polite">Loading.</p>
+    }
+    else if (_snapshot is null)
+    {
+        <div class="cg-card"><p class="cg-empty-text">Property not found.</p></div>
+    }
+    else
+    {
+        <PageHeader Category="Governance & Statutory Compliance"
+                    ContextCode="@($"{_snapshot.Community.Resolutions.Count} resolutions")"
+                    Title="@($"{_snapshot.Community.Name} · Governance & voting")"
+                    Subtitle="Annual meeting package builder, 1M-context statutory compliance audit, share-weighted voting & paper ballot OCR, visual renovation studio, and neighbor mediation.">
+            <Badges>
+                <AIBadge Label="1M-Context Compliance" Model="muse-spark-1.3" />
+                <AIBadge Label="Visual Studio" Model="muse-image-1.0" ShowPulseDot="false" />
+            </Badges>
+            <Actions>
+                <a class="cg-btn cg-btn-sm" href="@($"/properties/{Id}/overview")">Back to overview</a>
+            </Actions>
+        </PageHeader>
+
+        <MeetingPackageAndCompliancePanel Snapshot="_snapshot" OnChanged="ReloadAsync" />
+        <div style="margin-block-start: 1rem;">
+            <LiveShareVotingAndBallotOcrPanel Resolutions="_snapshot.Community.Resolutions" Units="_snapshot.Community.Units" CommunityId="_snapshot.Community.Id" OnChanged="ReloadAsync" />
+        </div>
+        <div style="margin-block-start: 1rem;">
+            <BallotVisualizerAndMinutesPanel Resolutions="_snapshot.Community.Resolutions" CommunityId="_snapshot.Community.Id" OnChanged="ReloadAsync" />
+        </div>
+        <div style="margin-block-start: 1rem;">
+            <RegulationsAndMediationPanel Documents="_snapshot.Community.LegalDocuments" CommunityId="_snapshot.Community.Id" OnChanged="ReloadAsync" />
+        </div>
+    }
+    @if (!string.IsNullOrWhiteSpace(_message))
+    {
+        <div role="status" aria-live="polite" class="cg-callout" style="margin-block-start: 0.75rem;">@_message</div>
+    }
+</RequirePropertyAccess>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    private CommunityWorkspaceSnapshot? _snapshot;
+    private bool _loaded;
+    private string _message = string.Empty;
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        try { _snapshot = await Workspace.GetSnapshotAsync(Id); }
+        catch (Exception ex) { _message = ex.Message; }
+        finally { _loaded = true; }
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+    }
+}

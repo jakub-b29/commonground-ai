@@ -1,0 +1,184 @@
+@page "/properties/{id:guid}/maintenance"
+@attribute [Authorize(Policy = "WorkspaceMember")]
+@using Microsoft.EntityFrameworkCore
+@using CommonGround.Application.Persistence
+@using CommonGround.Web.Components.Shared.Maintenance
+@inject WorkspaceLocalization Loc
+@inject WorkspaceAccessService Access
+@inject IAppDbContextFactory DbFactory
+@inject CommonGroundWorkspaceService Workspace
+@implements IDisposable
+
+<PageTitle>Property maintenance — CommonGround</PageTitle>
+
+<RequirePropertyAccess PropertyId="Id">
+    @if (!_loaded)
+    {
+        <p role="status" aria-live="polite">Loading.</p>
+    }
+    else if (_snapshot is null)
+    {
+        <div class="cg-card"><p class="cg-empty-text">Property not found.</p></div>
+    }
+    else
+    {
+        <PageHeader Category="Work Orders & Inspections"
+                    ContextCode="@($"{_snapshot.Community.WorkOrders.Count} orders")"
+                    Title="@($"{_snapshot.Community.Name} · Maintenance & SAM 3.1 vision")"
+                    Subtitle="Multilingual resident intake triage, SAM 3.1 defect mask segmentation, BOQ cost estimation, video walkthrough splitter, and insurance claim dossiers.">
+            <Badges>
+                <AIBadge Label="Vision Segmentation" Model="sam-3.1" />
+                <AIBadge Label="Triage & Claims" Model="muse-wonder" ShowPulseDot="false" />
+            </Badges>
+            <Actions>
+                <a class="cg-btn cg-btn-sm" href="@($"/properties/{Id}/infrastructure")">Infrastructure atlas</a>
+                <a class="cg-btn cg-btn-sm" href="@($"/properties/{Id}/overview")">Back to overview</a>
+            </Actions>
+        </PageHeader>
+
+        <ResidentIntakeSimulatorPanel CommunityId="_snapshot.Community.Id" OnChanged="ReloadAsync" />
+        <div style="margin-block-start: 1rem;">
+            <WorkOrderSamInspectorPanel WorkOrders="_snapshot.Community.WorkOrders" CommunityId="_snapshot.Community.Id" OnChanged="ReloadAsync" />
+        </div>
+        <div class="cg-card" style="margin-block-start: 1rem;">
+            <div class="cg-section-header">
+                <h2>Work order dispatch & contractor message thread</h2>
+                <span class="cg-badge cg-badge-info">@_threads.Count messages</span>
+            </div>
+            <div>
+                <label for="pm-order">Active work order</label>
+                <select id="pm-order" value="@_selectedOrderId" @onchange="OnSelectOrder">
+                    @foreach (var w in _snapshot.Community.WorkOrders)
+                    {
+                        <option value="@w.Id" selected="@(_selectedOrderId == w.Id)">@w.Title (@w.Status)</option>
+                    }
+                </select>
+            </div>
+            <div class="cg-table-wrap" style="margin-block-start: 0.65rem; max-height: 240px; overflow-y: auto;">
+                <table class="cg-table">
+                    <thead>
+                        <tr>
+                            <th>Timestamp (UTC)</th>
+                            <th>Message</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (_threads.Count == 0)
+                        {
+                            <tr><td colspan="2" style="color: var(--text-secondary);">No dispatch messages logged for this work order yet.</td></tr>
+                        }
+                        @foreach (var m in _threads)
+                        {
+                            <tr @key="m.Id">
+                                <td class="mono num" style="width: 165px;">@m.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm")</td>
+                                <td>@m.Body</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <div style="margin-block-start: 0.65rem;">
+                <label for="pm-body">New dispatch note or contractor instruction</label>
+                <textarea id="pm-body" rows="2" @bind="_draft" placeholder="Enter instruction for assigned contractor or resident update..."></textarea>
+            </div>
+            <div class="cg-toolbar">
+                <button type="button" class="cg-btn cg-btn-primary" disabled="@(_isBusy || _selectedOrderId == Guid.Empty || string.IsNullOrWhiteSpace(_draft))" @onclick="OnPostMessage">Post message</button>
+            </div>
+        </div>
+        <div style="margin-block-start: 1rem;">
+            <VideoWalkthroughAndSafetyPanel CommunityId="_snapshot.Community.Id" OnChanged="ReloadAsync" />
+        </div>
+        <div style="margin-block-start: 1rem;">
+            <InsuranceClaimDossierPanel WorkOrders="_snapshot.Community.WorkOrders" CommunityId="_snapshot.Community.Id" />
+        </div>
+    }
+    @if (!string.IsNullOrWhiteSpace(_message))
+    {
+        <div role="status" aria-live="polite" class="cg-callout" style="margin-block-start: 0.75rem;">@_message</div>
+    }
+</RequirePropertyAccess>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    private CommunityWorkspaceSnapshot? _snapshot;
+    private List<WorkOrderMessage> _threads = new();
+    private Guid _selectedOrderId = Guid.Empty;
+    private string _draft = string.Empty;
+    private bool _loaded;
+    private bool _isBusy;
+    private string _message = string.Empty;
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        try
+        {
+            _snapshot = await Workspace.GetSnapshotAsync(Id);
+            if (_snapshot is not null && _snapshot.Community.WorkOrders.Count > 0)
+            {
+                if (_selectedOrderId == Guid.Empty || !_snapshot.Community.WorkOrders.Any(w => w.Id == _selectedOrderId))
+                    _selectedOrderId = _snapshot.Community.WorkOrders[0].Id;
+                await LoadThreadsAsync();
+            }
+        }
+        catch (Exception ex) { _message = ex.Message; }
+        finally { _loaded = true; }
+    }
+
+    private async Task OnSelectOrder(ChangeEventArgs e)
+    {
+        if (Guid.TryParse(e.Value?.ToString(), out var orderId))
+        {
+            _selectedOrderId = orderId;
+            await LoadThreadsAsync();
+        }
+    }
+
+    private async Task LoadThreadsAsync()
+    {
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            _threads = await db.WorkOrderMessages.AsNoTracking()
+                .Where(m => m.WorkOrderId == _selectedOrderId)
+                .OrderBy(m => m.CreatedAtUtc)
+                .ToListAsync();
+        }
+        catch (Exception ex) { _message = ex.Message; }
+    }
+
+    private async Task OnPostMessage()
+    {
+        if (_selectedOrderId == Guid.Empty || string.IsNullOrWhiteSpace(_draft)) return;
+        _isBusy = true;
+        try
+        {
+            var membershipId = await Access.GetActiveMembershipIdAsync();
+            await using var db = await DbFactory.CreateDbContextAsync();
+            db.WorkOrderMessages.Add(new WorkOrderMessage
+            {
+                WorkOrderId = _selectedOrderId,
+                SenderMembershipId = membershipId,
+                Body = _draft.Trim()
+            });
+            await db.SaveChangesAsync();
+            _draft = string.Empty;
+            await LoadThreadsAsync();
+        }
+        catch (Exception ex) { _message = ex.Message; }
+        finally { _isBusy = false; }
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+    }
+}

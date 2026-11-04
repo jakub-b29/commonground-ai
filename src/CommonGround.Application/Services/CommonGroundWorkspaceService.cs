@@ -80,6 +80,7 @@ public sealed partial class CommonGroundWorkspaceService(
             .Include(c => c.CommunityMessages)
             .Include(c => c.AiActions)
             .Include(c => c.AgentRuns).ThenInclude(r => r.Steps)
+            .Include(c => c.CommunityContacts)
             .FirstOrDefaultAsync(c => c.Id == communityId, ct);
     }
 

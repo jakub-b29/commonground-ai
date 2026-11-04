@@ -1,275 +1,75 @@
-﻿@inject WorkspaceLocalization Loc
+@inject WorkspaceLocalization Loc
+@inject WorkspaceUiState UiState
 @implements IDisposable
 
 <div class="cg-brand-row">
-    <a class="cg-brand" href="/">
+    <a class="cg-brand" href="/" title="CommonGround — Unified Property & Community Platform">
         <span class="brand-mark">CG</span>
-        <span class="brand-text">
-            <strong>CommonGround</strong>
-            <small>@Loc.T("nav.workspace")</small>
-        </span>
+        @if (!UiState.IsSidebarCollapsed)
+        {
+            <span class="brand-text">
+                <strong>CommonGround</strong>
+                <small>@Loc.T("nav.workspace")</small>
+            </span>
+        }
     </a>
+    <button type="button"
+            class="sidebar-collapse-btn"
+            title="@(UiState.IsSidebarCollapsed ? "Expand navigation sidebar" : "Collapse navigation sidebar")"
+            aria-label="@(UiState.IsSidebarCollapsed ? "Expand navigation sidebar" : "Collapse navigation sidebar")"
+            @onclick="ToggleCollapse">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            @if (UiState.IsSidebarCollapsed)
+            {
+                <polyline points="9 18 15 12 9 6"></polyline>
+            }
+            else
+            {
+                <polyline points="15 18 9 12 15 6"></polyline>
+            }
+        </svg>
+    </button>
 </div>
 
 <input type="checkbox" title="Navigation menu" class="navbar-toggler" aria-label="Navigation menu" />
 
-<div class="nav-scrollable">
+<div class="nav-scrollable @(UiState.IsSidebarCollapsed ? "nav-scrollable-collapsed" : "")">
     <AuthorizeView>
-        <Authorized Context="outer">
-            <div class="nav-section-label">@Loc.T("nav.firmPortfolio")</div>
-            <nav class="cg-nav-list" aria-label="Firm portfolio">
-                <div class="nav-item">
-                    <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-                        <span>@Loc.T("nav.portfolio")</span>
-                    </NavLink>
-                </div>
-                <AuthorizeView Roles="FirmManager" Context="firm">
-                    <Authorized Context="firmInner">
-                        <div class="nav-item">
-                            <NavLink class="nav-link" href="firm/properties">
-                                <span>@Loc.T("nav.firm")</span>
-                            </NavLink>
-                        </div>
-                        <div class="nav-item">
-                            <NavLink class="nav-link" href="firm/managers">
-                                <span>@Loc.T("firm.assignManagerTitle")</span>
-                            </NavLink>
-                        </div>
-                        <div class="nav-item">
-                            <NavLink class="nav-link" href="firm/invitations">
-                                <span>@Loc.T("firm.inviteTitle")</span>
-                            </NavLink>
-                        </div>
-                    </Authorized>
-                </AuthorizeView>
-                <AuthorizeView Roles="FirmManager,PropertyManager" Context="chat">
-                    <Authorized Context="chatInner">
-                        <div class="nav-item">
-                            <NavLink class="nav-link" href="firm-chat">
-                                <span>@Loc.T("nav.firmChat")</span>
-                            </NavLink>
-                        </div>
-                    </Authorized>
-                </AuthorizeView>
-                <div class="nav-item">
-                    <NavLink class="nav-link" href="utilities/sources">
-                        <span>@Loc.T("nav.utilitiesSources")</span>
-                    </NavLink>
-                </div>
-                <div class="nav-item">
-                    <NavLink class="nav-link" href="utilities/outages">
-                        <span>@Loc.T("nav.utilitiesOutagesDetail")</span>
-                    </NavLink>
-                </div>
-                <AuthorizeView Roles="FirmManager,PropertyManager" Context="appr">
-                    <Authorized Context="apprInner">
-                        <div class="nav-item">
-                            <NavLink class="nav-link" href="approvals">
-                                <span>@Loc.T("nav.approvals")</span>
-                            </NavLink>
-                        </div>
-                    </Authorized>
-                </AuthorizeView>
-            </nav>
-
-            <div class="nav-section-label">@Loc.T("nav.propertyOps")</div>
-            <nav class="cg-nav-list" aria-label="Property operations">
-                <div class="nav-item">
-                    <NavLink class="nav-link" href="units">
-                        <span>@Loc.T("nav.units")</span>
-                    </NavLink>
-                </div>
-                <div class="nav-item">
-                    <NavLink class="nav-link" href="infrastructure/atlas">
-                        <span>@Loc.T("nav.infrastructure")</span>
-                    </NavLink>
-                </div>
-                <div class="nav-item">
-                    <NavLink class="nav-link" href="infrastructure/inspections">
-                        <span>@Loc.T("nav.inspections")</span>
-                    </NavLink>
-                </div>
-                <AuthorizeView Roles="FirmManager,PropertyManager" Context="perm">
-                    <Authorized Context="permInner">
-                        <div class="nav-item">
-                            <NavLink class="nav-link" href="infrastructure/permits">
-                                <span>@Loc.T("nav.permits")</span>
-                            </NavLink>
-                        </div>
-                    </Authorized>
-                </AuthorizeView>
-                <div class="nav-item">
-                    <NavLink class="nav-link" href="maintenance/intake">
-                        <span>@Loc.T("nav.intake")</span>
-                    </NavLink>
-                </div>
-                <div class="nav-item">
-                    <NavLink class="nav-link" href="maintenance/work-orders">
-                        <span>@Loc.T("nav.workOrders")</span>
-                    </NavLink>
-                </div>
-                <AuthorizeView Roles="FirmManager,PropertyManager" Context="walk">
-                    <Authorized Context="walkInner">
-                        <div class="nav-item">
-                            <NavLink class="nav-link" href="maintenance/walkthroughs">
-                                <span>@Loc.T("nav.walkthroughs")</span>
-                            </NavLink>
-                        </div>
-                        <div class="nav-item">
-                            <NavLink class="nav-link" href="maintenance/claims">
-                                <span>@Loc.T("nav.claims")</span>
-                            </NavLink>
-                        </div>
-                    </Authorized>
-                </AuthorizeView>
-            </nav>
-
-            <AuthorizeView Roles="FirmManager,PropertyManager" Context="acct">
-                <Authorized Context="acctInner">
-                    <div class="nav-section-label">@Loc.T("nav.accountingGov")</div>
-                    <nav class="cg-nav-list" aria-label="Accounting">
-                        <div class="nav-item">
-                            <NavLink class="nav-link" href="financials/ledger">
-                                <span>@Loc.T("nav.ledger")</span>
-                            </NavLink>
-                        </div>
-                        <div class="nav-item">
-                            <NavLink class="nav-link" href="financials/utilities">
-                                <span>@Loc.T("nav.utilitiesDetail")</span>
-                            </NavLink>
-                        </div>
-                        <div class="nav-item">
-                            <NavLink class="nav-link" href="financials/arrears">
-                                <span>@Loc.T("nav.arrears")</span>
-                            </NavLink>
-                        </div>
-                        <div class="nav-item">
-                            <NavLink class="nav-link" href="financials/simulations">
-                                <span>@Loc.T("nav.simulations")</span>
-                            </NavLink>
-                        </div>
-                        <div class="nav-item">
-                            <NavLink class="nav-link" href="financials/reserves">
-                                <span>@Loc.T("nav.reserves")</span>
-                            </NavLink>
-                        </div>
-                    </nav>
-                </Authorized>
-            </AuthorizeView>
-
-            <div class="nav-section-label">@Loc.T("nav.governance")</div>
-            <nav class="cg-nav-list" aria-label="Governance">
-                <AuthorizeView Roles="FirmManager,PropertyManager" Context="govm">
-                    <Authorized Context="govmInner">
-                        <div class="nav-item">
-                            <NavLink class="nav-link" href="governance/meetings">
-                                <span>@Loc.T("nav.meetings")</span>
-                            </NavLink>
-                        </div>
-                        <div class="nav-item">
-                            <NavLink class="nav-link" href="governance/minutes">
-                                <span>@Loc.T("nav.minutes")</span>
-                            </NavLink>
-                        </div>
-                    </Authorized>
-                </AuthorizeView>
-                <div class="nav-item">
-                    <NavLink class="nav-link" href="governance/voting">
-                        <span>@Loc.T("nav.voting")</span>
-                    </NavLink>
-                </div>
-                <div class="nav-item">
-                    <NavLink class="nav-link" href="governance/regulations">
-                        <span>@Loc.T("nav.regulations")</span>
-                    </NavLink>
-                </div>
-                <div class="nav-item">
-                    <NavLink class="nav-link" href="governance/mediation">
-                        <span>@Loc.T("nav.mediation")</span>
-                    </NavLink>
-                </div>
-            </nav>
-
-            <div class="nav-section-label">@Loc.T("nav.communityAccess")</div>
-            <nav class="cg-nav-list" aria-label="Community access">
-                <AuthorizeView Roles="FirmManager,PropertyManager" Context="res">
-                    <Authorized Context="resInner">
-                        <div class="nav-item">
-                            <NavLink class="nav-link" href="residents/approvals">
-                                <span>@Loc.T("nav.residents")</span>
-                            </NavLink>
-                        </div>
-                    </Authorized>
-                </AuthorizeView>
-                <div class="nav-item">
-                    <NavLink class="nav-link" href="residents/my-unit">
-                        <span>@Loc.T("nav.myUnit")</span>
-                    </NavLink>
-                </div>
-                <div class="nav-item">
-                    <NavLink class="nav-link" href="community/groups">
-                        <span>@Loc.T("nav.communityGroups")</span>
-                    </NavLink>
-                </div>
-                <div class="nav-item">
-                    <NavLink class="nav-link" href="community/messages">
-                        <span>@Loc.T("nav.messages")</span>
-                    </NavLink>
-                </div>
-                <div class="nav-item">
-                    <NavLink class="nav-link" href="account/profile">
-                        <span>@Loc.T("nav.profile")</span>
-                    </NavLink>
-                </div>
-            </nav>
-
-            <div class="nav-section-label">@Loc.T("nav.account")</div>
-            <nav class="cg-nav-list" aria-label="Account">
-                <div class="nav-item">
-                    <NavLink class="nav-link" href="settings/account">
-                        <span>@Loc.T("settings.accountTitle")</span>
-                    </NavLink>
-                </div>
-                <AuthorizeView Roles="FirmManager" Context="setfirm">
-                    <Authorized Context="setfirmInner">
-                        <div class="nav-item">
-                            <NavLink class="nav-link" href="settings/firm-contacts">
-                                <span>@Loc.T("nav.firmContacts")</span>
-                            </NavLink>
-                        </div>
-                    </Authorized>
-                </AuthorizeView>
-                <AuthorizeView Roles="FirmManager,PropertyManager" Context="setprop">
-                    <Authorized Context="setpropInner">
-                        <div class="nav-item">
-                            <NavLink class="nav-link" href="settings/property">
-                                <span>@Loc.T("nav.propertySettings")</span>
-                            </NavLink>
-                        </div>
-                    </Authorized>
-                </AuthorizeView>
-                <div class="nav-item">
-                    <form method="post" action="/auth/logout" class="cg-nav-logout">
-                        <button type="submit" class="nav-link cg-nav-button">@Loc.T("nav.signOut")</button>
-                    </form>
-                </div>
-            </nav>
+        <Authorized>
+            <FirmAdminNavSection />
+            <PropertyWorkspaceNavSection />
+            <PersonalNavSection />
         </Authorized>
     </AuthorizeView>
 </div>
 
 @code {
     private Action? _locHandler;
+    private Action? _stateHandler;
 
     protected override async Task OnInitializedAsync()
     {
         _locHandler = () => InvokeAsync(StateHasChanged);
         Loc.OnChange += _locHandler;
+        _stateHandler = () => InvokeAsync(StateHasChanged);
+        UiState.OnChange += _stateHandler;
         await Loc.EnsureLoadedAsync();
+    }
+
+    private void ToggleCollapse()
+    {
+        UiState.ToggleSidebarCollapsed();
     }
 
     public void Dispose()
     {
-        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+        if (_locHandler is not null)
+        {
+            Loc.OnChange -= _locHandler;
+        }
+        if (_stateHandler is not null)
+        {
+            UiState.OnChange -= _stateHandler;
+        }
     }
 }
