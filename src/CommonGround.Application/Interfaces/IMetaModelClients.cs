@@ -109,6 +109,63 @@ public interface IMuseSparkClient
     Task<string> DraftNeighborDisputeMediationAsync(Community community, string unitReporter, string unitSubject, string issueDescription, CancellationToken ct = default);
     Task<string> EvaluateModificationOrArcRequestAsync(Community community, ModificationOrArcRequest request, CancellationToken ct = default);
     Task<string> AskPortfolioCopilotAsync(Community community, string managerQuestion, string portfolioSnapshotSummary, CancellationToken ct = default);
+    Task<SparkAgentTurnModelResult> RunAgenticTurnAsync(string userPrompt, string accountPermissionJson, string workspaceContextJson, string toolCatalogJson, string scratchpadHistoryJson, CancellationToken ct = default);
+}
+
+public sealed record SparkAgentToolCallDecision(
+    string Thought,
+    string ToolName,
+    Dictionary<string, string> Arguments,
+    string StepTitle);
+
+public sealed record SparkAgentTurnModelResult(
+    string Thinking,
+    bool IsFinalAnswer,
+    string FinalResponseMarkdown,
+    IReadOnlyList<SparkAgentToolCallDecision> ToolCalls,
+    int LatencyMs,
+    bool UsedLiveApi);
+
+public sealed record SparkAgentLiveStepEvent(
+    Guid RunId,
+    int StepNumber,
+    string Phase, // "Thinking", "PermissionCheck", "ToolExecution", "Observation", "AwaitingClarification", "FinalAnswer"
+    string Thought,
+    string? ToolName,
+    string? ToolArgumentsJson,
+    bool? PermissionGranted,
+    string? PermissionBadgeText,
+    string? ObservationJson,
+    string? FinalMarkdown,
+    string? DeepLinkUrl,
+    int LatencyMs,
+    IReadOnlyList<string>? ClarificationOptions = null
+);
+
+public sealed record AgentRunResult(
+    Guid RunId,
+    string UserGoal,
+    bool IsCompleted,
+    string FinalResponseMarkdown,
+    IReadOnlyList<SparkAgentLiveStepEvent> Steps,
+    int TotalLatencyMs,
+    bool UsedLiveApi,
+    bool IsAwaitingClarification = false,
+    string? ClarificationQuestion = null,
+    IReadOnlyList<string>? ClarificationOptions = null
+);
+
+public interface IMuseSparkAutomationAgentService
+{
+    Task<AgentRunResult> ExecuteAgenticTurnAsync(
+        string userGoal,
+        System.Security.Claims.ClaimsPrincipal userPrincipal,
+        Guid? activeCommunityId,
+        bool stepByStepMode,
+        IProgress<SparkAgentLiveStepEvent>? progress = null,
+        string? userClarificationResponse = null,
+        CancellationToken ct = default
+    );
 }
 
 public interface IMuseWonderClient

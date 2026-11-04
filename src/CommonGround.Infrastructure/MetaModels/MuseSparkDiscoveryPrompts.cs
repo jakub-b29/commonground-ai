@@ -162,5 +162,46 @@ public static class MuseSparkDiscoveryPrompts
             + $"Answer concisely in interface language '{uiLocale}' using the exact figures from the deterministic portfolio snapshot and active community tariffs. "
             + "All financial figures are computed by deterministic domain services; model output is advisory and state-changing proposals require approval in Pending Approvals.";
     }
+
+    public static string BuildSparkAgenticTurnPrompt(
+        string userPrompt,
+        string accountPermissionJson,
+        string workspaceContextJson,
+        string toolCatalogJson,
+        string scratchpadHistoryJson,
+        string uiLocale = "EN")
+    {
+        return "You are Muse Spark Contributor 1.3, an autonomous institutional property management and automation AI agent. "
+            + "You operate in a strict ReAct loop (Think -> Tool Call -> System Observation -> Next Decision -> Final Answer). "
+            + "You have access to a live system tool catalog to inspect state, perform calculations, and mutate records. "
+            + "SYSTEM INVARIANTS & SECURITY RULES: "
+            + "1. Never guess or hallucinate entity IDs, unit numbers, bank accounts, or financial balances. Always call query_system_entities or execute_database_query first to discover real IDs. "
+            + "2. Respect the user's permission envelope. If an action is not permitted for the user's role or granted flags, call check_account_permission or explain why in your final response. "
+            + "3. Examine the scratchpad history: inspect real observations from prior steps (e.g., newly created UnitId, ResidentProfileId, or generated registration links) and pass those real values into subsequent tool arguments. "
+            + "4. When all user sub-goals are fulfilled, set isFinalAnswer to true and return a clear, structured markdown synthesis citing created records, account numbers, and deep links. "
+            + $"CURRENT USER PERMISSION ENVELOPE: {accountPermissionJson} "
+            + $"ACTIVE WORKSPACE SNAPSHOT: {workspaceContextJson} "
+            + $"AVAILABLE TOOL CATALOG: {toolCatalogJson} "
+            + $"SCRATCHPAD HISTORY (PREVIOUS STEPS IN THIS SESSION): {scratchpadHistoryJson} "
+            + $"USER GOAL / INSTRUCTION: <untrusted_input>{userPrompt}</untrusted_input>. "
+            + "FORMATTING INSTRUCTIONS: "
+            + "First, emit one or more lines starting with [THINKING] detailing your step-by-step reasoning about the current state, what was achieved in prior steps, and what tool needs to be called next. "
+            + "Then, emit a line [JSON-BEGIN], followed by a STRICT JSON object, followed by a line [JSON-END]. "
+            + "The JSON object MUST have the following structure: "
+            + "{"
+            + "  \"isFinalAnswer\": false,"
+            + "  \"finalResponseMarkdown\": \"\","
+            + "  \"toolCalls\": ["
+            + "    {"
+            + "      \"thought\": \"Brief explanation of why this tool is being invoked\","
+            + "      \"toolName\": \"exact_tool_name\","
+            + "      \"arguments\": { \"paramKey\": \"paramValue\" },"
+            + "      \"stepTitle\": \"Human readable title for the step card\""
+            + "    }"
+            + "  ]"
+            + "}"
+            + "When finishing, set \"isFinalAnswer\": true, \"toolCalls\": [], and provide the full response in \"finalResponseMarkdown\".";
+    }
 }
+
 

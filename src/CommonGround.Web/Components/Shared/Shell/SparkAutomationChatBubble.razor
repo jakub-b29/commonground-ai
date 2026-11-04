@@ -1,0 +1,884 @@
+@using CommonGround.Application.Interfaces
+@using CommonGround.Application.Services
+@using CommonGround.Domain.Entities
+@using CommonGround.Domain.Enums
+@using CommonGround.Web.Services
+@using System.Text.Json
+@inject IMuseSparkAutomationAgentService AgentService
+@inject IMuseVoiceTranscriber VoiceTranscriber
+@inject WorkspaceUiState UiState
+@inject WorkspaceLocalization Loc
+@inject WorkspaceAccessService Access
+@inject NavigationManager Nav
+@implements IDisposable
+
+@if (!UiState.IsSparkAgentChatOpen)
+{
+    <!-- Persistent Floating Launcher -->
+    <button type="button"
+            class="cg-spark-launcher @(_isRunning ? "cg-spark-launcher-active" : "")"
+            @onclick="OnOpenChat"
+            title="Open Spark Automation Agent (muse-spark-1.3)"
+            aria-label="Open Spark Automation Agent">
+        <span class="cg-spark-icon-wrapper" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
+            </svg>
+        </span>
+        <span class="cg-spark-launcher-label">Spark Agent</span>
+        @if (_isRunning)
+        {
+            <span class="cg-spark-pulse-dot" aria-hidden="true"></span>
+        }
+        else if (_steps.Count > 0)
+        {
+            <span class="cg-spark-step-counter" title="Executed steps">@_steps.Count</span>
+        }
+    </button>
+}
+else
+{
+    <!-- Floating Chat Bubble Window -->
+    <aside class="cg-spark-chat-window @(UiState.IsSparkAgentExpanded ? "cg-spark-chat-expanded" : "")"
+           role="dialog"
+           aria-label="Spark Automation Agent"
+           aria-modal="false">
+        
+        <!-- Header -->
+        <header class="cg-spark-header">
+            <div class="cg-spark-header-title-group">
+                <span class="cg-spark-icon-wrapper" aria-hidden="true">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
+                    </svg>
+                </span>
+                <div>
+                    <div style="display: flex; align-items: center; gap: 0.45rem;">
+                        <h2 class="cg-spark-title">Spark Automation Agent</h2>
+                        <span class="cg-spark-badge-pill">muse-spark-1.3</span>
+                    </div>
+                    <div class="cg-spark-subtitle">
+                        ReAct Loop · 43 Tools · Server-Side Guard
+                    </div>
+                </div>
+            </div>
+
+            <div class="cg-spark-header-actions">
+                <span class="cg-spark-status-chip @GetStatusChipCssClass()">@_statusText</span>
+
+                <button type="button"
+                        class="cg-btn-icon"
+                        @onclick="OnToggleExpanded"
+                        title="@(UiState.IsSparkAgentExpanded ? "Restore compact window" : "Expand window")"
+                        aria-label="@(UiState.IsSparkAgentExpanded ? "Restore compact window" : "Expand window")">
+                    @if (UiState.IsSparkAgentExpanded)
+                    {
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="4 14 10 14 10 20"></polyline>
+                            <polyline points="20 10 14 10 14 4"></polyline>
+                            <line x1="14" y1="10" x2="21" y2="3"></line>
+                            <line x1="3" y1="21" x2="10" y2="14"></line>
+                        </svg>
+                    }
+                    else
+                    {
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="15 3 21 3 21 9"></polyline>
+                            <polyline points="9 21 3 21 3 15"></polyline>
+                            <line x1="21" y1="3" x2="14" y2="10"></line>
+                            <line x1="3" y1="21" x2="10" y2="14"></line>
+                        </svg>
+                    }
+                </button>
+
+                <button type="button"
+                        class="cg-btn-icon"
+                        @onclick="OnClearHistory"
+                        title="Clear conversation and steps"
+                        aria-label="Clear conversation">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="3 6 5 6 21 6"></polyline>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    </svg>
+                </button>
+
+                <button type="button"
+                        class="cg-btn-icon"
+                        @onclick="OnCloseChat"
+                        title="Close chat window"
+                        aria-label="Close chat">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+        </header>
+
+        <!-- Controls Toolbar -->
+        <div class="cg-spark-controls">
+            <div class="cg-spark-mode-segmented">
+                <button type="button"
+                        class="cg-spark-mode-btn @(!_stepByStepMode ? "active" : "")"
+                        @onclick="() => SetStepByStepMode(false)"
+                        title="Autonomous Loop: automatically executes permitted steps to completion">
+                    <span>Autonomous Loop</span>
+                </button>
+                <button type="button"
+                        class="cg-spark-mode-btn @(_stepByStepMode ? "active" : "")"
+                        @onclick="() => SetStepByStepMode(true)"
+                        title="Step-by-Step Interactive Mode: pauses before or after each tool call for confirmation">
+                    <span>Step-by-Step</span>
+                </button>
+            </div>
+
+            <div class="cg-spark-context-tags">
+                <span class="cg-context-tag" title="Active community scope">
+                    <span class="mono">@(UiState.SelectedCommunityId.HasValue ? "Community Scoped" : "Portfolio Wide")</span>
+                </span>
+                <span class="cg-context-tag cg-context-role" title="Current security role">
+                    <span class="mono">@UiState.ActiveSecurityRole</span>
+                </span>
+            </div>
+        </div>
+
+        <!-- Chat & Steps Scroll Body -->
+        <div class="cg-spark-body" @ref="_bodyElement">
+            @if (_steps.Count == 0 && string.IsNullOrWhiteSpace(_currentGoal))
+            {
+                <!-- Hero & Quick-Start Recipes -->
+                <div class="cg-spark-welcome">
+                    <div class="cg-spark-welcome-badge">
+                        <span class="ai-dot" aria-hidden="true"></span>
+                        <span>Autonomous ReAct Operations</span>
+                    </div>
+                    <h3 class="cg-spark-welcome-title">How can Spark Agent assist your operations?</h3>
+                    <p class="cg-spark-welcome-desc">
+                        Direct access to 43 tools across units, residents, financials, utility settlements, warranties, and emergency systems with real-time permission boundaries.
+                    </p>
+
+                    <div class="cg-spark-recipes-section">
+                        <div class="cg-spark-recipes-header">
+                            <span>Role-Aware Quick-Start Recipes (@UiState.ActiveSecurityRole)</span>
+                        </div>
+                        <div class="cg-spark-recipes-grid">
+                            @foreach (var recipe in GetRoleRecipes())
+                            {
+                                <button type="button"
+                                        class="cg-spark-recipe-card"
+                                        @onclick="() => SelectRecipe(recipe.Goal)">
+                                    <div class="cg-spark-recipe-title">@recipe.Title</div>
+                                    <div class="cg-spark-recipe-goal">@recipe.Goal</div>
+                                </button>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <!-- User Goal Message Bubble -->
+                @if (!string.IsNullOrWhiteSpace(_currentGoal))
+                {
+                    <div class="cg-spark-message-user">
+                        <div class="cg-spark-message-user-header">
+                            <span class="mono">Operator Instruction</span>
+                        </div>
+                        <div class="cg-spark-message-user-text">@_currentGoal</div>
+                    </div>
+                }
+
+                <!-- Step Stream Cards -->
+                <div class="cg-spark-steps-list">
+                    @foreach (var step in _steps)
+                    {
+                        <div class="cg-step-card @GetStepCardCssClass(step)" @key="@($"{step.StepNumber}_{step.Phase}_{step.ToolName}")">
+                            
+                            <!-- Card Header -->
+                            <div class="cg-step-header">
+                                <div class="cg-step-title-group">
+                                    <span class="cg-step-number mono">Step @step.StepNumber</span>
+                                    <span class="cg-step-phase">@step.Phase</span>
+                                    
+                                    @if (!string.IsNullOrWhiteSpace(step.ToolName))
+                                    {
+                                        <span class="cg-step-tool-tag mono">@step.ToolName</span>
+                                    }
+                                </div>
+
+                                <div class="cg-step-meta">
+                                    @if (step.PermissionGranted.HasValue)
+                                    {
+                                        <span class="cg-perm-badge @(step.PermissionGranted.Value ? "cg-perm-permitted" : "cg-perm-denied")">
+                                            @(step.PermissionBadgeText ?? (step.PermissionGranted.Value ? "PERMITTED" : "DENIED"))
+                                        </span>
+                                    }
+
+                                    @if (step.LatencyMs > 0)
+                                    {
+                                        <span class="cg-step-latency mono">@step.LatencyMs ms</span>
+                                    }
+                                </div>
+                            </div>
+
+                            <!-- Thinking Phase Card Content -->
+                            @if (!string.IsNullOrWhiteSpace(step.Thought))
+                            {
+                                <div class="cg-step-thought">
+                                    @if (step.Phase == "Thinking" && _isRunning)
+                                    {
+                                        <span class="cg-spark-pulse-inline" aria-hidden="true"></span>
+                                    }
+                                    <span>@step.Thought</span>
+                                </div>
+                            }
+
+                            <!-- Tool Arguments Preview -->
+                            @if (!string.IsNullOrWhiteSpace(step.ToolArgumentsJson) && step.ToolArgumentsJson != "{}")
+                            {
+                                <div class="cg-step-args">
+                                    <div class="cg-step-args-label mono">Tool Arguments:</div>
+                                    <pre class="cg-code-box mono">@FormatJsonPretty(step.ToolArgumentsJson)</pre>
+                                </div>
+                            }
+
+                            <!-- Observation Phase Content -->
+                            @if (!string.IsNullOrWhiteSpace(step.ObservationJson))
+                            {
+                                var isCollapsed = _collapsedObservations.Contains(step.StepNumber);
+                                <div class="cg-step-observation">
+                                    <div class="cg-step-obs-header" @onclick="() => ToggleObservationCollapse(step.StepNumber)">
+                                        <span class="mono" style="font-weight: 600;">System Observation</span>
+                                        <button type="button" class="cg-btn-link-xs">
+                                            @(isCollapsed ? "Expand JSON ▼" : "Collapse ▲")
+                                        </button>
+                                    </div>
+
+                                    @if (!isCollapsed)
+                                    {
+                                        <pre class="cg-json-box mono">@FormatJsonPretty(step.ObservationJson)</pre>
+                                    }
+
+                                    @if (!string.IsNullOrWhiteSpace(step.DeepLinkUrl))
+                                    {
+                                        <div class="cg-step-action-bar">
+                                            <button type="button"
+                                                    class="cg-btn cg-btn-ai cg-btn-xs"
+                                                    @onclick="() => NavigateToDeepLink(step.DeepLinkUrl)">
+                                                <span>Open in Workspace →</span>
+                                            </button>
+                                            <span class="mono cg-text-xs" style="color: var(--text-muted);">@step.DeepLinkUrl</span>
+                                        </div>
+                                    }
+                                </div>
+                            }
+
+                            <!-- Final Answer Content -->
+                            @if (!string.IsNullOrWhiteSpace(step.FinalMarkdown))
+                            {
+                                <div class="cg-step-final-answer">
+                                    <div class="cg-final-answer-header">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--status-success);">
+                                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                                            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                                        </svg>
+                                        <strong>Operational Synthesis & Verification</strong>
+                                    </div>
+                                    <div class="cg-final-markdown">
+                                        @FormatMarkdownToHtml(step.FinalMarkdown)
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    <!-- Interactive Clarification Card (AwaitingClarification) -->
+                    @if (_awaitingClarification)
+                    {
+                        <div class="cg-clarification-card" role="alert">
+                            <div class="cg-clarification-header">
+                                <span class="cg-spark-icon-wrapper" aria-hidden="true">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                                    </svg>
+                                </span>
+                                <strong>Agent Clarification Required</strong>
+                            </div>
+
+                            <p class="cg-clarification-question">@_clarificationQuestion</p>
+
+                            @if (_clarificationOptions is not null && _clarificationOptions.Count > 0)
+                            {
+                                <div class="cg-clarification-options">
+                                    @foreach (var opt in _clarificationOptions)
+                                    {
+                                        <button type="button"
+                                                class="cg-btn cg-btn-sm cg-btn-ai"
+                                                disabled="@_isRunning"
+                                                @onclick="() => SubmitClarificationAsync(opt)">
+                                            @opt
+                                        </button>
+                                    }
+                                </div>
+                            }
+
+                            <div class="cg-clarification-custom">
+                                <label for="cg-clarification-input" class="visually-hidden">Custom response</label>
+                                <input id="cg-clarification-input"
+                                       type="text"
+                                       class="cg-input"
+                                       @bind="_clarificationCustomAnswer"
+                                       placeholder="Or type custom specification..."
+                                       disabled="@_isRunning"
+                                       @onkeyup="OnClarificationInputKeyUp" />
+                                <button type="button"
+                                        class="cg-btn cg-btn-primary cg-btn-sm"
+                                        disabled="@(string.IsNullOrWhiteSpace(_clarificationCustomAnswer) || _isRunning)"
+                                        @onclick="() => SubmitClarificationAsync(_clarificationCustomAnswer)">
+                                    Submit
+                                </button>
+                            </div>
+                        </div>
+                    }
+
+                    <!-- Step-by-Step Pending Execution Card -->
+                    @if (_stepByStepMode && !_isRunning && _lastResult != null && !_lastResult.IsCompleted && !_awaitingClarification)
+                    {
+                        <div class="cg-step-interactive-prompt">
+                            <div class="cg-interactive-prompt-header">
+                                <span class="mono" style="font-weight: 600; color: var(--accent-ai-light);">Step-by-Step Interactive Mode Paused</span>
+                                <span class="mono cg-text-xs">Turn complete</span>
+                            </div>
+                            <p class="cg-interactive-prompt-desc">
+                                The agent paused for operator validation. Review the observation above, then choose to continue to the next step or cancel.
+                            </p>
+                            <div class="cg-interactive-prompt-actions">
+                                <button type="button"
+                                        class="cg-btn cg-btn-ai cg-btn-sm"
+                                        @onclick="ExecuteNextStepAsync">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                                    </svg>
+                                    <span>Execute Next Step</span>
+                                </button>
+                                <button type="button"
+                                        class="cg-btn cg-btn-ghost cg-btn-sm"
+                                        @onclick="CancelStepAsync">
+                                    <span>Cancel Session</span>
+                                </button>
+                            </div>
+                        </div>
+                    }
+
+                    <!-- Live Running Indicator -->
+                    @if (_isRunning && !_awaitingClarification)
+                    {
+                        <div class="cg-running-indicator">
+                            <span class="cg-spark-pulse-dot" aria-hidden="true"></span>
+                            <span class="mono" style="font-size: 0.75rem; color: var(--accent-ai-light);">Spark Agent thinking and formulating ReAct decisions...</span>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+
+        <!-- Voice Note Recording Panel (Collapsible) -->
+        @if (_isVoicePanelOpen)
+        {
+            <div class="cg-voice-tray">
+                <div class="cg-voice-tray-header">
+                    <div style="display: flex; align-items: center; gap: 0.45rem;">
+                        <span class="cg-voice-mic-pulse" aria-hidden="true"></span>
+                        <strong style="font-size: 0.78rem;">Live Audio Stream · muse-voice-transcribe-1.0</strong>
+                    </div>
+                    <button type="button" class="cg-btn-icon-xs" @onclick="ToggleVoicePanel" aria-label="Close voice panel">✕</button>
+                </div>
+                <p style="font-size: 0.72rem; color: var(--text-secondary); margin: 0 0 0.5rem 0;">
+                    Select an audio scenario preset or speak to transcribe directly into the agent instruction:
+                </p>
+                <div class="cg-voice-presets-row">
+                    <button type="button"
+                            class="cg-btn cg-btn-xs cg-btn-outline"
+                            disabled="@_isTranscribingVoice"
+                            @onclick='() => TranscribeVoicePresetAsync("Ceiling Leak", "There is a water leak on the ceiling in my bathroom, the stain is growing since yesterday.")'>
+                        Ceiling Leak (EN)
+                    </button>
+                    <button type="button"
+                            class="cg-btn cg-btn-xs cg-btn-outline"
+                            disabled="@_isTranscribingVoice"
+                            @onclick='() => TranscribeVoicePresetAsync("No Hot Water", "There is no hot water in the whole stairwell since this morning.")'>
+                        Stairwell Heating (EN)
+                    </button>
+                    <button type="button"
+                            class="cg-btn cg-btn-xs cg-btn-outline"
+                            disabled="@_isTranscribingVoice"
+                            @onclick='() => TranscribeVoicePresetAsync("Meeting Notes", "Annual general meeting discussion on resolution 01/2026 and financial reserve audit.")'>
+                        Meeting Audio (EN)
+                    </button>
+                </div>
+                @if (!string.IsNullOrWhiteSpace(_voiceStatusMessage))
+                {
+                    <div class="cg-voice-status-bar mono">@_voiceStatusMessage</div>
+                }
+            </div>
+        }
+
+        <!-- Input Footer -->
+        <footer class="cg-spark-footer">
+            <div class="cg-spark-input-container">
+                <textarea class="cg-spark-textarea"
+                          @bind="_inputGoal"
+                          @bind:event="oninput"
+                          rows="2"
+                          placeholder="Instruct Spark Agent (e.g. 'Query units, create unit 305, and settle utilities')..."
+                          disabled="@(_isRunning || _awaitingClarification)"
+                          @onkeydown="OnTextareaKeyDown"></textarea>
+
+                <div class="cg-spark-input-toolbar">
+                    <div style="display: flex; align-items: center; gap: 0.35rem;">
+                        <!-- Microphone Live Audio Toggle -->
+                        <button type="button"
+                                class="cg-btn cg-btn-icon-sm @(_isVoicePanelOpen ? "cg-mic-active" : "")"
+                                @onclick="ToggleVoicePanel"
+                                disabled="@(_isRunning || _awaitingClarification)"
+                                title="Live Voice Transcription (muse-voice-transcribe-1.0)"
+                                aria-label="Toggle voice transcription">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path>
+                                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                                <line x1="12" y1="19" x2="12" y2="22"></line>
+                            </svg>
+                        </button>
+                        <span class="cg-text-xs mono" style="color: var(--text-muted);">
+                            @(_stepByStepMode ? "Interactive" : "Autonomous")
+                        </span>
+                    </div>
+
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <button type="button"
+                                class="cg-btn cg-btn-ai cg-btn-sm"
+                                disabled="@(string.IsNullOrWhiteSpace(_inputGoal) || _isRunning || _awaitingClarification)"
+                                @onclick="() => ExecuteGoalAsync(_inputGoal)">
+                            @if (_isRunning)
+                            {
+                                <span class="cg-spark-pulse-inline" aria-hidden="true"></span>
+                                <span>Running...</span>
+                            }
+                            else
+                            {
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                                </svg>
+                                <span>Run Agent</span>
+                            }
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </footer>
+    </aside>
+}
+
+@code {
+    private ElementReference _bodyElement;
+    private Action? _stateHandler;
+    private CancellationTokenSource _cts = new();
+
+    private string _inputGoal = string.Empty;
+    private string _currentGoal = string.Empty;
+    private bool _isRunning;
+    private bool _stepByStepMode;
+    private string _statusText = "Ready";
+
+    private List<SparkAgentLiveStepEvent> _steps = new();
+    private AgentRunResult? _lastResult;
+
+    // Clarification state
+    private bool _awaitingClarification;
+    private string? _clarificationQuestion;
+    private IReadOnlyList<string>? _clarificationOptions;
+    private string _clarificationCustomAnswer = string.Empty;
+
+    // Voice state
+    private bool _isVoicePanelOpen;
+    private bool _isTranscribingVoice;
+    private string? _voiceStatusMessage;
+
+    // UI state
+    private HashSet<int> _collapsedObservations = new();
+
+    protected override void OnInitialized()
+    {
+        _stateHandler = () => InvokeAsync(StateHasChanged);
+        UiState.OnChange += _stateHandler;
+    }
+
+    private void OnOpenChat()
+    {
+        UiState.SetSparkAgentChatOpen(true);
+    }
+
+    private void OnCloseChat()
+    {
+        UiState.SetSparkAgentChatOpen(false);
+    }
+
+    private void OnToggleExpanded()
+    {
+        UiState.ToggleSparkAgentExpanded();
+    }
+
+    private void SetStepByStepMode(bool isStepByStep)
+    {
+        _stepByStepMode = isStepByStep;
+        StateHasChanged();
+    }
+
+    private void ToggleVoicePanel()
+    {
+        _isVoicePanelOpen = !_isVoicePanelOpen;
+        _voiceStatusMessage = null;
+    }
+
+    private void ToggleObservationCollapse(int stepNumber)
+    {
+        if (_collapsedObservations.Contains(stepNumber))
+        {
+            _collapsedObservations.Remove(stepNumber);
+        }
+        else
+        {
+            _collapsedObservations.Add(stepNumber);
+        }
+    }
+
+    private void OnClearHistory()
+    {
+        _cts.Cancel();
+        _cts = new();
+        _steps.Clear();
+        _currentGoal = string.Empty;
+        _inputGoal = string.Empty;
+        _lastResult = null;
+        _awaitingClarification = false;
+        _clarificationQuestion = null;
+        _clarificationOptions = null;
+        _clarificationCustomAnswer = string.Empty;
+        _isRunning = false;
+        _statusText = "Ready";
+        _collapsedObservations.Clear();
+        StateHasChanged();
+    }
+
+    private async Task SelectRecipe(string goal)
+    {
+        _inputGoal = goal;
+        await ExecuteGoalAsync(goal);
+    }
+
+    private async Task ExecuteGoalAsync(string goal, string? clarificationResponse = null)
+    {
+        if (string.IsNullOrWhiteSpace(goal) || _isRunning)
+        {
+            return;
+        }
+
+        _isRunning = true;
+        _currentGoal = goal;
+        _inputGoal = string.Empty;
+        _statusText = "Analyzing goal...";
+        StateHasChanged();
+
+        try
+        {
+            var principal = await Access.GetUserAsync();
+
+            var progressReporter = new Progress<SparkAgentLiveStepEvent>(evt =>
+            {
+                InvokeAsync(() =>
+                {
+                    var existingIdx = _steps.FindIndex(s => s.StepNumber == evt.StepNumber && s.Phase == evt.Phase && s.ToolName == evt.ToolName);
+                    if (existingIdx >= 0)
+                    {
+                        _steps[existingIdx] = evt;
+                    }
+                    else
+                    {
+                        _steps.Add(evt);
+                    }
+
+                    if (evt.Phase == "Thinking") _statusText = "Thinking...";
+                    else if (evt.Phase == "PermissionCheck") _statusText = "Verifying Permission...";
+                    else if (evt.Phase == "ToolExecution") _statusText = "Running Tool...";
+                    else if (evt.Phase == "Observation") _statusText = "Received Observation";
+                    else if (evt.Phase == "AwaitingClarification") _statusText = "Clarification Needed";
+                    else if (evt.Phase == "FinalAnswer") _statusText = "Completed";
+
+                    StateHasChanged();
+                });
+            });
+
+            var result = await AgentService.ExecuteAgenticTurnAsync(
+                userGoal: goal,
+                userPrincipal: principal,
+                activeCommunityId: UiState.SelectedCommunityId,
+                stepByStepMode: _stepByStepMode,
+                progress: progressReporter,
+                userClarificationResponse: clarificationResponse,
+                ct: _cts.Token);
+
+            _lastResult = result;
+            _awaitingClarification = result.IsAwaitingClarification;
+            _clarificationQuestion = result.ClarificationQuestion;
+            _clarificationOptions = result.ClarificationOptions;
+            _clarificationCustomAnswer = string.Empty;
+
+            if (result.IsCompleted)
+            {
+                _statusText = "Completed";
+            }
+            else if (result.IsAwaitingClarification)
+            {
+                _statusText = "Needs Clarification";
+            }
+            else if (_stepByStepMode)
+            {
+                _statusText = "Step Paused";
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            _statusText = "Cancelled";
+        }
+        catch (Exception ex)
+        {
+            _statusText = "Error";
+            _steps.Add(new SparkAgentLiveStepEvent(
+                RunId: Guid.NewGuid(),
+                StepNumber: _steps.Count + 1,
+                Phase: "Observation",
+                Thought: "Execution encountered an error.",
+                ToolName: "system_error",
+                ToolArgumentsJson: null,
+                PermissionGranted: false,
+                PermissionBadgeText: "ERROR",
+                ObservationJson: JsonSerializer.Serialize(new { error = ex.Message, details = ex.ToString() }),
+                FinalMarkdown: null,
+                DeepLinkUrl: null,
+                LatencyMs: 0));
+        }
+        finally
+        {
+            _isRunning = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ExecuteNextStepAsync()
+    {
+        if (_lastResult is null || string.IsNullOrWhiteSpace(_currentGoal))
+        {
+            return;
+        }
+        await ExecuteGoalAsync(_currentGoal);
+    }
+
+    private void CancelStepAsync()
+    {
+        _statusText = "Cancelled by Operator";
+        _awaitingClarification = false;
+        _lastResult = null;
+        StateHasChanged();
+    }
+
+    private async Task SubmitClarificationAsync(string answer)
+    {
+        if (string.IsNullOrWhiteSpace(answer) || string.IsNullOrWhiteSpace(_currentGoal))
+        {
+            return;
+        }
+        _awaitingClarification = false;
+        await ExecuteGoalAsync(_currentGoal, clarificationResponse: answer);
+    }
+
+    private async Task OnClarificationInputKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_clarificationCustomAnswer))
+        {
+            await SubmitClarificationAsync(_clarificationCustomAnswer);
+        }
+    }
+
+    private async Task OnTextareaKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.ShiftKey && !string.IsNullOrWhiteSpace(_inputGoal) && !_isRunning && !_awaitingClarification)
+        {
+            await ExecuteGoalAsync(_inputGoal);
+        }
+    }
+
+    private async Task TranscribeVoicePresetAsync(string presetName, string scenarioContent)
+    {
+        _isTranscribingVoice = true;
+        _voiceStatusMessage = $"Transcribing '{presetName}' via muse-voice-transcribe-1.0...";
+        StateHasChanged();
+
+        try
+        {
+            var (transcript, detectedLang, latencyMs) = await VoiceTranscriber.TranscribeVoiceNoteAsync(scenarioContent, _cts.Token);
+            _inputGoal = transcript;
+            _voiceStatusMessage = $"Transcribed: \"{transcript}\" ({detectedLang}, {latencyMs}ms)";
+        }
+        catch (Exception ex)
+        {
+            _voiceStatusMessage = $"Voice error: {ex.Message}";
+        }
+        finally
+        {
+            _isTranscribingVoice = false;
+            StateHasChanged();
+        }
+    }
+
+    private void NavigateToDeepLink(string url)
+    {
+        if (!string.IsNullOrWhiteSpace(url))
+        {
+            Nav.NavigateTo(url);
+        }
+    }
+
+    private string GetStatusChipCssClass()
+    {
+        return _statusText switch
+        {
+            "Thinking..." => "cg-status-thinking",
+            "Running Tool..." => "cg-status-tool",
+            "Verifying Permission..." => "cg-status-tool",
+            "Needs Clarification" => "cg-status-clarification",
+            "Completed" => "cg-status-completed",
+            "Error" => "cg-status-error",
+            _ => "cg-status-idle"
+        };
+    }
+
+    private static string GetStepCardCssClass(SparkAgentLiveStepEvent step)
+    {
+        if (step.Phase == "Thinking") return "cg-card-thinking";
+        if (step.Phase == "FinalAnswer") return "cg-card-final";
+        if (step.PermissionGranted == false) return "cg-card-denied";
+        if (step.Phase == "AwaitingClarification") return "cg-card-clarification";
+        return "cg-card-standard";
+    }
+
+    private static string FormatJsonPretty(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            return json;
+        }
+    }
+
+    private static MarkupString FormatMarkdownToHtml(string markdown)
+    {
+        if (string.IsNullOrWhiteSpace(markdown)) return new MarkupString(string.Empty);
+
+        var lines = markdown.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
+        var sb = new System.Text.StringBuilder();
+
+        foreach (var line in lines)
+        {
+            var trimmed = line.Trim();
+            if (trimmed.StartsWith("### ", StringComparison.Ordinal))
+            {
+                sb.Append("<h4 class=\"cg-md-h4\">").Append(System.Net.WebUtility.HtmlEncode(trimmed.Substring(4))).Append("</h4>");
+            }
+            else if (trimmed.StartsWith("## ", StringComparison.Ordinal))
+            {
+                sb.Append("<h3 class=\"cg-md-h3\">").Append(System.Net.WebUtility.HtmlEncode(trimmed.Substring(3))).Append("</h3>");
+            }
+            else if (trimmed.StartsWith("# ", StringComparison.Ordinal))
+            {
+                sb.Append("<h2 class=\"cg-md-h2\">").Append(System.Net.WebUtility.HtmlEncode(trimmed.Substring(2))).Append("</h2>");
+            }
+            else if (trimmed.StartsWith("- ", StringComparison.Ordinal) || trimmed.StartsWith("* ", StringComparison.Ordinal))
+            {
+                sb.Append("<li class=\"cg-md-li\">").Append(FormatInlineSpans(trimmed.Substring(2))).Append("</li>");
+            }
+            else if (string.IsNullOrWhiteSpace(trimmed))
+            {
+                sb.Append("<div class=\"cg-md-spacer\"></div>");
+            }
+            else
+            {
+                sb.Append("<p class=\"cg-md-p\">").Append(FormatInlineSpans(trimmed)).Append("</p>");
+            }
+        }
+
+        return new MarkupString(sb.ToString());
+    }
+
+    private static string FormatInlineSpans(string text)
+    {
+        var encoded = System.Net.WebUtility.HtmlEncode(text);
+        // Replace bold **text**
+        encoded = System.Text.RegularExpressions.Regex.Replace(encoded, @"\*\*(.+?)\*\*", "<strong>$1</strong>");
+        // Replace backtick code `code`
+        encoded = System.Text.RegularExpressions.Regex.Replace(encoded, @"`(.+?)`", "<code class=\"mono cg-code-inline\">$1</code>");
+        return encoded;
+    }
+
+    private sealed record RecipeItem(string Title, string Goal);
+
+    private IReadOnlyList<RecipeItem> GetRoleRecipes()
+    {
+        return UiState.ActiveSecurityRole switch
+        {
+            WorkspaceSecurityRole.FirmManager => new[]
+            {
+                new RecipeItem("Multi-Turn Create & Settle", "Query vacant units and create new units in Amber Park."),
+                new RecipeItem("Reserve & Arrears Audit", "Audit reserve fund cashflow, arrears over 90 days, and utility reconciliation."),
+                new RecipeItem("Quorum & Statutory Check", "Check open resolutions, quorum thresholds, and statutory compliance."),
+                new RecipeItem("Register New Resident", "Register new resident and issue zero-disclosure invitation link.")
+            },
+            WorkspaceSecurityRole.PropertyManager => new[]
+            {
+                new RecipeItem("Utility Settlement Run", "Run bulk utility reconciliation and anomaly detector for heating & water."),
+                new RecipeItem("Leak Triage & SAM 3.1", "Triage resident leak report with vertical riser check and SAM 3.1."),
+                new RecipeItem("Contracted Power Audit", "Audit contracted thermal and electrical power tariffs against peak demand."),
+                new RecipeItem("Bank FIFO Arrears Match", "Match incoming bank transfers and allocate FIFO arrears.")
+            },
+            WorkspaceSecurityRole.Resident => new[]
+            {
+                new RecipeItem("Report Bathroom Leak", "Report bathroom ceiling water leak and check riser stack."),
+                new RecipeItem("Ledger & Assessment Check", "Check my unit ledger balance, monthly assessment, and payment status."),
+                new RecipeItem("Municipal Outage Board", "View community notice board & active municipal utility outages."),
+                new RecipeItem("Balcony Modification Request", "Submit architectural modification request for balcony glazing.")
+            },
+            _ => new[]
+            {
+                new RecipeItem("Portfolio Overview", "Summarize active work orders, riser leaks, and warranty coverage."),
+                new RecipeItem("Compliance Audit", "Audit statutory resolutions and reserve fund projections.")
+            }
+        };
+    }
+
+    public void Dispose()
+    {
+        if (_stateHandler is not null)
+        {
+            UiState.OnChange -= _stateHandler;
+        }
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+}
+

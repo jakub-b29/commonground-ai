@@ -18,6 +18,8 @@ public sealed class WorkspaceUiState
     public WorkspaceSecurityRole ActiveSecurityRole { get; set; } = WorkspaceSecurityRole.PropertyManager;
     public HashSet<Guid> RevealedAccessCodeIds { get; set; } = [];
     public bool IsPortfolioQueryOpen { get; set; }
+    public bool IsSparkAgentChatOpen { get; set; }
+    public bool IsSparkAgentExpanded { get; set; }
     public bool IsEmergencyDrawerOpen { get; set; }
     public bool IsSidebarCollapsed { get; set; }
     public string ActiveTheme { get; private set; } = "dark";
@@ -171,6 +173,28 @@ public sealed class WorkspaceUiState
     public void TogglePortfolioQuery()
     {
         IsPortfolioQueryOpen = !IsPortfolioQueryOpen;
+        NotifyChanged();
+    }
+
+    public void ToggleSparkAgentChat()
+    {
+        IsSparkAgentChatOpen = !IsSparkAgentChatOpen;
+        NotifyChanged();
+    }
+
+    public void ToggleSparkAgentExpanded()
+    {
+        IsSparkAgentExpanded = !IsSparkAgentExpanded;
+        NotifyChanged();
+    }
+
+    public void SetSparkAgentChatOpen(bool isOpen)
+    {
+        if (IsSparkAgentChatOpen == isOpen)
+        {
+            return;
+        }
+        IsSparkAgentChatOpen = isOpen;
         NotifyChanged();
     }
 

@@ -91,6 +91,10 @@ public static class DependencyInjection
         services.AddScoped<IMembershipService, MembershipService>();
         services.AddScoped<IInvitationService, InvitationService>();
         services.AddScoped<IPropertyOnboardingService, PropertyOnboardingService>();
+        services.AddScoped<SparkAgentPermissionEvaluator>();
+        services.AddScoped<SparkAgentToolExecutor>();
+        services.AddScoped<IMuseSparkAutomationAgentService, MuseSparkAutomationAgentService>();
+        services.AddScoped<MuseSparkAutomationAgentService>();
         return services;
     }
 
