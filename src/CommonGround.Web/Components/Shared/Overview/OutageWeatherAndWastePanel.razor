@@ -84,13 +84,31 @@
                 </div>
             </div>
 
+            <div>
+                <label for="wasteCustomInfo" style="font-size: 0.74rem; color: var(--text-secondary);">@Loc.T("image.customInfoLabel")</label>
+                <input id="wasteCustomInfo"
+                       type="text"
+                       class="cg-input"
+                       style="font-size: 0.76rem; padding: 0.35rem 0.5rem;"
+                       placeholder="@Loc.T("image.linesPlaceholder")"
+                       @bind="_customInfoRaw" />
+            </div>
+
             @if (!string.IsNullOrWhiteSpace(_message))
             {
                 <div role="status" aria-live="polite" class="ai-callout">@_message</div>
             }
             @if (!string.IsNullOrWhiteSpace(_posterUrl))
             {
-                <img class="cg-photo-frame" src="@_posterUrl" alt="@Loc.T("waste.posterAlt")" style="max-width: 220px;" />
+                <div class="cg-subcard">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem;">
+                        <span class="mono cg-text-xs" style="color: var(--accent-primary);">@Loc.T("image.metaLabel"): muse-image-1.0 • 640×400 PNG</span>
+                        <a href="@_posterUrl" download="waste-segregation-poster.png" class="cg-btn cg-btn-xs cg-btn-outline" style="text-decoration: none;">
+                            @Loc.T("image.downloadPng")
+                        </a>
+                    </div>
+                    <img class="cg-photo-frame" src="@_posterUrl" alt="@Loc.T("waste.posterAlt")" style="max-width: 280px;" />
+                </div>
             }
         }
     </div>
@@ -101,6 +119,7 @@
     private bool _isBusy;
     private string _message = string.Empty;
     private string _posterUrl = string.Empty;
+    private string _customInfoRaw = "Flatten cardboard boxes before disposal; No plastic bags in BIO bin; Bulky waste pickup: first Saturday";
     private Action? _locHandler;
 
     protected override async Task OnInitializedAsync()
@@ -115,12 +134,16 @@
         _isBusy = true;
         try
         {
-            _posterUrl = await Workspace.GenerateWasteSegregationPosterAsync(Snapshot.Community.Id);
-            _message = Loc.T("msg.posterGenerated");
+            var customLines = (_customInfoRaw ?? string.Empty)
+                .Split(new[] { ';', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .ToList();
+            _posterUrl = await Workspace.GenerateWasteSegregationPosterAsync(Snapshot.Community.Id, default, customLines);
+            _message = $"{Loc.T("msg.posterGenerated")} (muse-image-1.0 • 640×400 PNG)";
         }
         catch (Exception ex)
         {
-            _message = $"{Loc.T("msg.posterFailed")} {ex.Message}";
+            _message = string.Format(System.Globalization.CultureInfo.InvariantCulture, Loc.T("msg.posterFailedFmt"), ex.Message);
         }
         finally
         {

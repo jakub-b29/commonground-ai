@@ -7,27 +7,29 @@
 @inject WorkspaceAccessService Access
 @inject IPropertyOnboardingService Onboarding
 @inject NavigationManager Nav
+@inject WorkspaceLocalization Loc
+@implements IDisposable
 
-<PageTitle>Create property — CommonGround</PageTitle>
+<PageTitle>@Loc.T("page.adminNewPropertyTitle") — CommonGround</PageTitle>
 
-<PageHeader Category="Firm Administration · Onboarding"
-            Title="Create property"
-            Subtitle="Enter baseline community details manually first, then optionally enrich with AI web discovery across 11 municipal & utility categories.">
+<PageHeader Category="@Loc.T("admin.wizard.category")"
+            Title="@Loc.T("page.adminNewPropertyTitle")"
+            Subtitle="@Loc.T("page.adminNewPropertyLead")">
     <Badges>
         <AIBadge Label="Public Registry Sync" Model="muse-spark-1.3-contributor" />
     </Badges>
     <Actions>
-        <a class="cg-btn" href="/admin/properties">Back to registry</a>
+        <a class="cg-btn" href="/admin/properties">@Loc.T("action.backToRegistry")</a>
     </Actions>
 </PageHeader>
 
-@if (!_loaded) { <p role="status" aria-live="polite">Loading wizard.</p> }
-else if (!_isAuthorized) { <div class="cg-card"><p class="cg-empty-text">Access denied. Firm manager permission is required.</p></div> }
+@if (!_loaded) { <p role="status" aria-live="polite">@Loc.T("msg.loadingWizard")</p> }
+else if (!_isAuthorized) { <div class="cg-card"><p class="cg-empty-text">@Loc.T("msg.accessDeniedFirm")</p></div> }
 else
 {
     <div style="display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-start;">
         <div style="flex: 1 1 340px; min-width: 0;"><ManualPropertyForm Model="_manual" IsBusy="_creating" OnSubmit="OnCreateManualAsync" />
-            @if (_createdId is not null) { <div role="status" aria-live="polite" class="ai-callout" style="margin-block-start: 0.75rem;">Property created. Step 2 optional. <a href="/properties/@_createdId/overview">Open property workspace</a></div> }
+            @if (_createdId is not null) { <div role="status" aria-live="polite" class="ai-callout" style="margin-block-start: 0.75rem;">@Loc.T("admin.wizard.createdStep2") <a href="/properties/@_createdId/overview">@Loc.T("admin.wizard.openWorkspace")</a></div> }
             else if (!string.IsNullOrWhiteSpace(_message)) { <div role="status" aria-live="polite" class="cg-callout" style="margin-block-start: 0.75rem;">@_message</div> }
         </div>
         <aside style="flex: 1 1 340px; min-width: 0;"><AiCompletionAssistantPanel IsBusy="@(_discovering || _applying)" IsRunning="_discovering" CanRun="@(!_discovering)" ProgressPercent="_percent" ProgressStage="@_stage" ProgressDetail="@_detail" ThinkingLog="_thinking" IsOfflineFallback="_offlineFallback" Dossier="_dossier" Editable="_editable" Selected="_selected" SelectedChanged="OnSelectedChanged" OnHarvest="OnDiscoverAsync" OnApply="OnApplyAsync" />
@@ -48,8 +50,12 @@ else
     private bool _offlineFallback;
     private PropertyAiDiscoveryDossier? _dossier; private EditableDossier? _editable;
     private DossierSectionFlags _selected = DossierSectionFlags.All;
+    private Action? _locHandler;
     protected override async Task OnInitializedAsync()
     {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
         try
         {
             var firmId = await Access.GetFirmIdAsync(); var actorId = await Access.GetActiveMembershipIdAsync();
@@ -66,7 +72,7 @@ else
     private async Task OnCreateManualAsync()
     {
         if (_firmId is null || _actorId is null) return;
-        if (string.IsNullOrWhiteSpace(_manual.Name) || string.IsNullOrWhiteSpace(_manual.Street) || string.IsNullOrWhiteSpace(_manual.City)) { _message = "Property name, street address and city are required."; return; }
+        if (string.IsNullOrWhiteSpace(_manual.Name) || string.IsNullOrWhiteSpace(_manual.Street) || string.IsNullOrWhiteSpace(_manual.City)) { _message = Loc.T("msg.propertyNameStreetCityRequired"); return; }
         _creating = true;
         try { var created = await Onboarding.CreatePropertyManualAsync(_firmId.Value, _actorId.Value, _manual.Name.Trim(), _manual.Street.Trim(), _manual.Postal.Trim(), _manual.City.Trim(), _manual.Country.Trim(), _manual.Mode); _createdId = created.Id; _message = string.Empty; }
         catch (Exception ex) { _message = ex.Message; }
@@ -74,8 +80,8 @@ else
     }
     private async Task OnDiscoverAsync()
     {
-        if (string.IsNullOrWhiteSpace(_manual.Street) || string.IsNullOrWhiteSpace(_manual.City)) { _aiMessage = "Street address and city are required."; return; }
-        if (_manual.Name.Length + _manual.Street.Length + _manual.City.Length > 500) { _aiMessage = "Address input is too long."; return; }
+        if (string.IsNullOrWhiteSpace(_manual.Street) || string.IsNullOrWhiteSpace(_manual.City)) { _aiMessage = Loc.T("msg.streetCityRequired"); return; }
+        if (_manual.Name.Length + _manual.Street.Length + _manual.City.Length > 500) { _aiMessage = Loc.T("msg.addressTooLong"); return; }
         _discovering = true; _offlineFallback = false;
         _thinking.Clear(); _thinkingSeen.Clear(); _lastMilestone = -1;
         try
@@ -101,7 +107,7 @@ else
                 }
                 InvokeAsync(StateHasChanged);
             });
-            _dossier = await Onboarding.DiscoverPropertyDossierFromAddressAsync(request, default, reporter);
+            _dossier = await Onboarding.DiscoverPropertyDossierFromAddressAsync(request, default, reporter, Loc.ActiveLocale);
             _editable = new EditableDossier(_dossier); _selected = DossierSectionFlags.All;
             _offlineFallback = _dossier.SourceUrls.Any(u => u.Contains("offline-fallback", StringComparison.OrdinalIgnoreCase));
             _aiMessage = string.Empty;
@@ -112,7 +118,7 @@ else
     private async Task OnApplyAsync()
     {
         if (_dossier is null || _editable is null) return;
-        if (_selected == DossierSectionFlags.None) { _aiMessage = "Select at least one dossier section."; return; }
+        if (_selected == DossierSectionFlags.None) { _aiMessage = Loc.T("msg.selectDossierSection"); return; }
         if (_firmId is null || _actorId is null) return;
         _applying = true;
         try
@@ -121,17 +127,21 @@ else
             if (_createdId is not null)
             {
                 await Onboarding.ApplyDiscoveryDossierToPropertyAsync(_createdId.Value, _actorId.Value, merged, _selected);
-                _aiMessage = "Discovery dossier applied to property.";
+                _aiMessage = Loc.T("msg.dossierApplied");
             }
             else
             {
                 var scan = DataSecurityAndPrivacyGuard.InspectAndSanitizeUntrustedInput($"{_editable.SuggestedAssociationName} {_editable.RegistryNumber}");
-                if (scan.IsInjectionDetected) { _aiMessage = "Input blocked by security guard."; return; }
+                if (scan.IsInjectionDetected) { _aiMessage = Loc.T("msg.inputBlockedGuard"); return; }
                 var created = await Onboarding.CreatePropertyFromDossierAsync(_firmId.Value, _actorId.Value, merged, _selected, _manual.Street.Trim(), _manual.Postal.Trim(), _manual.City.Trim(), _manual.Country.Trim());
-                _createdId = created.Id; _aiMessage = "Property created with dossier.";
+                _createdId = created.Id; _aiMessage = Loc.T("msg.propertyCreatedDossier");
             }
         }
         catch (Exception ex) { _aiMessage = ex.Message; }
         finally { _applying = false; }
+    }
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
     }
 }

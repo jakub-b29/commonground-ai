@@ -4,20 +4,20 @@
 @inject WorkspaceLocalization Loc
 @implements IDisposable
 
-<PageTitle>Pending approval - CommonGround</PageTitle>
+<PageTitle>@Loc.T("pendingPage.title") - CommonGround</PageTitle>
 
 <div class="cg-auth-heading">
-    <h1>Pending approval</h1>
-    <p>Your membership is waiting for manager approval. You will gain property access after approval.</p>
+    <h1>@Loc.T("pendingPage.heading")</h1>
+    <p>@Loc.T("pendingPage.lead")</p>
 </div>
 
 <div class="cg-auth-note" role="status" aria-live="polite">
-    <p>Contact the firm manager if approval takes longer than expected.</p>
+    <p>@Loc.T("pendingPage.contactHint")</p>
 </div>
 
 <div class="cg-auth-links">
-    <a href="/login">Sign in</a>
-    <a href="/choose-membership">Choose membership</a>
+    <a href="/login">@Loc.T("nav.signin")</a>
+    <a href="/choose-membership">@Loc.T("pendingPage.chooseMembershipLink")</a>
 </div>
 
 @code {

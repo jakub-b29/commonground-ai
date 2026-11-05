@@ -1,82 +1,123 @@
 # CommonGround
 
-Property management, fund accounting, and governance software for firms managing residential housing associations and condominiums.
+Property management, fund accounting, computer-vision maintenance verification, and statutory governance software for firms that manage residential housing associations and condominiums.
 
-Independent management firms typically assign 15 to 30 properties (400 to 1,200 units) to a single property manager. Most existing systems only record accounting entries after the fact, leaving managers to reconcile utility sub-meters in spreadsheets, check statutory compliance by hand, chase contractors over phone calls, and type meeting minutes from audio recordings. CommonGround combines the unit and meter registry, fund-separated double-entry accounting, work order verification, and owner voting in one web application.
+An independent management firm typically assigns 15 to 30 properties (400 to 1,200 units) to one property manager. Most existing systems only record accounting entries after the fact. Managers reconcile utility sub-meters in spreadsheets, check statutory compliance by hand, chase contractors by phone, and type meeting minutes from audio recordings. CommonGround combines the unit and meter registry, fund-separated double-entry accounting, work order verification, owner voting, and an AI operations assistant in one multi-firm web application.
 
-Built during the [Meta Global AI Developer Hackathon – Cerebral Valley](https://cerebralvalley.ai/e/meta-ai-developer-hackathon).
+Built for the [Meta Global AI Developer Hackathon, Cerebral Valley](https://cerebralvalley.ai/e/meta-ai-developer-hackathon).
+
+| | |
+|---|---|
+| Runtime | .NET 10, C# 14, Blazor Web App (Interactive Server) |
+| Database | SQL Server 2025 LocalDB via EF Core 10 (in-memory provider for tests) |
+| Meta models | `muse-spark-1.3`, `muse-wonder`, `muse-voice-transcribe-1.0`, `sam-3.1`, `muse-image-1.0` |
+| Interface languages | English, Polish, Spanish, French, German |
+| Verification | `dotnet build -warnaserror`: 0 warnings, 0 errors. `dotnet test`: 160 passed, 0 failed |
+
+## Describe your use of Meta products to build the submitted project
+
+CommonGround calls five Meta models through the Meta Model API (`https://api.meta.ai/v1`). Each model has a specific job in a workflow; none is used as a generic chatbot.
+
+| Model | Endpoint | Where it is used in CommonGround |
+|---|---|---|
+| `muse-spark-1.3` | `/v1/responses` (with `web_search` grounding where allowed) | Agentic operations assistant (ReAct loop with a live tool catalog), portfolio question answering, address-driven property discovery (utility operators, gross tariffs, emergency authorities, national statutes), multimodal resident request triage and translation, statute compliance checks over the full governing corpus, meter dial OCR, paper ballot OCR, neighbor mediation and arrears notice drafting, ARC and renovation permit evaluation |
+| `muse-wonder` | `/v1/responses` (multi-step workflows) | Public registry and legal corpus synchronization, annual meeting package compilation, insurance claim dossier assembly |
+| `muse-voice-transcribe-1.0` | `POST /v1/asr/transcribe` (multipart `request` JSON + `audio` WAV) | Live browser microphone transcription for resident reports and the assistant chat (`PUSH_TO_TALK`), speaker-diarized meeting minutes (`DIARIZATION`) |
+| `sam-3.1` | Segmentation | Defect masks (`wall crack`, `water stain`, `spalling concrete`, `damaged handrail`), affected area in m², basement valve and gas lever annotation, before/after repair verification (remaining defect below 5% of original area) |
+| `muse-image-1.0` | Image generation | Option A / Option B renovation ballot previews, QR stairwell notice posters, multilingual waste segregation posters, and custom annotated 640x400 PNG visuals with user-specified title, info lines, and QR link |
+
+How the integration is built:
+
+- **Typed clients behind interfaces.** `IMuseSparkClient`, `IMuseWonderClient`, `IMuseVoiceTranscriber`, `ISam31Client`, and `IMuseImageClient` are implemented by `MetaModelClients` in `src/CommonGround.Infrastructure/MetaModels`. Prompts live in `MuseSparkDiscoveryPrompts`.
+- **Agentic loop.** `MuseSparkAutomationAgentService` runs a Think, Tool Call, Observation, Final Answer loop. The model chooses from a tool catalog (query entities, create units, register residents, run utility settlement, generate images, and others). Every tool call is checked against the user's permissions before it executes, and step-by-step mode pauses between steps.
+- **Voice path.** The browser records microphone audio, encodes 16 kHz mono 16-bit PCM into a RIFF/WAVE file (`wwwroot/js/voice-recorder.js`), and the server posts it as `multipart/form-data` to `/v1/asr/transcribe` with the `muse-voice-transcribe-1.0` request settings.
+- **Language handling.** The assistant answers in the language selected in the UI and is instructed to search for data in that language and in the property's country-native language, so tariff and statute lookups hit local sources.
+- **Clean output.** Chat shows human-readable summaries, highlights, and generated images. Raw JSON is never rendered in the chat.
+- **Offline behavior.** When no API key is configured, deterministic fallbacks keep every workflow runnable for local development and tests. Live calls start as soon as a key is present.
+
+## Why are Meta's models important to your solution?
+
+Property management work is not text-only. A single request can arrive as a voice note in Ukrainian, a photo of a stained ceiling, a scan of a signed paper ballot, or a bank transfer title with no reference. The Meta model family covers each of those inputs, so one platform can handle the full workflow instead of stitching together unrelated vendors.
+
+- **Multimodal triage in one pass.** `muse-spark-1.3` reads the resident message, translates it for the manager, checks the riser stack, active municipal outages, and 5-year developer warranty, and classifies common property versus private unit responsibility with a verbatim statutory citation.
+- **Measurement that feeds cost estimates.** `sam-3.1` turns a photo into a defect mask and an area in m². That area goes to a deterministic bill-of-quantities estimator, so contractor bids can be compared with an independent figure. After the repair, the same concept is segmented again to decide whether the invoice can be paid.
+- **Voice as a first-class input.** Residents and managers often cannot type a detailed report. `muse-voice-transcribe-1.0` gives live transcription from the browser microphone and diarized minutes for owner meetings, which are then exported as PDF and DOCX.
+- **Long-context legal checking.** Housing law differs by country and by community statute. `muse-spark-1.3` can load the community's governing documents and the acquired national statutes in one pass to flag an unlawful clause or a wrong majority rule, and returns a one-click compliant rewrite.
+- **Grounded discovery.** From an address alone, web-search-grounded `muse-spark-1.3` identifies local utility operators, current gross tariffs, emergency authorities, and statutes in the local language, which removes most of the manual setup for a new property.
+- **Communication artifacts.** `muse-image-1.0` produces ballot option previews and printable stairwell notices with QR codes, and can render specific information that the manager supplies directly onto the image.
+- **Multilingual operation.** Residents in one building commonly speak several languages. The models translate in both directions and keep the assistant in the interface language the user selected.
+
+Models do not decide anything that involves money, votes, or access. All balances, utility splits, reserve cashflows, cost totals, vote tallies, and hashes are computed by deterministic C# services covered by tests. Every state-changing proposal from a model is stored as an `AiAction` and waits for manager approval. This split is what makes it reasonable to let a model act inside a financial system.
 
 ## Operating Modes
 
-The application supports two statutory operating profiles selectable at the system or property level:
+The application supports two statutory operating profiles, selectable per property:
 
-- **Housing Association Mode (European Condominium)**: common-property ownership share fractions, statutory 1-owner-1-vote switch (triggered at 20% share demand), monthly operating and repair fund advances, sub-metered water and district heating settlements, 5-year developer statutory warranty tracking, mandatory 1-year and 5-year building inspection logs (c-KOB), and electronic court (e-Court) debt recovery filings.
-- **US HOA & Condominium Mode**: CC&Rs, Bylaws, and rules enforcement, Architectural Review Committee (ARC/ACC) requests checked against state solar and EV-charging statutes, regular and special assessments, RUBS (Ratio Utility Billing System) utility splits, resale estoppel certificates, CAI / SIRS reserve studies, builder right-to-repair claims, and county assessment lien workflows.
+- **Housing Association Mode (European condominium)**: ownership share fractions (`625 / 10,000`), statutory 1-owner-1-vote switch at 20% share demand, monthly operating and repair fund advances, bulk-to-sub-meter water and district heating reconciliation, 5-year developer warranty tracking, mandatory 1-year and 5-year building inspection logs, and e-Court payment order dossiers.
+- **US HOA and Condominium Mode**: CC&Rs and bylaws enforcement, Architectural Review Committee requests checked against state solar and EV-charging statutes, RUBS utility splits, 20% assessment increase cap checks, Structural Integrity Reserve Studies, builder right-to-repair claims, county assessment liens, and resale estoppel certificates.
 
 ## Functional Modules
 
-### Property & Unit Registry
-- Multi-property hierarchy: Community -> Building -> Stairwell / Floor / Vertical Riser Stack -> Unit (apartment, commercial premise, garage bay, storage room).
-- Unit dossier: floor and storage area, ownership share fraction, co-owners and proxies, declared occupants, short-term rental flags, virtual IBAN / lockbox identifiers, and water, heating, and gas sub-meters with calibration expiry dates.
-- 2D vertical riser cross-section: maps units across floors to shared water, sewage, and heating risers so vertical leak paths and shutoff points are immediately visible.
-- Infrastructure photo atlas and access directory: annotated photos of basement shutoff valves, heating substations, gas levers, and breaker boards paired with stairwell intercom and key-safe codes attached to contractor dispatches.
-- Public registry, statutory legal corpus, and local utility lookup: acquires applicable national property statutes, civil warranty articles, building inspection codes, and municipal ordinances alongside local electric/water/heating/gas/waste operators, outage feeds, tariff rates, and waste schedules from a property address or tax ID.
+### Property and unit registry
+- Hierarchy: Management Firm, Community, Building, Stairwell, Floor, Vertical Riser Stack, Unit.
+- Interactive building builder with floor and stairwell matrix sizing, riser stack creation, and bulk unit generation.
+- Unit dossier with ownership share, co-owners, occupants, sub-meters, and calibration dates. Resident profiles, assignments, household members, and document vault.
+- Vertical riser cross-section that shows leak paths and shutoff points, plus an infrastructure atlas of annotated valves and levers with role-gated access codes.
+- Three-step AI onboarding wizard that creates a property from an address and merges a reviewed dossier.
 
-### Fund Accounting, Utilities & Reserves
-- Double-entry general ledger separated into Operating, Repair/Reserve, Utilities Clearing, and Commercial Ancillary funds, enforcing balanced journal entries ($\sum \text{Debit} = \sum \text{Credit}$).
-- Monthly assessment engine and tariff simulator: computes unit charges from area, share, occupant count, and rolling meter averages, and models the per-unit impact of heating, electricity, wage, or reserve rate adjustments.
-- Sub-meter reading and bulk utility reconciliation: extracts meter serials and digits from resident photos or voice notes, flags abnormal consumption spikes (such as silent toilet valve leaks), and reconciles master utility invoices against sub-meters or RUBS formulas.
-- Accounts payable, bank transfer matching, and contracted power auditing: matches incoming transfers with incomplete references to unit ledgers via FIFO arrears rules, verifies vendor invoices against completed work orders, and compares contracted vs peak measured power (`MW`/`kW`).
-- 10-year reserve study and grant calculator: projects capital expenditure cashflows and evaluates net cost and payback periods for thermal modernization, solar PV, heat pump, and EV-charging grants.
-- Arrears and legal recovery: tracks delinquency stages, installment schedules, pre-litigation demands, e-Court filings, and US HOA assessment liens and estoppel certificates.
+### Fund accounting, utilities, and reserves
+- Double-entry ledger separated into Operating, Repair and Reserve, Utilities Clearing, and Commercial Ancillary funds.
+- Monthly assessment engine and tariff and inflation simulator.
+- Meter reading from photos, anomaly detection (readings above 2.5 times the rolling average), and bulk utility reconciliation or RUBS allocation.
+- Bank transfer matching with FIFO arrears allocation, contracted power auditing, 10-year reserve study, and grant payback calculator.
+- Arrears staging, installment plans, pre-litigation notices, and legal recovery dossiers.
 
-### Maintenance, Inspections & Verification
-- Request intake and responsibility check: processes resident text, voice, and photo reports, suppresses redundant contractor callouts when a municipal street outage is active, checks active 5-year developer warranties, and classifies faults as common property or private unit responsibility under the community statute.
-- Defect measurement and BOQ estimation: segments damaged surfaces (`water stain`, `wall crack`, `spalling concrete`) with SAM 3.1, calculates affected area in square meters, and estimates material and labor costs from regional unit rates prior to contractor bidding.
-- Completion verification gate and insurance claims: compares contractor "after" photos against the initial defect mask before releasing invoices for payment, and compiles insurance claim dossiers (incident timeline, riser map, measurements, invoices, and policy deductible summary) in PDF format.
+### Maintenance and verification
+- Omnichannel intake with outage suppression, warranty routing, and boundary responsibility.
+- Walkthrough video splitting into geo-tagged work orders, defect measurement, BOQ estimation, completion verification gate, and insurance claim dossier PDF.
 
-### Governance, Voting & Minutes
-- Statutory and community legal corpus: acquires, stores, and displays verbatim texts of national condominium statutes, civil warranty articles, construction inspection laws, municipal ordinances, and internal community governing documents (Statute / CC&Rs, House Rules, Utility Policy), citing exact articles across compliance checks, warranty notices, and debt recovery dossiers.
-- Annual meeting preparation and statute compliance check: compiles annual financial statements and draft resolutions, verifying drafts against the full text of the acquired statutory corpus, community statute, house rules, and prior resolutions to catch procedural or majority-rule conflicts.
-- Share-weighted electronic voting and paper ballot digitization: tallies online ballots by ownership share fraction and per capita, and extracts rows and signatures from photographed door-to-door paper voting sheets.
-- Renovation previews and meeting minutes: generates visual comparisons for capital improvement ballots, printable stairwell notices with QR codes, and formal PDF/DOCX minutes from speaker-diarized meeting audio.
+### Governance and minutes
+- Statutory and community legal corpus with verbatim citations.
+- Annual meeting package, statute compliance check with one-click rewrite, share-weighted voting, and paper ballot digitization.
+- Renovation visualizer, stairwell QR notices, and diarized meeting minutes exported as PDF and DOCX.
 
-## Architecture & Stack
+### Multi-firm administration
+- Firm registration, hashed invitations, join-by-firm-code queue, multi-property assignment scopes, and per-member permission matrices.
+- Roles: Firm Manager, Property Manager, Accountant, Maintenance Dispatcher, Board Member (read-only), Resident, Contractor, External Auditor (view).
 
-- **Runtime & UI**: .NET 10, C# 14, ASP.NET Core Blazor Server, Radzen.Blazor.
-- **Persistence**: Entity Framework Core 10, SQL Server 2025 LocalDB (with in-memory test provider support).
-- **Documents & Media**: QuestPDF, DocumentFormat.OpenXml, SixLabors.ImageSharp, QRCoder.
-- **Model Integration (`https://api.meta.ai/v1`)**:
-  - `muse-spark-1.3`: structured classification, statute compliance checks, OCR extraction, and data queries.
-  - `muse-wonder`: multi-step workflows for public registry lookup, annual meeting packages, and insurance claim dossiers.
-  - `muse-voice-transcribe-1.0`: voice maintenance reports and speaker-diarized meeting audio transcription.
-  - `sam-3.1`: defect segmentation, surface area measurement, valve annotation, and before/after repair verification.
-  - `muse-image-1.0`: architectural ballot previews and printable stairwell notices.
+## Architecture
 
-All financial, utility, reserve, cost-estimation, and voting calculations run in deterministic C# domain services covered by xUnit tests. All state-changing model proposals are placed in a review queue (`Pending Approvals`) for manager sign-off.
+```
+src/
+  CommonGround.Domain           Entities, enums, deterministic calculators
+  CommonGround.Application      Workspace services, agent orchestration, interfaces
+  CommonGround.Infrastructure   EF Core persistence, Meta model clients, PDF/DOCX/image rendering
+  CommonGround.Web              Blazor UI, authentication, localization, export endpoints
+tests/
+  CommonGround.UnitTests        Calculators, workspace integration, security regression, assistant tests
+```
 
-## Workspace Roles (3 roles, manager-granted)
+- **Deterministic calculators** (`AssessmentCalculator`, `UtilitySettlementEngine`, `ReserveStudyCalculator`, `BoqCostEstimator`, `VotingCalculator`, `LedgerService`, and others) own all numbers.
+- **Documents and media**: QuestPDF, DocumentFormat.OpenXml, SixLabors.ImageSharp, QRCoder.
+- **Design system**: dual theme (Neo-Dark and Premium Light) through semantic CSS tokens, with reusable bento, metric, badge, and insight components.
 
-- **Property Manager**: full access to every community, ledger, work order, vote, and vaulted access code. Only this role can approve or reject `AiAction` proposals, reveal vaulted permanent codes, and grant Resident or Contractor status. Denied attempts are logged as `ROLE_GRANT_DENIED` in the SHA-256 audit chain.
-- **Resident**: sees only their own unit dossier, balance, and contact details (`msg.residentOwnOnly`), plus building groups, share-weighted ballots, and request submission. Resident status is granted by the Property Manager through the membership approval queue.
-- **Contractor**: sees only assigned work orders, temporary contractor or courier codes, and contact phones for residents and managers (`msg.contractorLimited`). Contractor status is granted by the Property Manager with company or trade recorded on the membership application.
+## Security and Privacy
 
-## Interface Languages (file-based, on demand)
+- **Outbound PII redaction.** Every prompt to the Meta API passes through `DataSecurityAndPrivacyGuard.RedactPiiForModelPrompt`, which replaces owner emails, phone numbers, IBANs, tax IDs, and building PINs with pseudonymous tokens.
+- **Prompt-injection guard.** Resident messages, transcripts, OCR text, bank transfer titles, and web content are wrapped as untrusted input. Attempts such as `ignore previous instructions` or `reveal access code` are blocked and logged.
+- **Property-aware permissions for the assistant.** When a question names a property (by name, `COM-` account number, or address), the assistant resolves the highest-privilege approved membership the user holds for that property and uses the union of its granted permissions. It never exceeds the permissions of the authenticated user.
+- **Tenant isolation.** Every community-scoped entity carries a community id and belongs to a firm. Queries and exports enforce both firm ownership and claim-scoped property access.
+- **Secret vault and least-privilege dispatch.** Intercom codes, key-safe PINs, and resident contact details are masked by role. Contractors receive temporary codes only.
+- **Tamper-evident audit chain.** Secret reveals, AI action decisions, exports, membership changes, and blocked injections are written to a SHA-256 hash-chained `SecurityAuditEvent` table that can be verified at runtime.
+- **Transport and session.** HttpOnly cookie authentication, ASP.NET Core Data Protection, antiforgery, rate-limited `/auth/*` endpoints, and strict security headers.
 
-- The full workspace UI is translated into English (`en`), Polish (`pl`), Spanish (`es`), French (`fr`), and German (`de`).
-- Dictionaries live in `src/CommonGround.Web/wwwroot/i18n/{language}.json` and are loaded on demand by [`WorkspaceLocalization`](src/CommonGround.Web/Services/WorkspaceLocalization.cs:1) via `EnsureLoadedAsync` and `SetLanguageAsync`.
-- Switch language from the header selector (`form.language`). Every page, shell drawer, table header, KPI card, panel, form label, status message, and error page resolves through `Loc.T(key)` with English fallback.
+## Interface Languages
 
-## Data Security & Privacy
-
-- **Multi-Provider Authentication (`Facebook`, `Google`, `Apple`, and `Email`)**: Supports sign-in via Facebook OAuth, Google OpenID Connect, Sign in with Apple, and Email/Password (PBKDF2-SHA256) with role-mapped claims (`PropertyManager`, `Resident`, `Contractor`) and unit-owner account linking.
-- **Outbound PII Redaction**: Before any text or structured context is sent to external model endpoints (`https://api.meta.ai/v1`), `DataSecurityAndPrivacyGuard` strips and tokenizes owner emails, phone numbers, bank account numbers (IBAN / ACH), tax identifiers, and physical building PINs into pseudonymous session tokens (`[OWNER_REF_A301]`, `[IBAN_MASKED]`, `[ACCESS_PIN_VAULTED]`).
-- **Prompt-Injection & Untrusted Input Isolation**: External inputs (resident messages, voice transcripts, OCR text from invoices and paper ballots, bank transfer descriptions, and web bulletins) are sanitized and isolated inside non-executable data delimiters, blocking instructions attempting to alter ledger accounts, approve payouts, or exfiltrate access codes.
-- **Role-Scoped Secret Vault & Least-Privilege Dispatch**: Stairwell intercom codes, boiler-room key-safe PINs, and owner contact details are masked by default according to the active workspace role (`PropertyManager`, `Resident`, `Contractor`). Contractor work orders receive only time-bounded contractor access codes rather than permanent resident codes.
-- **Tamper-Evident SHA-256 Security Audit Log**: Secret reveals, approval queue decisions, legal dossier exports, and blocked injection attempts are recorded in a hash-chained `SecurityAuditEvent` log (`PreviousChainHash` -> `EntrySha256Hash`) verifiable at runtime.
-- **Multi-Community Tenant Isolation & Transport Hardening**: Every community-scoped entity enforces `ICommunityScoped` tenant boundaries, ASP.NET Core Data Protection (`IDataProtectionProvider`), antiforgery validation, and strict HTTP security headers (`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`).
+The full workspace is available in English, Polish, Spanish, French, and German. Dictionaries are in `src/CommonGround.Web/wwwroot/i18n/{en,pl,es,fr,de}.json` and are loaded on demand by `WorkspaceLocalization`. A unit test verifies that required keys exist and are non-empty in all five files. The AI assistant follows the selected language for replies and for search queries.
 
 ## Building and Running
+
+Prerequisites: .NET 10 SDK and SQL Server LocalDB (the app falls back automatically when LocalDB is unavailable).
 
 ```powershell
 dotnet build CommonGround.slnx -warnaserror
@@ -84,8 +125,21 @@ dotnet test CommonGround.slnx
 dotnet run --project src/CommonGround.Web
 ```
 
-To configure live Meta Model API credentials (optional; deterministic local fallbacks are enabled by default for offline testing):
+The app seeds two demo communities: Amber Park Residence in Warsaw (Housing Association mode) and Oakridge Palms Condominium Association in Miami (US HOA mode).
+
+To enable live Meta model calls, set an API key. Without one, deterministic offline fallbacks are used.
 
 ```powershell
-dotnet user-secrets set "MetaModels:ApiKey" "<YOUR_API_KEY>" --project src/CommonGround.Web
+dotnet user-secrets set "MetaModels:ApiKey" "<YOUR_KEY>" --project src/CommonGround.Web
 ```
+
+The key can also be supplied through the `META_KEY` or `MODEL_API_KEY` environment variables. Keys are never committed to the repository.
+
+## Demo Walkthrough
+
+1. Sign in and open the Portfolio Assistant or the Spark automation chat. Ask a question in any of the five languages, for example a settlement run for a specific property by name.
+2. Open the chat microphone panel, record a short report, and stop. The WAV file is transcribed through `muse-voice-transcribe-1.0` and placed in the input box.
+3. Open the image studio in the chat, enter a title and info lines, and generate a 640x400 PNG with the model, resolution, and latency shown next to the image.
+4. Go to Maintenance, submit a resident leak request, and review the routing, boundary decision, area measurement, BOQ estimate, and the proposed action in Pending Approvals.
+5. Go to Governance, generate Option A / Option B previews with custom info lines, and export meeting minutes as PDF or DOCX.
+6. Switch the interface language from the header and confirm that labels and assistant replies follow it.

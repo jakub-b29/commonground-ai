@@ -5,33 +5,33 @@
 @inject CommonGroundWorkspaceService Workspace
 @implements IDisposable
 
-<PageTitle>Property overview — CommonGround</PageTitle>
+<PageTitle>@Loc.T("property.overview.pageTitle")</PageTitle>
 
 <RequirePropertyAccess PropertyId="Id">
     @if (!_loaded)
     {
-        <p role="status" aria-live="polite">Loading.</p>
+        <p role="status" aria-live="polite">@Loc.T("msg.loading")</p>
     }
     else if (_snapshot is null)
     {
-        <div class="cg-card"><p class="cg-empty-text">Property not found.</p></div>
+        <div class="cg-card"><p class="cg-empty-text">@Loc.T("property.common.notFound")</p></div>
     }
     else
     {
-        <PageHeader Category="Community Command Center"
+        <PageHeader Category="@Loc.T("property.overview.category")"
                     ContextCode="@($"{_snapshot.Community.CommunityAccountNumber} · {_snapshot.Community.TaxIdOrEin}")"
                     Title="@_snapshot.Community.Name"
-                    Subtitle="@($"{_snapshot.Community.StreetAddress}, {_snapshot.Community.PostalOrZipCode} {_snapshot.Community.City} · {_snapshot.Community.PropertyTypeConfiguration} · Buildings: {_snapshot.Community.Buildings.Count} · Units: {_snapshot.Community.Units.Count}")">
+                    Subtitle="@($"{_snapshot.Community.StreetAddress}, {_snapshot.Community.PostalOrZipCode} {_snapshot.Community.City} · {_snapshot.Community.PropertyTypeConfiguration} · {Loc.T("property.overview.buildings")}: {_snapshot.Community.Buildings.Count} · {Loc.T("property.overview.units")}: {_snapshot.Community.Units.Count}")">
             <Badges>
                 <StatusBadge Text="@_snapshot.Community.CommunityAccountNumber" Variant="info" />
                 <StatusBadge Text="@_snapshot.Community.Status.ToString()" Variant="ok" />
-                <AIBadge Label="Autonomous Monitoring" Model="muse-spark-1.3" />
+                <AIBadge Label="@Loc.T("property.overview.autonomousMonitoring")" Model="muse-spark-1.3" />
             </Badges>
             <Actions>
-                <a class="cg-btn cg-btn-sm cg-btn-ai" href="@($"/properties/{Id}/units")">Units &amp; occupancy (@_snapshot.Community.Units.Count)</a>
-                <a class="cg-btn cg-btn-sm" href="@($"/properties/{Id}/maintenance")">Work orders (@_snapshot.OpenWorkOrders)</a>
-                <a class="cg-btn cg-btn-sm" href="@($"/properties/{Id}/financials")">Financials &amp; ledger</a>
-                <a class="cg-btn cg-btn-sm" href="@($"/properties/{Id}/settings")">Community profile &amp; contacts</a>
+                <a class="cg-btn cg-btn-sm cg-btn-ai" href="@($"/properties/{Id}/units")">@Loc.T("property.overview.unitsOccupancy") (@_snapshot.Community.Units.Count)</a>
+                <a class="cg-btn cg-btn-sm" href="@($"/properties/{Id}/maintenance")">@Loc.T("property.overview.workOrders") (@_snapshot.OpenWorkOrders)</a>
+                <a class="cg-btn cg-btn-sm" href="@($"/properties/{Id}/financials")">@Loc.T("property.overview.financialsLedger")</a>
+                <a class="cg-btn cg-btn-sm" href="@($"/properties/{Id}/settings")">@Loc.T("property.overview.communityProfile")</a>
                 <button type="button" class="cg-btn cg-btn-sm cg-btn-primary" @onclick="OnScan">@Loc.T("action.scanNow")</button>
             </Actions>
         </PageHeader>
@@ -40,68 +40,68 @@
 
         <BentoGrid Style="margin-block-end: 1rem;">
             <BentoCard Span="6"
-                       Title="Community Account &amp; Unified Profile"
-                       Subtitle="Permanent Community Account Number, buildings, occupancy, and unified HOA capabilities"
+                       Title="@Loc.T("property.overview.accountTitle")"
+                       Subtitle="@Loc.T("property.overview.accountSubtitle")"
                        BadgeText="@_snapshot.Community.CommunityAccountNumber"
                        BadgeVariant="info">
                 <HeaderActions>
-                    <a class="cg-btn cg-btn-sm" href="@($"/properties/{Id}/settings")">Edit community</a>
+                    <a class="cg-btn cg-btn-sm" href="@($"/properties/{Id}/settings")">@Loc.T("property.overview.editCommunity")</a>
                 </HeaderActions>
                 <ChildContent>
                     <div class="cg-grid-3" style="font-size: 0.8rem;">
                         <div>
-                            <div style="color: var(--text-muted); font-size: 0.7rem;">Community Account No.</div>
+                            <div style="color: var(--text-muted); font-size: 0.7rem;">@Loc.T("property.overview.accountNo")</div>
                             <strong class="mono num">@_snapshot.Community.CommunityAccountNumber</strong>
                         </div>
                         <div>
-                            <div style="color: var(--text-muted); font-size: 0.7rem;">Status &amp; Configuration</div>
+                            <div style="color: var(--text-muted); font-size: 0.7rem;">@Loc.T("property.overview.statusConfig")</div>
                             <strong>@_snapshot.Community.Status · @_snapshot.Community.PropertyTypeConfiguration</strong>
                         </div>
                         <div>
-                            <div style="color: var(--text-muted); font-size: 0.7rem;">Buildings &amp; Units</div>
-                            <strong class="mono num">@_snapshot.Community.Buildings.Count buildings · @_snapshot.Community.Units.Count units</strong>
+                            <div style="color: var(--text-muted); font-size: 0.7rem;">@Loc.T("property.overview.buildingsUnits")</div>
+                            <strong class="mono num">@_snapshot.Community.Buildings.Count @Loc.T("property.overview.buildings") · @_snapshot.Community.Units.Count @Loc.T("property.overview.units")</strong>
                         </div>
                         <div>
-                            <div style="color: var(--text-muted); font-size: 0.7rem;">Administrative Email</div>
+                            <div style="color: var(--text-muted); font-size: 0.7rem;">@Loc.T("property.overview.adminEmail")</div>
                             <span class="mono">@(string.IsNullOrWhiteSpace(_snapshot.Community.AdministrativeEmail) ? "office@commonground.local" : _snapshot.Community.AdministrativeEmail)</span>
                         </div>
                         <div>
-                            <div style="color: var(--text-muted); font-size: 0.7rem;">Administrative Phone</div>
+                            <div style="color: var(--text-muted); font-size: 0.7rem;">@Loc.T("property.overview.adminPhone")</div>
                             <span class="mono num">@(string.IsNullOrWhiteSpace(_snapshot.Community.AdministrativePhone) ? "+1 (800) 555-0199" : _snapshot.Community.AdministrativePhone)</span>
                         </div>
                         <div>
-                            <div style="color: var(--text-muted); font-size: 0.7rem;">Registration Link Policy</div>
+                            <div style="color: var(--text-muted); font-size: 0.7rem;">@Loc.T("property.overview.regLinkPolicy")</div>
                             <span class="cg-badge cg-badge-neutral">@_snapshot.Community.DefaultRegistrationApprovalMode</span>
                         </div>
                     </div>
                     <div style="display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.75rem;">
-                        @if (_snapshot.Community.EnableHoaGovernance) { <span class="cg-badge cg-badge-info">HOA &amp; Board Governance</span> }
-                        @if (_snapshot.Community.EnableShareWeightedVoting) { <span class="cg-badge cg-badge-info">Share-Weighted Voting</span> }
-                        @if (_snapshot.Community.EnableArcRequests) { <span class="cg-badge cg-badge-info">ARC &amp; Remodeling</span> }
-                        @if (_snapshot.Community.EnableSubMeterReconciliation) { <span class="cg-badge cg-badge-info">Sub-Meter &amp; RUBS</span> }
-                        @if (_snapshot.Community.EnableReserveStudy) { <span class="cg-badge cg-badge-info">Reserve Study &amp; SIRS</span> }
+                        @if (_snapshot.Community.EnableHoaGovernance) { <span class="cg-badge cg-badge-info">@Loc.T("property.overview.capHoa")</span> }
+                        @if (_snapshot.Community.EnableShareWeightedVoting) { <span class="cg-badge cg-badge-info">@Loc.T("property.overview.capVoting")</span> }
+                        @if (_snapshot.Community.EnableArcRequests) { <span class="cg-badge cg-badge-info">@Loc.T("property.overview.capArc")</span> }
+                        @if (_snapshot.Community.EnableSubMeterReconciliation) { <span class="cg-badge cg-badge-info">@Loc.T("property.overview.capSubmeter")</span> }
+                        @if (_snapshot.Community.EnableReserveStudy) { <span class="cg-badge cg-badge-info">@Loc.T("property.overview.capReserve")</span> }
                     </div>
                 </ChildContent>
             </BentoCard>
 
             <BentoCard Span="6"
-                       Title="Community Contacts Directory"
-                       Subtitle="Management office, property manager, association board, emergency, and accounting contacts"
-                       BadgeText="@($"{_contacts.Count} contacts")"
+                       Title="@Loc.T("property.overview.contactsTitle")"
+                       Subtitle="@Loc.T("property.overview.contactsSubtitle")"
+                       BadgeText="@($"{_contacts.Count} {Loc.T("property.overview.contactsSuffix")}")"
                        BadgeVariant="neutral"
                        BodyStyle="padding: 0;">
                 <HeaderActions>
-                    <a class="cg-btn cg-btn-sm" href="@($"/properties/{Id}/settings")">Manage contacts</a>
+                    <a class="cg-btn cg-btn-sm" href="@($"/properties/{Id}/settings")">@Loc.T("property.overview.manageContacts")</a>
                 </HeaderActions>
                 <ChildContent>
                     <div class="cg-table-wrap">
                         <table class="cg-table">
                             <thead>
                                 <tr>
-                                    <th>Category</th>
-                                    <th>Contact &amp; Role</th>
-                                    <th>Phone &amp; Email</th>
-                                    <th>Hours</th>
+                                    <th>@Loc.T("table.category")</th>
+                                    <th>@Loc.T("table.contactRole")</th>
+                                    <th>@Loc.T("table.phoneEmail")</th>
+                                    <th>@Loc.T("table.hours")</th>
                                 </tr>
                             </thead>
                             <tbody>

@@ -9,7 +9,7 @@
                 <span>@Loc.T("panel.utilitySources")</span>
                 <span class="cg-badge cg-badge-info">@Sources.Count @Loc.T("utility.providersMonitored")</span>
             </div>
-            <div style="font-size: 0.74rem; color: var(--text-secondary); margin-top: 0.15rem;">Live tariff feeds, municipal outage bulletins, and 24/7 dispatch endpoints</div>
+            <div style="font-size: 0.74rem; color: var(--text-secondary); margin-top: 0.15rem;">@Loc.T("utility.sourcesHint")</div>
         </div>
         <div style="display: flex; gap: 0.4rem; flex-wrap: wrap;">
             <button type="button" class="cg-btn cg-btn-sm cg-btn-primary" @onclick="OnScanNow">@Loc.T("action.scanNow")</button>

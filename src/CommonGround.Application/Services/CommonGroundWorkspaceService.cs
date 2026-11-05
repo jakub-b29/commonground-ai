@@ -520,17 +520,24 @@ public sealed partial class CommonGroundWorkspaceService(
         return resolution;
     }
 
-    public async Task<Resolution> GenerateRenovationVisualsAndQrPosterAsync(Guid communityId, Guid resolutionId, CancellationToken ct = default)
+    public async Task<Resolution> GenerateRenovationVisualsAndQrPosterAsync(
+        Guid communityId,
+        Guid resolutionId,
+        CancellationToken ct = default,
+        IReadOnlyList<string>? customInfoLines = null,
+        string? customHeadline = null)
     {
         await using var db = await CreateDbAsync(ct);
         var community = await LoadCommunityAsync(db, communityId, ct) ?? throw new InvalidOperationException("Community not found.");
         var resolution = community.Resolutions.FirstOrDefault(r => r.Id == resolutionId) ?? throw new InvalidOperationException("Resolution not found.");
-        var (a, b) = await image.GenerateRenovationBallotPreviewsAsync(resolution.Title, resolution.OptionALabel ?? "Option A", resolution.OptionBLabel ?? "Option B", ct);
+        var (a, b) = await image.GenerateRenovationBallotPreviewsAsync(resolution.Title, resolution.OptionALabel ?? "Option A", resolution.OptionBLabel ?? "Option B", ct, customInfoLines);
         resolution.OptionAPreviewDataUrl = a;
         resolution.OptionBPreviewDataUrl = b;
-        resolution.QrPosterDataUrl = await image.GenerateQrStairwellNoticePosterAsync(community.Name, resolution.Title, resolution.Content, $"https://commonground.example.com/vote/{resolution.Number}", ct);
+        var headline = string.IsNullOrWhiteSpace(customHeadline) ? resolution.Title : customHeadline.Trim();
+        resolution.QrPosterDataUrl = await image.GenerateQrStairwellNoticePosterAsync(community.Name, headline, resolution.Content, $"https://commonground.example.com/vote/{resolution.Number}", ct, customInfoLines);
+        var infoNote = customInfoLines is { Count: > 0 } ? $" Custom overlay lines: {string.Join("; ", customInfoLines)}." : string.Empty;
         var run = NewRun(community.Id, "MeetingAutopilotAndComplianceAgent", $"Ballot visuals for {resolution.Number}", "muse-image-1.0",
-            [Step(1, "Option A/B previews and QR poster", "muse-image-1.0", "Renovation previews and stairwell QR poster generated.", 780)]);
+            [Step(1, "Option A/B previews and QR poster", "muse-image-1.0", $"Renovation previews (640x400 PNG) and stairwell QR poster generated with muse-image-1.0.{infoNote}", 780)]);
         community.AgentRuns.Add(run); db.AgentRuns.Add(run);
         await db.SaveChangesAsync(ct);
         return resolution;
@@ -672,19 +679,82 @@ public sealed partial class CommonGroundWorkspaceService(
         return summary;
     }
 
-    public async Task<string> GenerateWasteSegregationPosterAsync(Guid communityId, CancellationToken ct = default)
+    public async Task<string> GenerateWasteSegregationPosterAsync(
+        Guid communityId,
+        CancellationToken ct = default,
+        IReadOnlyList<string>? customInfoLines = null)
     {
         await using var db = await CreateDbAsync(ct);
         var community = await LoadCommunityAsync(db, communityId, ct) ?? throw new InvalidOperationException("Community not found.");
-        var poster = await image.GenerateMultilingualWasteSegregationPosterAsync(community.Name, ct);
+        var poster = await image.GenerateMultilingualWasteSegregationPosterAsync(community.Name, ct, customInfoLines);
         var plastics = community.WasteSchedules.FirstOrDefault(w => w.WasteFraction.Contains("Plastics", StringComparison.OrdinalIgnoreCase));
         if (plastics is not null) plastics.SegregationPosterDataUrl = poster;
+        var infoNote = customInfoLines is { Count: > 0 } ? $" Custom overlay lines: {string.Join("; ", customInfoLines)}." : string.Empty;
+        var run = NewRun(community.Id, "WebAutoEnrichmentOutageAndGrantAgent", "Waste segregation poster generation", "muse-image-1.0",
+            [Step(1, "Generate 640x400 waste poster", "muse-image-1.0", $"Multilingual waste segregation poster generated with muse-image-1.0.{infoNote}", 420)]);
+        community.AgentRuns.Add(run); db.AgentRuns.Add(run);
         await db.SaveChangesAsync(ct);
         return poster;
     }
 
-    // 12. PortfolioCopilotAgent
-    public async Task<string> AskPortfolioCopilotAsync(Guid communityId, string managerQuestion, CancellationToken ct = default)
+    public async Task<GeneratedImageArtifactResult> GenerateCustomPropertyImageAsync(
+        Guid? communityId,
+        string title,
+        string subtitle,
+        IReadOnlyList<string> infoLines,
+        string badgeText,
+        string? qrUrl = null,
+        string uiLocale = "EN",
+        CancellationToken ct = default)
+    {
+        var result = await image.GenerateCustomInfoImageAsync(title, subtitle, infoLines, badgeText, qrUrl, null, ct, uiLocale);
+        if (communityId.HasValue && communityId.Value != Guid.Empty)
+        {
+            await using var db = await CreateDbAsync(ct);
+            var community = await LoadCommunityAsync(db, communityId.Value, ct);
+            if (community is not null)
+            {
+                var run = NewRun(community.Id, "PortfolioIntelligenceAgent", $"Custom visual generation: {title}", result.ModelName,
+                    [Step(1, "Render custom annotated visual", result.ModelName, $"{result.Resolution} visual generated with {result.RenderedInfoLines.Count} custom info line(s).", result.LatencyMs)]);
+                community.AgentRuns.Add(run); db.AgentRuns.Add(run);
+                await db.SaveChangesAsync(ct);
+            }
+        }
+        return result;
+    }
+
+    public async Task<(string Transcript, string DetectedLanguage, int LatencyMs)> TranscribeLiveMicrophoneAudioAsync(
+        Guid? communityId,
+        string? wavBase64OrDataUrl,
+        string? browserTranscriptHint,
+        string uiLocale = "EN",
+        CancellationToken ct = default)
+    {
+        var result = await voice.TranscribeVoiceNoteAsync(
+            voiceScenarioPreset: browserTranscriptHint ?? string.Empty,
+            ct: ct,
+            wavBase64OrDataUrl: wavBase64OrDataUrl,
+            browserTranscriptHint: browserTranscriptHint,
+            preferredLanguageCode: uiLocale);
+
+        if (communityId.HasValue && communityId.Value != Guid.Empty)
+        {
+            await using var db = await CreateDbAsync(ct);
+            var community = await LoadCommunityAsync(db, communityId.Value, ct);
+            if (community is not null)
+            {
+                var run = NewRun(community.Id, "IntakeAndTriageAgent", "Live microphone WAV transcription (POST /v1/asr/transcribe)", "muse-voice-transcribe-1.0",
+                    [Step(1, "Transcribe WAV audio clip", "muse-voice-transcribe-1.0", $"Detected language: {result.DetectedLanguage}. Transcript: {result.Transcript}", result.LatencyMs)]);
+                community.AgentRuns.Add(run); db.AgentRuns.Add(run);
+                await db.SaveChangesAsync(ct);
+            }
+        }
+
+        return result;
+    }
+
+    // 12. PortfolioIntelligenceAgent
+    public async Task<string> AskPortfolioAssistantAsync(Guid communityId, string managerQuestion, CancellationToken ct = default, string uiLocale = "EN")
     {
         await using var db = await CreateDbAsync(ct);
         var community = await LoadCommunityAsync(db, communityId, ct) ?? throw new InvalidOperationException("Community not found.");
@@ -696,12 +766,15 @@ public sealed partial class CommonGroundWorkspaceService(
             throw new InvalidOperationException("Query blocked by prompt-injection guard and logged in the audit chain.");
         }
         var snapshot = $"{community.Units.Count} units, {community.WorkOrders.Count(w => w.Status != WorkOrderStatus.VerifiedAndClosed)} open work orders, {community.AiActions.Count(a => a.Status == AiActionStatus.Proposed)} pending approvals, operating cash {community.LedgerAccounts.Where(a => a.Fund == FundKind.Operating).Sum(a => a.Balance):N2} {community.CurrencyCode}.";
-        var answer = await spark.AskPortfolioCopilotAsync(community, managerQuestion, snapshot, ct);
-        var run = NewRun(community.Id, "PortfolioCopilotAgent", "Portfolio query", "muse-spark-1.3", [Step(1, "Portfolio query with tool context", "muse-spark-1.3", snapshot, 480)]);
+        var answer = await spark.AskPortfolioAssistantAsync(community, managerQuestion, snapshot, ct, uiLocale);
+        var run = NewRun(community.Id, "PortfolioIntelligenceAgent", "Portfolio query", "muse-spark-1.3", [Step(1, "Portfolio query with tool context", "muse-spark-1.3", snapshot, 480)]);
         community.AgentRuns.Add(run); db.AgentRuns.Add(run);
         await db.SaveChangesAsync(ct);
         return answer;
     }
+
+    public Task<string> AskPortfolioCopilotAsync(Guid communityId, string managerQuestion, CancellationToken ct = default)
+        => AskPortfolioAssistantAsync(communityId, managerQuestion, ct, "EN");
 
     // Pending approvals
     public async Task<AiAction> DecideAiActionAsync(Guid communityId, Guid actionId, bool approve, WorkspaceSecurityRole actorRole = WorkspaceSecurityRole.PropertyManager, CancellationToken ct = default)
@@ -739,7 +812,7 @@ public sealed partial class CommonGroundWorkspaceService(
         await using var db = await CreateDbAsync(ct);
         var community = await LoadCommunityAsync(db, communityId, ct) ?? throw new InvalidOperationException("Community not found.");
         var valve = community.InfrastructurePhotos.FirstOrDefault(p => p.RiserStackOrZone.Contains(stackCode, StringComparison.OrdinalIgnoreCase)) ?? community.InfrastructurePhotos.FirstOrDefault();
-        var action = new AiAction { CommunityId = community.Id, Kind = AiActionKind.BroadcastSosEmergency, AgentName = "PortfolioCopilotAgent", Title = $"Emergency shutoff broadcast for {stackCode}", Rationale = valve is null ? "Emergency broadcast to all units on the stack." : $"Shutoff: {valve.Title}. {valve.ShutoffInstructions} Contractor code attached; resident codes withheld from external recipients.", ModelUsed = "muse-spark-1.3", Confidence = 1.0, Status = AiActionStatus.ApprovedAndExecuted, DecidedAt = DateTime.UtcNow, TargetEntitySummary = $"Riser stack {stackCode}, {community.Units.Count(u => u.VerticalStackCode == stackCode)} units", ProposedPayloadJson = $"{{\"stack\":\"{stackCode}\",\"channels\":[\"SMS\",\"WhatsApp\",\"Messenger\",\"Email\"]}}" };
+        var action = new AiAction { CommunityId = community.Id, Kind = AiActionKind.BroadcastSosEmergency, AgentName = "PortfolioIntelligenceAgent", Title = $"Emergency shutoff broadcast for {stackCode}", Rationale = valve is null ? "Emergency broadcast to all units on the stack." : $"Shutoff: {valve.Title}. {valve.ShutoffInstructions} Contractor code attached; resident codes withheld from external recipients.", ModelUsed = "muse-spark-1.3", Confidence = 1.0, Status = AiActionStatus.ApprovedAndExecuted, DecidedAt = DateTime.UtcNow, TargetEntitySummary = $"Riser stack {stackCode}, {community.Units.Count(u => u.VerticalStackCode == stackCode)} units", ProposedPayloadJson = $"{{\"stack\":\"{stackCode}\",\"channels\":[\"SMS\",\"WhatsApp\",\"Messenger\",\"Email\"]}}" };
         community.AiActions.Add(action); db.AiActions.Add(action);
         await AppendAuditAsync(db, community, WorkspaceSecurityRole.PropertyManager, "SOS_BROADCAST_SENT", "Warning", $"Riser stack {stackCode}", "Emergency shutoff broadcast sent with annotated valve photo.", ct);
         await db.SaveChangesAsync(ct);

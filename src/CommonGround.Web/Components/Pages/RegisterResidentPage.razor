@@ -7,11 +7,11 @@
 @inject CommonGroundWorkspaceService Workspace
 @implements IDisposable
 
-<PageTitle>Resident Registration — CommonGround</PageTitle>
+<PageTitle>@Loc.T("resident.registrationTitle") - CommonGround</PageTitle>
 
 <div class="cg-auth-heading">
-    <h1>CommonGround Resident Registration</h1>
-    <p>Create your verified Resident identity and receive your permanent Resident Account Number.</p>
+    <h1>@Loc.T("registerResident.heading")</h1>
+    <p>@Loc.T("registerResident.lead")</p>
 </div>
 
 @if (!string.IsNullOrWhiteSpace(_error))
@@ -22,114 +22,114 @@
 @if (_result is not null && _result.Succeeded)
 {
     <div class="cg-auth-note" role="status" aria-live="polite" style="border-left: 3px solid var(--color-success); padding: 1rem;">
-        <div style="font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary);">Permanent Resident Account Number</div>
+        <div style="font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary);">@Loc.T("registerResident.accountNumberLabel")</div>
         <div class="mono" style="font-size: 1.35rem; font-weight: 700; color: var(--accent-primary); margin: 0.25rem 0;">@_result.ResidentAccountNumber</div>
         <p style="margin: 0.35rem 0; font-size: 0.85rem;">@_result.StatusMessage</p>
         @if (_result.IsAutoApproved)
         {
             <div style="margin-top: 0.75rem;">
-                <a class="cg-btn cg-btn-primary cg-btn-block" href="/login">Sign in to CommonGround</a>
+                <a class="cg-btn cg-btn-primary cg-btn-block" href="/login">@Loc.T("page.loginTitle")</a>
             </div>
         }
         else
         {
             <div style="margin-top: 0.75rem; font-size: 0.78rem; color: var(--text-secondary);">
-                Your registration request is queued for Management Firm verification. Save your Resident Account Number (<strong class="mono">@_result.ResidentAccountNumber</strong>) for your records.
+                @string.Format(System.Globalization.CultureInfo.InvariantCulture, Loc.T("registerResident.queuedNoteFmt"), _result.ResidentAccountNumber)
             </div>
             <div style="margin-top: 0.75rem;">
-                <a class="cg-btn cg-btn-block" href="/login">Return to Sign In</a>
+                <a class="cg-btn cg-btn-block" href="/login">@Loc.T("registerResident.returnToSignIn")</a>
             </div>
         }
     </div>
 }
 else if (_loading)
 {
-    <p role="status" aria-live="polite">Validating registration token...</p>
+    <p role="status" aria-live="polite">@Loc.T("registerResident.validating")</p>
 }
 else if (_validation is null || !_validation.IsValid)
 {
     <div class="cg-auth-note" role="status" aria-live="polite">
-        <p>@(_validation?.StatusMessage ?? "Enter your secure CommonGround registration token to proceed.")</p>
+        <p>@(_validation?.StatusMessage ?? Loc.T("registerResident.enterTokenPrompt"))</p>
     </div>
     <form class="cg-form-stack" @onsubmit="OnVerifyTokenAsync" @onsubmit:preventDefault="true">
         <div>
-            <label for="rr-token">Registration Token</label>
-            <input id="rr-token" @bind="_tokenInput" class="mono" autocomplete="off" placeholder="REG-..." required />
+            <label for="rr-token">@Loc.T("registerResident.tokenLabel")</label>
+            <input id="rr-token" @bind="_tokenInput" class="mono" autocomplete="off" placeholder="@Loc.T("registerResident.tokenPlaceholder")" required />
         </div>
-        <button type="submit" class="cg-btn cg-btn-primary cg-btn-block" disabled="@_isBusy">Verify Registration Link</button>
+        <button type="submit" class="cg-btn cg-btn-primary cg-btn-block" disabled="@_isBusy">@Loc.T("registerResident.verifyLink")</button>
     </form>
     <div class="cg-auth-links">
-        <a href="/login">Already have an account? Sign in</a>
+        <a href="/login">@Loc.T("registerResident.haveAccountSignIn")</a>
     </div>
 }
 else
 {
     <div class="cg-auth-note" role="status" aria-live="polite">
-        <strong>Verified CommonGround Registration Link</strong>
+        <strong>@Loc.T("registerResident.verifiedLink")</strong>
         <div style="font-size: 0.76rem; color: var(--text-secondary); margin-top: 0.2rem;">
-            Zero-disclosure privacy protection active. Property and unit details are never exposed on public links.
+            @Loc.T("registerResident.zeroDisclosure")
             @(_validation.ApprovalMode == RegistrationApprovalMode.AutomaticAuthorized
-                ? " Mode A: Automatic authorized activation upon completion."
-                : " Mode B: Reviewed and approved by Management Firm administration.")
+                ? Loc.T("registerResident.modeAuto")
+                : Loc.T("registerResident.modeManual"))
         </div>
     </div>
 
     <form class="cg-form-stack" @onsubmit="OnSubmitRegistrationAsync" @onsubmit:preventDefault="true">
         <div class="cg-grid-2">
             <div>
-                <label for="rr-first">First Name</label>
+                <label for="rr-first">@Loc.T("registerResident.firstName")</label>
                 <input id="rr-first" @bind="_firstName" required autocomplete="given-name" />
             </div>
             <div>
-                <label for="rr-last">Last Name</label>
+                <label for="rr-last">@Loc.T("registerResident.lastName")</label>
                 <input id="rr-last" @bind="_lastName" required autocomplete="family-name" />
             </div>
         </div>
         <div>
-            <label for="rr-email">Email Address</label>
+            <label for="rr-email">@Loc.T("form.email")</label>
             <input id="rr-email" type="email" @bind="_email" required autocomplete="email" />
         </div>
         <div class="cg-grid-2">
             <div>
-                <label for="rr-phone">Phone Number</label>
-                <input id="rr-phone" type="tel" @bind="_phone" autocomplete="tel" placeholder="+48 500 100 200" />
+                <label for="rr-phone">@Loc.T("form.phone")</label>
+                <input id="rr-phone" type="tel" @bind="_phone" autocomplete="tel" placeholder="@Loc.T("registerResident.phonePlaceholder")" />
             </div>
             <div>
-                <label for="rr-lang">Preferred Language</label>
+                <label for="rr-lang">@Loc.T("registerResident.preferredLanguage")</label>
                 <select id="rr-lang" @bind="_preferredLanguage">
-                    <option value="EN">English (EN)</option>
-                    <option value="PL">Polski (PL)</option>
-                    <option value="DE">Deutsch (DE)</option>
-                    <option value="ES">Español (ES)</option>
-                    <option value="FR">Français (FR)</option>
+                    <option value="EN">EN</option>
+                    <option value="PL">PL</option>
+                    <option value="DE">DE</option>
+                    <option value="ES">ES</option>
+                    <option value="FR">FR</option>
                 </select>
             </div>
         </div>
         <div>
-            <label for="rr-pass">Account Password (min. 8 characters)</label>
+            <label for="rr-pass">@Loc.T("registerResident.passwordLabel")</label>
             <input id="rr-pass" type="password" @bind="_password" required minlength="8" autocomplete="new-password" />
         </div>
         <div class="cg-grid-2">
             <div>
-                <label for="rr-em-name">Emergency Contact Name (Optional)</label>
+                <label for="rr-em-name">@Loc.T("registerResident.emergencyName")</label>
                 <input id="rr-em-name" @bind="_emergencyName" />
             </div>
             <div>
-                <label for="rr-em-phone">Emergency Contact Phone (Optional)</label>
+                <label for="rr-em-phone">@Loc.T("registerResident.emergencyPhone")</label>
                 <input id="rr-em-phone" @bind="_emergencyPhone" />
             </div>
         </div>
         <div>
-            <label for="rr-notes">Registration Note for Management (Optional)</label>
-            <input id="rr-notes" @bind="_notes" placeholder="Move-in date or reference note" />
+            <label for="rr-notes">@Loc.T("registerResident.notesLabel")</label>
+            <input id="rr-notes" @bind="_notes" placeholder="@Loc.T("registerResident.notesPlaceholder")" />
         </div>
         <button type="submit" class="cg-btn cg-btn-primary cg-btn-block" disabled="@_isBusy">
-            @(_isBusy ? "Submitting Registration..." : "Complete Resident Registration")
+            @(_isBusy ? Loc.T("registerResident.submitting") : Loc.T("registerResident.complete"))
         </button>
     </form>
 
     <div class="cg-auth-links">
-        <a href="/login">Already registered? Sign in</a>
+        <a href="/login">@Loc.T("registerResident.registeredSignIn")</a>
     </div>
 }
 

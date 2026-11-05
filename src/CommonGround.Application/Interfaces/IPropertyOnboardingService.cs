@@ -29,7 +29,8 @@ public interface IPropertyOnboardingService
     Task<PropertyAiDiscoveryDossier> DiscoverPropertyDossierFromAddressAsync(
         AddressLookupRequest request,
         CancellationToken ct = default,
-        IProgress<DiscoveryProgressStep>? progress = null);
+        IProgress<DiscoveryProgressStep>? progress = null,
+        string uiLocale = "EN");
 
     Task<Community> CreatePropertyManualAsync(
         Guid firmId,

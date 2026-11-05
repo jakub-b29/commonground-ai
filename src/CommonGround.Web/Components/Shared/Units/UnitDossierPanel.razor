@@ -1,10 +1,12 @@
 @using CommonGround.Application.Services
+@inject WorkspaceLocalization Loc
 @inject CommonGroundWorkspaceService Workspace
 @inject WorkspaceAccessService Access
+@implements IDisposable
 
 @if (_dossier is null)
 {
-    <div class="cg-card"><p role="status">Loading unit dossier...</p></div>
+    <div class="cg-card"><p role="status">@Loc.T("msg.loadingDossier")</p></div>
 }
 else
 {
@@ -16,19 +18,19 @@ else
                     <span class="cg-badge cg-badge-neutral">@_dossier.Building.Name</span>
                     <span class="cg-badge @GetOccupancyBadgeClass(_dossier.Unit.OccupancyStatus)">@_dossier.Unit.OccupancyStatus</span>
                 </div>
-                <h2 style="margin-top: 0.25rem;">Unit @_dossier.Unit.UnitNumber — Complete Unit Dossier &amp; Operations</h2>
+                <h2 style="margin-top: 0.25rem;">@Loc.T("unit.dossier.unitLabel") @_dossier.Unit.UnitNumber — @Loc.T("unit.dossier.titleSuffix")</h2>
                 <p style="font-size: 0.78rem; color: var(--text-secondary);">
-                    Floor @_dossier.Unit.FloorNumber · Stairwell @_dossier.Unit.StairwellNumber · Stack @_dossier.Unit.VerticalStackCode · @_dossier.Unit.Kind · @_dossier.Unit.FloorAreaM2.ToString("N1") m² · Share @_dossier.Unit.ShareNumerator / @_dossier.Unit.ShareDenominator
+                    @Loc.T("unit.dossier.floor") @_dossier.Unit.FloorNumber · @Loc.T("unit.dossier.stairwell") @_dossier.Unit.StairwellNumber · @Loc.T("unit.dossier.stack") @_dossier.Unit.VerticalStackCode · @_dossier.Unit.Kind · @_dossier.Unit.FloorAreaM2.ToString("N1") m² · @Loc.T("unit.dossier.shareLabel") @_dossier.Unit.ShareNumerator / @_dossier.Unit.ShareDenominator
                 </p>
             </div>
             <div style="display: flex; gap: 0.4rem; flex-wrap: wrap;">
-                <button type="button" class="cg-btn cg-btn-sm @(_activeTab == "overview" ? "cg-btn-primary" : "")" @onclick='() => _activeTab = "overview"'>1-2. Specs &amp; Edit</button>
-                <button type="button" class="cg-btn cg-btn-sm @(_activeTab == "residents" ? "cg-btn-primary" : "")" @onclick='() => _activeTab = "residents"'>3-6. Ownership, Residents &amp; Timeline (@_dossier.ActiveAssignments.Count)</button>
-                <button type="button" class="cg-btn cg-btn-sm @(_activeTab == "links" ? "cg-btn-primary" : "")" @onclick='() => _activeTab = "links"'>10. Registration Links (@_dossier.RegistrationTokens.Count)</button>
-                <button type="button" class="cg-btn cg-btn-sm @(_activeTab == "vault" ? "cg-btn-primary" : "")" @onclick='() => _activeTab = "vault"'>7-9 &amp; 11. Utilities, Financials, Docs &amp; Audit</button>
+                <button type="button" class="cg-btn cg-btn-sm @(_activeTab == "overview" ? "cg-btn-primary" : "")" @onclick='() => _activeTab = "overview"'>@Loc.T("unit.dossier.tabSpecs")</button>
+                <button type="button" class="cg-btn cg-btn-sm @(_activeTab == "residents" ? "cg-btn-primary" : "")" @onclick='() => _activeTab = "residents"'>@Loc.T("unit.dossier.tabResidents") (@_dossier.ActiveAssignments.Count)</button>
+                <button type="button" class="cg-btn cg-btn-sm @(_activeTab == "links" ? "cg-btn-primary" : "")" @onclick='() => _activeTab = "links"'>@Loc.T("unit.dossier.tabLinks") (@_dossier.RegistrationTokens.Count)</button>
+                <button type="button" class="cg-btn cg-btn-sm @(_activeTab == "vault" ? "cg-btn-primary" : "")" @onclick='() => _activeTab = "vault"'>@Loc.T("unit.dossier.tabVault")</button>
                 @if (OnClose.HasDelegate)
                 {
-                    <button type="button" class="cg-btn cg-btn-sm" @onclick="OnClose">Close dossier</button>
+                    <button type="button" class="cg-btn cg-btn-sm" @onclick="OnClose">@Loc.T("action.close")</button>
                 }
             </div>
         </div>
@@ -41,34 +43,34 @@ else
         @if (_activeTab == "overview")
         {
             <div class="cg-grid-4" style="margin-block-end: 0.85rem;">
-                <MetricCard Label="Surface & Storage"
+                <MetricCard Label="@Loc.T("unit.dossier.surfaceStorage")"
                             Value="@($"{_dossier.Unit.FloorAreaM2:N1} m²")"
-                            Subtitle="@($"+ {_dossier.Unit.StorageAreaM2:N1} m² storage · {_dossier.Unit.RoomsCount} rooms")"
+                            Subtitle="@($"+ {_dossier.Unit.StorageAreaM2:N1} m² {Loc.T("unit.dossier.storageSuffix")} · {_dossier.Unit.RoomsCount} {Loc.T("unit.dossier.roomsSuffix")}")"
                             BadgeText="@_dossier.Unit.Kind.ToString()"
                             StatusVariant="info" />
-                <MetricCard Label="Ownership Share"
+                <MetricCard Label="@Loc.T("unit.dossier.ownershipShare")"
                             Value="@($"{_dossier.Unit.ShareNumerator} / {_dossier.Unit.ShareDenominator}")"
-                            Subtitle="@($"{(_dossier.Unit.OwnershipShare * 100m):N2}% statutory weight")"
-                            BadgeText="Statutory"
+                            Subtitle="@($"{(_dossier.Unit.OwnershipShare * 100m):N2}% {Loc.T("unit.dossier.statutoryWeight")}")"
+                            BadgeText="@Loc.T("unit.dossier.statutoryBadge")"
                             StatusVariant="ok" />
-                <MetricCard Label="Active Residents"
+                <MetricCard Label="@Loc.T("unit.dossier.activeResidents")"
                             Value="@_dossier.ActiveAssignments.Count.ToString()"
-                            Subtitle="@($"Capacity: {_dossier.Unit.OccupancyCapacity} · Household: {_dossier.HouseholdMembers.Count(h => h.IsActive)}")"
+                            Subtitle="@($"{Loc.T("unit.dossier.capacityLabel")}: {_dossier.Unit.OccupancyCapacity} · {Loc.T("unit.dossier.householdLabel")}: {_dossier.HouseholdMembers.Count(h => h.IsActive)}")"
                             BadgeText="@_dossier.Unit.OccupancyStatus.ToString()"
                             StatusVariant="info" />
-                <MetricCard Label="Unit Ledger Balance"
+                <MetricCard Label="@Loc.T("unit.dossier.ledgerBalance")"
                             Value="@($"{_dossier.Unit.CurrentBalance:N2} {_dossier.Community.CurrencyCode}")"
-                            Subtitle="@(_dossier.Unit.DaysPastDue > 0 ? $"{_dossier.Unit.DaysPastDue} days past due" : "Current — 0 days past due")"
+                            Subtitle="@(_dossier.Unit.DaysPastDue > 0 ? $"{_dossier.Unit.DaysPastDue} {Loc.T("unit.dossier.daysPastDue")}" : Loc.T("unit.dossier.currentOk"))"
                             BadgeText="@_dossier.Unit.ArrearsStage.ToString()"
                             StatusVariant="@(_dossier.Unit.CurrentBalance > 0m ? "warn" : "ok")" />
             </div>
 
             <div class="cg-subcard">
-                <strong>Section 2 — Edit Unit Specifications &amp; Legal Owner</strong>
+                <strong>@Loc.T("unit.dossier.sectionSpecs")</strong>
                 <div class="cg-grid-4" style="margin-top: 0.65rem;">
-                    <div><label>Unit Number</label><input @bind="_editNumber" /></div>
+                    <div><label>@Loc.T("form.unitNumber")</label><input @bind="_editNumber" /></div>
                     <div>
-                        <label>Unit Type</label>
+                        <label>@Loc.T("unit.dossier.unitType")</label>
                         <select @bind="_editKind">
                             @foreach (var k in Enum.GetValues<UnitKind>())
                             {
@@ -77,7 +79,7 @@ else
                         </select>
                     </div>
                     <div>
-                        <label>Occupancy Status</label>
+                        <label>@Loc.T("table.status")</label>
                         <select @bind="_editStatus">
                             @foreach (var st in Enum.GetValues<UnitOccupancyStatus>())
                             {
@@ -85,28 +87,28 @@ else
                             }
                         </select>
                     </div>
-                    <div><label>Vertical Riser Stack</label><input class="mono" @bind="_editStack" /></div>
-                    <div><label>Floor Number</label><input type="number" @bind="_editFloor" /></div>
-                    <div><label>Stairwell</label><input type="number" @bind="_editStairwell" /></div>
-                    <div><label>Floor Area (m²)</label><input type="number" step="0.1" @bind="_editFloorArea" /></div>
-                    <div><label>Storage Area (m²)</label><input type="number" step="0.1" @bind="_editStorageArea" /></div>
-                    <div><label>Rooms</label><input type="number" @bind="_editRooms" /></div>
-                    <div><label>Bathrooms</label><input type="number" @bind="_editBathrooms" /></div>
-                    <div><label>Occupancy Capacity</label><input type="number" @bind="_editCapacity" /></div>
-                    <div><label>Share Numerator</label><input type="number" @bind="_editShareNum" /></div>
-                    <div><label>Share Denominator</label><input type="number" @bind="_editShareDen" /></div>
-                    <div><label>Primary Owner Name</label><input @bind="_editOwnerName" /></div>
-                    <div><label>Primary Owner Email</label><input type="email" @bind="_editOwnerEmail" /></div>
-                    <div><label>Primary Owner Phone</label><input type="tel" @bind="_editOwnerPhone" /></div>
-                    <div><label>Co-Owner Name</label><input @bind="_editCoOwner" /></div>
-                    <div><label>Voting Proxy</label><input @bind="_editProxy" /></div>
-                    <div><label>Parking Bay</label><input @bind="_editParking" /></div>
-                    <div><label>Access Fob Code</label><input class="mono" @bind="_editFob" /></div>
-                    <div><label>Virtual IBAN / Lockbox</label><input class="mono" @bind="_editIban" /></div>
-                    <div><label>Notes</label><input @bind="_editNotes" /></div>
+                    <div><label>@Loc.T("unit.dossier.riserStack")</label><input class="mono" @bind="_editStack" /></div>
+                    <div><label>@Loc.T("builder.floors")</label><input type="number" @bind="_editFloor" /></div>
+                    <div><label>@Loc.T("builder.stairwells")</label><input type="number" @bind="_editStairwell" /></div>
+                    <div><label>@Loc.T("builder.area")</label><input type="number" step="0.1" @bind="_editFloorArea" /></div>
+                    <div><label>@Loc.T("unit.dossier.storageArea")</label><input type="number" step="0.1" @bind="_editStorageArea" /></div>
+                    <div><label>@Loc.T("unit.dossier.rooms")</label><input type="number" @bind="_editRooms" /></div>
+                    <div><label>@Loc.T("unit.dossier.bathrooms")</label><input type="number" @bind="_editBathrooms" /></div>
+                    <div><label>@Loc.T("unit.dossier.capacity")</label><input type="number" @bind="_editCapacity" /></div>
+                    <div><label>@Loc.T("unit.dossier.shareNum")</label><input type="number" @bind="_editShareNum" /></div>
+                    <div><label>@Loc.T("unit.dossier.shareDen")</label><input type="number" @bind="_editShareDen" /></div>
+                    <div><label>@Loc.T("unit.primaryOwner")</label><input @bind="_editOwnerName" /></div>
+                    <div><label>@Loc.T("form.email")</label><input type="email" @bind="_editOwnerEmail" /></div>
+                    <div><label>@Loc.T("form.phone")</label><input type="tel" @bind="_editOwnerPhone" /></div>
+                    <div><label>@Loc.T("unit.dossier.coOwner")</label><input @bind="_editCoOwner" /></div>
+                    <div><label>@Loc.T("unit.dossier.proxy")</label><input @bind="_editProxy" /></div>
+                    <div><label>@Loc.T("unit.dossier.parking")</label><input @bind="_editParking" /></div>
+                    <div><label>@Loc.T("unit.dossier.fob")</label><input class="mono" @bind="_editFob" /></div>
+                    <div><label>@Loc.T("unit.iban")</label><input class="mono" @bind="_editIban" /></div>
+                    <div><label>@Loc.T("unit.dossier.notes")</label><input @bind="_editNotes" /></div>
                 </div>
                 <div class="cg-toolbar" style="margin-top: 0.75rem;">
-                    <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="SaveUnitDetailsAsync">Save unit changes</button>
+                    <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="SaveUnitDetailsAsync">@Loc.T("builder.saveUnit")</button>
                 </div>
             </div>
         }
@@ -115,25 +117,25 @@ else
             <div class="cg-stack">
                 <div class="cg-subcard">
                     <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
-                        <strong>Section 3 — Legal Ownership Records (Separate from Occupancy)</strong>
-                        <span class="cg-badge cg-badge-neutral">@_dossier.Ownerships.Count records</span>
+                        <strong>@Loc.T("unit.dossier.sectionOwnership")</strong>
+                        <span class="cg-badge cg-badge-neutral">@_dossier.Ownerships.Count @Loc.T("unit.dossier.recordsSuffix")</span>
                     </div>
                     <div class="cg-table-wrap" style="margin-top: 0.5rem;">
                         <table class="cg-table">
                             <thead>
                                 <tr>
-                                    <th>Owner Full Name</th>
-                                    <th>Role</th>
-                                    <th class="num">Share Fraction</th>
-                                    <th>Contact</th>
-                                    <th>Effective Dates</th>
-                                    <th>Status</th>
+                                    <th>@Loc.T("table.ownerName")</th>
+                                    <th>@Loc.T("table.role")</th>
+                                    <th class="num">@Loc.T("table.shareFraction")</th>
+                                    <th>@Loc.T("table.contact")</th>
+                                    <th>@Loc.T("table.effectiveDates")</th>
+                                    <th>@Loc.T("table.status")</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 @if (_dossier.Ownerships.Count == 0)
                                 {
-                                    <tr><td colspan="6" style="color: var(--text-secondary);">No formal ownership record registered yet.</td></tr>
+                                    <tr><td colspan="6" style="color: var(--text-secondary);">@Loc.T("unit.dossier.noOwnership")</td></tr>
                                 }
                                 @foreach (var own in _dossier.Ownerships)
                                 {
@@ -143,7 +145,7 @@ else
                                         <td class="mono num">@own.ShareNumerator / @own.ShareDenominator (@own.OwnershipPercentage.ToString("N1")%)</td>
                                         <td class="mono" style="font-size: 0.75rem;">@own.OwnerEmail · @own.OwnerPhone</td>
                                         <td class="mono num" style="font-size: 0.75rem;">@own.EffectiveStartDateUtc.ToString("yyyy-MM-dd")</td>
-                                        <td><span class="cg-badge @(own.IsActive ? "cg-badge-ok" : "cg-badge-neutral")">@(own.IsActive ? "Active" : "Historical")</span></td>
+                                        <td><span class="cg-badge @(own.IsActive ? "cg-badge-ok" : "cg-badge-neutral")">@(own.IsActive ? Loc.T("unit.dossier.activeSuffix") : Loc.T("unit.dossier.historicalSuffix"))</span></td>
                                     </tr>
                                 }
                             </tbody>
@@ -153,26 +155,26 @@ else
 
                 <div class="cg-subcard">
                     <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
-                        <strong>Section 4 — Current Assigned Residents &amp; Move-In / Move-Out</strong>
+                        <strong>@Loc.T("unit.dossier.sectionAssign")</strong>
                         <button type="button" class="cg-btn cg-btn-sm cg-btn-primary" @onclick="() => _showQuickAssign = !_showQuickAssign">
-                            @(_showQuickAssign ? "Hide Assignment Form" : "+ Assign Resident to Unit")
+                            @(_showQuickAssign ? Loc.T("unit.dossier.hideForm") : Loc.T("unit.dossier.assignCta"))
                         </button>
                     </div>
 
                     @if (_showQuickAssign)
                     {
                         <div class="cg-card" style="margin-top: 0.65rem; border: 1px solid var(--accent-primary);">
-                            <strong>Assign Resident to Unit @_dossier.Unit.UnitNumber</strong>
+                            <strong>@Loc.T("unit.dossier.assignTitle") @_dossier.Unit.UnitNumber</strong>
                             <div class="cg-grid-3" style="margin-top: 0.5rem;">
                                 <div>
-                                    <label>Resident Source</label>
+                                    <label>@Loc.T("unit.dossier.residentSource")</label>
                                     <select @bind="_assignCreateNew">
-                                        <option value="false">Select Existing Resident (RES-XXXXXXXX)</option>
-                                        <option value="true">Create &amp; Assign New Resident Profile</option>
+                                        <option value="false">@Loc.T("unit.dossier.selectExisting")</option>
+                                        <option value="true">@Loc.T("unit.dossier.createNew")</option>
                                     </select>
                                 </div>
                                 <div>
-                                    <label>Assignment Role</label>
+                                    <label>@Loc.T("unit.dossier.assignmentRole")</label>
                                     <select @bind="_assignType">
                                         @foreach (var t in Enum.GetValues<ResidentAssignmentType>())
                                         {
@@ -181,15 +183,15 @@ else
                                     </select>
                                 </div>
                                 <div>
-                                    <label>Move-In Date</label>
+                                    <label>@Loc.T("unit.dossier.moveIn")</label>
                                     <input type="date" @bind="_assignMoveIn" />
                                 </div>
                                 @if (!_assignCreateNew)
                                 {
                                     <div>
-                                        <label>Existing Resident Profile</label>
+                                        <label>@Loc.T("unit.dossier.existingProfile")</label>
                                         <select @bind="_assignExistingProfileId">
-                                            <option value="@Guid.Empty">-- Select Resident --</option>
+                                            <option value="@Guid.Empty">@Loc.T("unit.dossier.selectResident")</option>
                                             @foreach (var r in ExistingResidents)
                                             {
                                                 <option value="@r.Profile.Id" @key="r.Profile.Id">@r.Profile.FullName (@r.Profile.ResidentAccountNumber)</option>
@@ -199,16 +201,16 @@ else
                                 }
                                 else
                                 {
-                                    <div><label>First Name</label><input @bind="_assignFirstName" placeholder="Anna" /></div>
-                                    <div><label>Last Name</label><input @bind="_assignLastName" placeholder="Nowak" /></div>
-                                    <div><label>Email</label><input type="email" @bind="_assignEmail" placeholder="resident@example.com" /></div>
-                                    <div><label>Phone</label><input type="tel" @bind="_assignPhone" placeholder="+48 500 100 200" /></div>
+                                    <div><label>@Loc.T("unit.dossier.firstName")</label><input @bind="_assignFirstName" placeholder="@Loc.T("unit.dossier.firstNamePh")" /></div>
+                                    <div><label>@Loc.T("unit.dossier.lastName")</label><input @bind="_assignLastName" placeholder="@Loc.T("unit.dossier.lastNamePh")" /></div>
+                                    <div><label>@Loc.T("form.email")</label><input type="email" @bind="_assignEmail" placeholder="@Loc.T("form.emailEx")" /></div>
+                                    <div><label>@Loc.T("form.phone")</label><input type="tel" @bind="_assignPhone" placeholder="@Loc.T("form.phoneEx")" /></div>
                                 }
-                                <div><label>Assignment Notes</label><input @bind="_assignNotes" placeholder="Lease / ownership reference" /></div>
-                                <div><label>Conflict Override Reason (if occupied)</label><input @bind="_assignOverrideReason" placeholder="Required only if overriding active primary" /></div>
+                                <div><label>@Loc.T("unit.dossier.assignmentNotes")</label><input @bind="_assignNotes" placeholder="@Loc.T("unit.dossier.assignmentNotesPh")" /></div>
+                                <div><label>@Loc.T("unit.dossier.overrideReason")</label><input @bind="_assignOverrideReason" placeholder="@Loc.T("unit.dossier.overridePh")" /></div>
                             </div>
                             <div class="cg-toolbar" style="margin-top: 0.65rem;">
-                                <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="AssignResidentNowAsync">Confirm &amp; Assign Resident</button>
+                                <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="AssignResidentNowAsync">@Loc.T("unit.dossier.confirmAssign")</button>
                             </div>
                         </div>
                     }
@@ -217,18 +219,18 @@ else
                         <table class="cg-table">
                             <thead>
                                 <tr>
-                                    <th>Resident Account No.</th>
-                                    <th>Full Name &amp; Contact</th>
-                                    <th>Assignment Type</th>
-                                    <th>Move-In Date</th>
-                                    <th>Status</th>
-                                    <th>Actions</th>
+                                    <th>@Loc.T("table.residentAccount")</th>
+                                    <th>@Loc.T("table.fullNameContact")</th>
+                                    <th>@Loc.T("table.assignmentType")</th>
+                                    <th>@Loc.T("table.moveIn")</th>
+                                    <th>@Loc.T("table.status")</th>
+                                    <th>@Loc.T("table.actions")</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 @if (_dossier.ActiveAssignments.Count == 0)
                                 {
-                                    <tr><td colspan="6" style="color: var(--text-secondary);">Unit is currently vacant. Use "+ Assign Resident to Unit" or generate a Registration Link.</td></tr>
+                                    <tr><td colspan="6" style="color: var(--text-secondary);">@Loc.T("unit.dossier.noActive")</td></tr>
                                 }
                                 @foreach (var a in _dossier.ActiveAssignments)
                                 {
@@ -237,22 +239,22 @@ else
                                             <span class="cg-badge cg-badge-info mono num">@(a.ResidentProfile?.ResidentAccountNumber ?? "RES")</span>
                                         </td>
                                         <td>
-                                            <strong>@(a.ResidentProfile?.FullName ?? "Resident")</strong>
+                                            <strong>@(a.ResidentProfile?.FullName ?? Loc.T("unit.dossier.residentFallback"))</strong>
                                             <div class="mono" style="font-size: 0.73rem; color: var(--text-secondary);">@(a.ResidentProfile?.PrimaryEmail) · @(a.ResidentProfile?.Phone)</div>
                                         </td>
                                         <td>
                                             <span class="cg-badge cg-badge-neutral">@a.AssignmentType</span>
                                             @if (a.IsPrimaryResident)
                                             {
-                                                <span class="cg-badge cg-badge-ok" style="margin-left: 0.25rem;">Primary</span>
+                                                <span class="cg-badge cg-badge-ok" style="margin-left: 0.25rem;">@Loc.T("unit.dossier.primaryBadge")</span>
                                             }
                                         </td>
                                         <td class="mono num">@a.MoveInDateUtc.ToString("yyyy-MM-dd")</td>
                                         <td><span class="cg-badge cg-badge-ok">@a.Status</span></td>
                                         <td>
                                             <div style="display: flex; gap: 0.35rem; flex-wrap: wrap;">
-                                                <a class="cg-btn cg-btn-sm" href="@($"/admin/residents/{a.ResidentProfileId}")">Resident Profile</a>
-                                                <button type="button" class="cg-btn cg-btn-sm" disabled="@_isBusy" @onclick="() => ExecuteMoveOutNowAsync(a.Id)">Move-Out</button>
+                                                <a class="cg-btn cg-btn-sm" href="@($"/admin/residents/{a.ResidentProfileId}")">@Loc.T("unit.dossier.residentProfile")</a>
+                                                <button type="button" class="cg-btn cg-btn-sm" disabled="@_isBusy" @onclick="() => ExecuteMoveOutNowAsync(a.Id)">@Loc.T("unit.dossier.moveOut")</button>
                                             </div>
                                         </td>
                                     </tr>
@@ -263,16 +265,16 @@ else
                 </div>
 
                 <div class="cg-subcard">
-                    <strong>Section 5 — Household Members &amp; Co-Occupants (@_dossier.HouseholdMembers.Count(h => h.IsActive))</strong>
+                    <strong>@Loc.T("unit.dossier.sectionHouseholdPrefix") (@_dossier.HouseholdMembers.Count(h => h.IsActive))</strong>
                     <div class="cg-table-wrap" style="margin-top: 0.45rem;">
                         <table class="cg-table">
                             <thead>
-                                <tr><th>Full Name</th><th>Relationship</th><th>Contact</th><th>Portal Access</th><th>Status</th><th>Action</th></tr>
+                                <tr><th>@Loc.T("table.fullName")</th><th>@Loc.T("table.relationship")</th><th>@Loc.T("table.contact")</th><th>@Loc.T("table.portalAccess")</th><th>@Loc.T("table.status")</th><th>@Loc.T("table.actions")</th></tr>
                             </thead>
                             <tbody>
                                 @if (_dossier.HouseholdMembers.Count == 0)
                                 {
-                                    <tr><td colspan="6" style="color: var(--text-secondary);">No additional household members recorded.</td></tr>
+                                    <tr><td colspan="6" style="color: var(--text-secondary);">@Loc.T("unit.dossier.noHousehold")</td></tr>
                                 }
                                 @foreach (var h in _dossier.HouseholdMembers)
                                 {
@@ -280,12 +282,12 @@ else
                                         <td><strong>@h.FullName</strong></td>
                                         <td>@h.RelationshipToPrimary</td>
                                         <td class="mono" style="font-size: 0.75rem;">@h.Email @h.Phone</td>
-                                        <td>@(h.HasPortalAccess ? "Yes" : "No")</td>
-                                        <td><span class="cg-badge @(h.IsActive ? "cg-badge-ok" : "cg-badge-neutral")">@(h.IsActive ? "Active" : "Ended")</span></td>
+                                        <td>@(h.HasPortalAccess ? Loc.T("unit.dossier.yes") : Loc.T("unit.dossier.no"))</td>
+                                        <td><span class="cg-badge @(h.IsActive ? "cg-badge-ok" : "cg-badge-neutral")">@(h.IsActive ? Loc.T("unit.dossier.activeSuffix") : Loc.T("unit.dossier.endedSuffix"))</span></td>
                                         <td>
                                             @if (h.IsActive)
                                             {
-                                                <button type="button" class="cg-btn cg-btn-sm" @onclick="() => RemoveHouseholdAsync(h.Id)">End occupancy</button>
+                                                <button type="button" class="cg-btn cg-btn-sm" @onclick="() => RemoveHouseholdAsync(h.Id)">@Loc.T("unit.dossier.endOccupancy")</button>
                                             }
                                         </td>
                                     </tr>
@@ -294,27 +296,27 @@ else
                         </table>
                     </div>
                     <div class="cg-grid-4" style="margin-top: 0.55rem;">
-                        <div><label>Household Member Name</label><input @bind="_hhName" placeholder="Full name" /></div>
-                        <div><label>Relationship</label><input @bind="_hhRel" placeholder="Spouse / Child / Relative" /></div>
-                        <div><label>Phone / Email</label><input @bind="_hhContact" placeholder="Optional contact" /></div>
+                        <div><label>@Loc.T("unit.dossier.hhName")</label><input @bind="_hhName" placeholder="@Loc.T("unit.dossier.hhNamePh")" /></div>
+                        <div><label>@Loc.T("table.relationship")</label><input @bind="_hhRel" placeholder="@Loc.T("unit.dossier.relationshipPh")" /></div>
+                        <div><label>@Loc.T("table.contact")</label><input @bind="_hhContact" placeholder="@Loc.T("unit.dossier.contactPh")" /></div>
                         <div style="display: flex; align-items: flex-end;">
-                            <button type="button" class="cg-btn cg-btn-sm cg-btn-primary" disabled="@_isBusy" @onclick="AddHouseholdAsync">+ Add Household Member</button>
+                            <button type="button" class="cg-btn cg-btn-sm cg-btn-primary" disabled="@_isBusy" @onclick="AddHouseholdAsync">@Loc.T("unit.dossier.addHousehold")</button>
                         </div>
                     </div>
                 </div>
 
                 <div class="cg-subcard">
-                    <strong>Section 6 — Unit Occupancy Timeline &amp; Historical Residency</strong>
+                    <strong>@Loc.T("unit.dossier.sectionTimeline")</strong>
                     <div class="cg-table-wrap" style="margin-top: 0.45rem;">
                         <table class="cg-table">
                             <thead>
                                 <tr>
-                                    <th>Resident Account No.</th>
-                                    <th>Resident</th>
-                                    <th>Assignment Type</th>
-                                    <th>Move-In</th>
-                                    <th>Move-Out</th>
-                                    <th>Status &amp; Notes</th>
+                                    <th>@Loc.T("table.residentAccount")</th>
+                                    <th>@Loc.T("table.resident")</th>
+                                    <th>@Loc.T("table.assignmentType")</th>
+                                    <th>@Loc.T("table.moveIn")</th>
+                                    <th>@Loc.T("table.moveOut")</th>
+                                    <th>@Loc.T("table.statusNotes")</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -322,10 +324,10 @@ else
                                 {
                                     <tr @key="hist.Id">
                                         <td class="mono num">@(hist.ResidentProfile?.ResidentAccountNumber ?? "RES")</td>
-                                        <td><strong>@(hist.ResidentProfile?.FullName ?? "Resident")</strong></td>
+                                        <td><strong>@(hist.ResidentProfile?.FullName ?? Loc.T("unit.dossier.residentFallback"))</strong></td>
                                         <td>@hist.AssignmentType</td>
                                         <td class="mono num">@hist.MoveInDateUtc.ToString("yyyy-MM-dd")</td>
-                                        <td class="mono num">@(hist.MoveOutDateUtc?.ToString("yyyy-MM-dd") ?? "Active")</td>
+                                        <td class="mono num">@(hist.MoveOutDateUtc?.ToString("yyyy-MM-dd") ?? Loc.T("unit.dossier.activeSuffix"))</td>
                                         <td style="font-size: 0.75rem;">
                                             <span class="cg-badge @(hist.Status == UnitAssignmentStatus.Active ? "cg-badge-ok" : "cg-badge-neutral")">@hist.Status</span>
                                             <span style="margin-left: 0.35rem; color: var(--text-secondary);">@hist.AssignmentReasonOrNotes</span>
@@ -342,62 +344,62 @@ else
         {
             <div class="cg-stack">
                 <div class="cg-subcard">
-                    <strong>Section 10 — Zero-Disclosure Resident Registration Links</strong>
+                    <strong>@Loc.T("unit.dossier.sectionLinks")</strong>
                     <p style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 0.25rem;">
-                        Generate a cryptographically hashed registration-only link for Unit @_dossier.Unit.UnitNumber. The public registration page never discloses Community, Building, Unit, Owner, or Financial data.
+                        @Loc.T("unit.dossier.linksHintPrefix") @_dossier.Unit.UnitNumber. @Loc.T("unit.dossier.linksHintSuffix")
                     </p>
                     <div class="cg-grid-4" style="margin-top: 0.65rem;">
                         <div>
-                            <label>Approval Policy</label>
+                            <label>@Loc.T("unit.dossier.approvalPolicy")</label>
                             <select @bind="_linkMode">
-                                <option value="@RegistrationApprovalMode.ManualFirmApproval">Mode B — Manual Firm Approval</option>
-                                <option value="@RegistrationApprovalMode.AutomaticAuthorized">Mode A — Automatic Authorized</option>
+                                <option value="@RegistrationApprovalMode.ManualFirmApproval">@Loc.T("property.settings.regManual")</option>
+                                <option value="@RegistrationApprovalMode.AutomaticAuthorized">@Loc.T("property.settings.regAuto")</option>
                             </select>
                         </div>
                         <div>
-                            <label>Intended Resident Role</label>
+                            <label>@Loc.T("unit.dossier.intendedRole")</label>
                             <select @bind="_linkAssignmentType">
-                                <option value="@ResidentAssignmentType.PrimaryResident">Primary Resident</option>
-                                <option value="@ResidentAssignmentType.OwnerResident">Owner-Resident</option>
-                                <option value="@ResidentAssignmentType.Tenant">Tenant</option>
-                                <option value="@ResidentAssignmentType.CoResident">Co-Resident</option>
+                                <option value="@ResidentAssignmentType.PrimaryResident">@Loc.T("unit.dossier.rolePrimary")</option>
+                                <option value="@ResidentAssignmentType.OwnerResident">@Loc.T("unit.dossier.roleOwnerResident")</option>
+                                <option value="@ResidentAssignmentType.Tenant">@Loc.T("unit.dossier.roleTenant")</option>
+                                <option value="@ResidentAssignmentType.CoResident">@Loc.T("unit.dossier.roleCoResident")</option>
                             </select>
                         </div>
-                        <div><label>Max Uses</label><input type="number" min="1" max="10" @bind="_linkMaxUses" /></div>
-                        <div><label>Reference Note</label><input @bind="_linkLabel" placeholder="e.g. Lease handover Nov 2026" /></div>
+                        <div><label>@Loc.T("unit.dossier.maxUses")</label><input type="number" min="1" max="10" @bind="_linkMaxUses" /></div>
+                        <div><label>@Loc.T("unit.dossier.refNote")</label><input @bind="_linkLabel" placeholder="@Loc.T("unit.dossier.refNotePh")" /></div>
                     </div>
                     <div class="cg-toolbar" style="margin-top: 0.65rem;">
-                        <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="GenerateLinkAsync">Generate Registration Link</button>
+                        <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="GenerateLinkAsync">@Loc.T("unit.dossier.generateLink")</button>
                     </div>
 
                     @if (!string.IsNullOrWhiteSpace(_lastGeneratedUrl))
                     {
                         <div class="cg-callout" style="margin-top: 0.65rem;">
-                            <strong>New Zero-Disclosure Registration Link Generated:</strong>
+                            <strong>@Loc.T("unit.dossier.linkGenerated")</strong>
                             <div class="mono num" style="margin-top: 0.3rem; word-break: break-all;">@_lastGeneratedUrl</div>
                         </div>
                     }
                 </div>
 
                 <div class="cg-subcard">
-                    <strong>Issued Registration Tokens (@_dossier.RegistrationTokens.Count)</strong>
+                    <strong>@Loc.T("unit.dossier.issuedTokens") (@_dossier.RegistrationTokens.Count)</strong>
                     <div class="cg-table-wrap" style="margin-top: 0.45rem;">
                         <table class="cg-table">
                             <thead>
                                 <tr>
-                                    <th>Label / Reference</th>
-                                    <th>Approval Mode</th>
-                                    <th>Role</th>
-                                    <th class="num">Uses</th>
-                                    <th>Expires</th>
-                                    <th>Status</th>
-                                    <th>Action</th>
+                                    <th>@Loc.T("table.labelRef")</th>
+                                    <th>@Loc.T("table.approvalMode")</th>
+                                    <th>@Loc.T("table.role")</th>
+                                    <th class="num">@Loc.T("table.uses")</th>
+                                    <th>@Loc.T("table.expires")</th>
+                                    <th>@Loc.T("table.status")</th>
+                                    <th>@Loc.T("table.actions")</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 @if (_dossier.RegistrationTokens.Count == 0)
                                 {
-                                    <tr><td colspan="7" style="color: var(--text-secondary);">No registration links generated for this unit yet.</td></tr>
+                                    <tr><td colspan="7" style="color: var(--text-secondary);">@Loc.T("unit.dossier.noLinks")</td></tr>
                                 }
                                 @foreach (var tk in _dossier.RegistrationTokens)
                                 {
@@ -411,7 +413,7 @@ else
                                         <td>
                                             @if (tk.Status == RegistrationTokenStatus.Active)
                                             {
-                                                <button type="button" class="cg-btn cg-btn-sm" @onclick="() => RevokeLinkAsync(tk.Id)">Revoke</button>
+                                                <button type="button" class="cg-btn cg-btn-sm" @onclick="() => RevokeLinkAsync(tk.Id)">@Loc.T("unit.dossier.revoke")</button>
                                             }
                                         </td>
                                     </tr>
@@ -427,14 +429,14 @@ else
             <div class="cg-stack">
                 <div class="cg-grid-2">
                     <div class="cg-subcard">
-                        <strong>Section 7 — Utility Sub-Meters (@_dossier.Meters.Count)</strong>
+                        <strong>@Loc.T("unit.dossier.sectionMeters") (@_dossier.Meters.Count)</strong>
                         <div class="cg-table-wrap" style="margin-top: 0.45rem;">
                             <table class="cg-table">
-                                <thead><tr><th>Utility</th><th>Serial No.</th><th class="num">Last Reading</th><th>Status</th></tr></thead>
+                                <thead><tr><th>@Loc.T("table.utility")</th><th>@Loc.T("table.serialNo")</th><th class="num">@Loc.T("table.lastReading")</th><th>@Loc.T("table.status")</th></tr></thead>
                                 <tbody>
                                     @if (_dossier.Meters.Count == 0)
                                     {
-                                        <tr><td colspan="4" style="color: var(--text-secondary);">No sub-meters registered.</td></tr>
+                                        <tr><td colspan="4" style="color: var(--text-secondary);">@Loc.T("unit.dossier.noMeters")</td></tr>
                                     }
                                     @foreach (var m in _dossier.Meters)
                                     {
@@ -442,7 +444,7 @@ else
                                             <td>@m.Kind</td>
                                             <td class="mono num">@m.SerialNumber</td>
                                             <td class="mono num">@m.LastReadingValue.ToString("N2")</td>
-                                            <td><span class="cg-badge @(m.HasSilentLeakAnomaly ? "cg-badge-warn" : "cg-badge-ok")">@(m.HasSilentLeakAnomaly ? "Leak Anomaly" : "Normal")</span></td>
+                                            <td><span class="cg-badge @(m.HasSilentLeakAnomaly ? "cg-badge-warn" : "cg-badge-ok")">@(m.HasSilentLeakAnomaly ? Loc.T("unit.dossier.leakAnomaly") : Loc.T("unit.dossier.normal"))</span></td>
                                         </tr>
                                     }
                                 </tbody>
@@ -451,17 +453,17 @@ else
                     </div>
 
                     <div class="cg-subcard">
-                        <strong>Section 8 — Financial Assessments &amp; Virtual IBAN</strong>
+                        <strong>@Loc.T("unit.dossier.sectionFinance")</strong>
                         <div style="font-size: 0.78rem; margin-top: 0.35rem;">
-                            Virtual IBAN / Lockbox: <code class="mono num">@_dossier.Unit.VirtualIbanOrLockboxCode</code> · Balance: <strong class="mono num">@_dossier.Unit.CurrentBalance.ToString("N2") @_dossier.Community.CurrencyCode</strong>
+                            @Loc.T("unit.iban"): <code class="mono num">@_dossier.Unit.VirtualIbanOrLockboxCode</code> · @Loc.T("table.balance"): <strong class="mono num">@_dossier.Unit.CurrentBalance.ToString("N2") @_dossier.Community.CurrencyCode</strong>
                         </div>
                         <div class="cg-table-wrap" style="margin-top: 0.45rem;">
                             <table class="cg-table">
-                                <thead><tr><th>Period</th><th class="num">Operating</th><th class="num">Reserve</th><th class="num">Total</th></tr></thead>
+                                <thead><tr><th>@Loc.T("table.period")</th><th class="num">@Loc.T("table.operating")</th><th class="num">@Loc.T("table.reserve")</th><th class="num">@Loc.T("table.total")</th></tr></thead>
                                 <tbody>
                                     @if (_dossier.Assessments.Count == 0)
                                     {
-                                        <tr><td colspan="4" style="color: var(--text-secondary);">No monthly assessments posted yet.</td></tr>
+                                        <tr><td colspan="4" style="color: var(--text-secondary);">@Loc.T("unit.dossier.noAssessments")</td></tr>
                                     }
                                     @foreach (var a in _dossier.Assessments.Take(6))
                                     {
@@ -479,14 +481,14 @@ else
                 </div>
 
                 <div class="cg-subcard">
-                    <strong>Section 9 — Unit &amp; Resident Documents Vault (@_dossier.Documents.Count)</strong>
+                    <strong>@Loc.T("unit.dossier.sectionDocs") (@_dossier.Documents.Count)</strong>
                     <div class="cg-table-wrap" style="margin-top: 0.45rem;">
                         <table class="cg-table">
-                            <thead><tr><th>Category</th><th>Title &amp; File</th><th>Summary</th><th>Uploaded</th></tr></thead>
+                            <thead><tr><th>@Loc.T("table.category")</th><th>@Loc.T("table.titleFile")</th><th>@Loc.T("table.summary")</th><th>@Loc.T("table.uploaded")</th></tr></thead>
                             <tbody>
                                 @if (_dossier.Documents.Count == 0)
                                 {
-                                    <tr><td colspan="4" style="color: var(--text-secondary);">No documents attached to this unit yet.</td></tr>
+                                    <tr><td colspan="4" style="color: var(--text-secondary);">@Loc.T("unit.dossier.noDocs")</td></tr>
                                 }
                                 @foreach (var d in _dossier.Documents)
                                 {
@@ -494,7 +496,7 @@ else
                                         <td><span class="cg-badge cg-badge-neutral">@d.Category</span></td>
                                         <td><strong>@d.Title</strong> <span class="mono" style="font-size: 0.72rem; color: var(--text-secondary);">(@d.FileName)</span></td>
                                         <td style="font-size: 0.75rem;">@d.SummaryOrNotes</td>
-                                        <td class="mono num" style="font-size: 0.74rem;">@d.UploadedAtUtc.ToString("yyyy-MM-dd") by @d.UploadedByName</td>
+                                        <td class="mono num" style="font-size: 0.74rem;">@d.UploadedAtUtc.ToString("yyyy-MM-dd") @Loc.T("unit.dossier.byLabel") @d.UploadedByName</td>
                                     </tr>
                                 }
                             </tbody>
@@ -502,7 +504,7 @@ else
                     </div>
                     <div class="cg-grid-4" style="margin-top: 0.55rem;">
                         <div>
-                            <label>Document Category</label>
+                            <label>@Loc.T("unit.dossier.docCategory")</label>
                             <select @bind="_docCategory">
                                 @foreach (var dc in Enum.GetValues<ResidentDocumentCategory>())
                                 {
@@ -510,19 +512,19 @@ else
                                 }
                             </select>
                         </div>
-                        <div><label>Document Title</label><input @bind="_docTitle" placeholder="e.g. Handover Protocol 2026" /></div>
-                        <div><label>Notes / Reference</label><input @bind="_docNotes" placeholder="Signed copy on file" /></div>
+                        <div><label>@Loc.T("unit.dossier.docTitle")</label><input @bind="_docTitle" placeholder="@Loc.T("unit.dossier.docTitlePh")" /></div>
+                        <div><label>@Loc.T("unit.dossier.docNotes")</label><input @bind="_docNotes" placeholder="@Loc.T("unit.dossier.docNotesPh")" /></div>
                         <div style="display: flex; align-items: flex-end;">
-                            <button type="button" class="cg-btn cg-btn-sm cg-btn-primary" disabled="@_isBusy" @onclick="AddDocumentAsync">+ Attach Document</button>
+                            <button type="button" class="cg-btn cg-btn-sm cg-btn-primary" disabled="@_isBusy" @onclick="AddDocumentAsync">@Loc.T("unit.dossier.attachDoc")</button>
                         </div>
                     </div>
                 </div>
 
                 <div class="cg-subcard">
-                    <strong>Section 11 — Unit Security &amp; Activity Audit Trail (@_dossier.AuditEvents.Count)</strong>
+                    <strong>@Loc.T("unit.dossier.sectionAudit") (@_dossier.AuditEvents.Count)</strong>
                     <div class="cg-table-wrap" style="margin-top: 0.45rem;">
                         <table class="cg-table">
-                            <thead><tr><th>Timestamp (UTC)</th><th>Category</th><th>Role</th><th>Summary</th><th>SHA-256 Chain</th></tr></thead>
+                            <thead><tr><th>@Loc.T("table.timestampUtc")</th><th>@Loc.T("table.category")</th><th>@Loc.T("table.role")</th><th>@Loc.T("table.summary")</th><th>@Loc.T("table.shaChain")</th></tr></thead>
                             <tbody>
                                 @foreach (var ev in _dossier.AuditEvents.Take(10))
                                 {
@@ -555,6 +557,7 @@ else
     private string _activeTab = "overview";
     private bool _isBusy;
     private string _message = string.Empty;
+    private Action? _locHandler;
 
     private string _editNumber = string.Empty;
     private UnitKind _editKind;
@@ -604,6 +607,13 @@ else
     private ResidentDocumentCategory _docCategory = ResidentDocumentCategory.MoveInMoveOutProtocol;
     private string _docTitle = string.Empty;
     private string _docNotes = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+    }
 
     protected override async Task OnParametersSetAsync()
     {
@@ -690,7 +700,7 @@ else
                     _editNotes),
                 role);
             await ReloadDossierAsync();
-            _message = "Unit specifications and ownership saved.";
+            _message = Loc.T("unit.dossier.savedMsg");
             await OnChanged.InvokeAsync();
         }
         catch (Exception ex) { _message = ex.Message; }
@@ -731,7 +741,7 @@ else
                 membershipId);
             _showQuickAssign = false;
             await ReloadDossierAsync();
-            _message = "Resident assigned to unit.";
+            _message = Loc.T("unit.dossier.assignedMsg");
             await OnChanged.InvokeAsync();
         }
         catch (Exception ex) { _message = ex.Message; }
@@ -752,7 +762,7 @@ else
                 role,
                 role.ToString());
             await ReloadDossierAsync();
-            _message = "Move-out completed. Resident Account Number and historical assignment preserved.";
+            _message = Loc.T("unit.dossier.moveOutMsg");
             await OnChanged.InvokeAsync();
         }
         catch (Exception ex) { _message = ex.Message; }
@@ -780,7 +790,7 @@ else
             _hhName = string.Empty;
             _hhContact = string.Empty;
             await ReloadDossierAsync();
-            _message = "Household member added.";
+            _message = Loc.T("unit.dossier.householdAddedMsg");
         }
         catch (Exception ex) { _message = ex.Message; }
         finally { _isBusy = false; }
@@ -794,7 +804,7 @@ else
             var role = await Access.GetRoleAsync() ?? WorkspaceSecurityRole.FirmManager;
             await Workspace.RemoveHouseholdMemberAsync(CommunityId, memberId, role);
             await ReloadDossierAsync();
-            _message = "Household member occupancy ended.";
+            _message = Loc.T("unit.dossier.householdRemovedMsg");
         }
         catch (Exception ex) { _message = ex.Message; }
         finally { _isBusy = false; }
@@ -821,7 +831,7 @@ else
             _lastGeneratedUrl = res.RelativeUrl;
             _linkLabel = string.Empty;
             await ReloadDossierAsync();
-            _message = "Zero-disclosure registration link generated.";
+            _message = Loc.T("unit.dossier.linkCreatedMsg");
             await OnChanged.InvokeAsync();
         }
         catch (Exception ex) { _message = ex.Message; }
@@ -836,7 +846,7 @@ else
             var role = await Access.GetRoleAsync() ?? WorkspaceSecurityRole.FirmManager;
             await Workspace.RevokeResidentRegistrationLinkAsync(CommunityId, tokenId, role);
             await ReloadDossierAsync();
-            _message = "Registration link revoked.";
+            _message = Loc.T("unit.dossier.linkRevokedMsg");
             await OnChanged.InvokeAsync();
         }
         catch (Exception ex) { _message = ex.Message; }
@@ -865,9 +875,14 @@ else
             _docTitle = string.Empty;
             _docNotes = string.Empty;
             await ReloadDossierAsync();
-            _message = "Document attached to unit vault.";
+            _message = Loc.T("unit.dossier.docAddedMsg");
         }
         catch (Exception ex) { _message = ex.Message; }
         finally { _isBusy = false; }
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
     }
 }

@@ -3,16 +3,18 @@
 @using Microsoft.EntityFrameworkCore
 @inject IMembershipService MembershipService
 @inject IAppDbContextFactory DbFactory
+@inject WorkspaceLocalization Loc
+@implements IDisposable
 
 <div class="cg-card">
     <div class="cg-section-header">
-        <h2>Pending approvals</h2>
-        <span class="cg-badge">@Pending.Count pending</span>
+        <h2>@Loc.T("admin.queue.title")</h2>
+        <span class="cg-badge">@Pending.Count @Loc.T("admin.queue.pendingBadge")</span>
     </div>
-    <p style="color: var(--color-text-secondary); font-size: 0.78125rem;">Review join requests and invitation acceptances. Assign a role, permission flags, properties and an optional unit before approval.</p>
+    <p style="color: var(--color-text-secondary); font-size: 0.78125rem;">@Loc.T("admin.queue.lead")</p>
     @if (Pending.Count == 0)
     {
-        <p class="cg-empty-text">No pending approvals.</p>
+        <p class="cg-empty-text">@Loc.T("admin.queue.empty")</p>
     }
     else
     {
@@ -20,19 +22,19 @@
             <table class="cg-table">
                 <thead>
                     <tr>
-                        <th>Member</th>
-                        <th>Role</th>
-                        <th>Properties</th>
-                        <th>Permissions</th>
-                        <th>Unit</th>
-                        <th>Actions</th>
+                        <th>@Loc.T("table.member")</th>
+                        <th>@Loc.T("table.role")</th>
+                        <th>@Loc.T("table.properties")</th>
+                        <th>@Loc.T("table.permissions")</th>
+                        <th>@Loc.T("table.unit")</th>
+                        <th>@Loc.T("table.actions")</th>
                     </tr>
                 </thead>
                 <tbody>
                     @foreach (var membership in Pending)
                     {
                         var editor = GetEditor(membership);
-                        var userName = Users.TryGetValue(membership.UserId, out var account) ? account.FullName : "Member";
+                        var userName = Users.TryGetValue(membership.UserId, out var account) ? account.FullName : Loc.T("admin.members.memberFallback");
                         var userEmail = Users.TryGetValue(membership.UserId, out var mail) ? mail.Email : string.Empty;
                         var requestNote = JoinRequests.TryGetValue(membership.Id, out var join) ? join.ProofOrCompanyNote : string.Empty;
                         <tr @key="membership.Id">
@@ -41,11 +43,11 @@
                                 <div style="font-size: 0.72rem; color: var(--color-text-secondary);">@userEmail</div>
                                 @if (!string.IsNullOrWhiteSpace(requestNote))
                                 {
-                                    <div style="font-size: 0.72rem; color: var(--color-text-secondary);">Note: @requestNote</div>
+                                    <div style="font-size: 0.72rem; color: var(--color-text-secondary);">@Loc.T("admin.queue.note"): @requestNote</div>
                                 }
                             </td>
                             <td>
-                                <label for="ap-role-@membership.Id" style="font-size: 0.72rem;">Role</label>
+                                <label for="ap-role-@membership.Id" style="font-size: 0.72rem;">@Loc.T("table.role")</label>
                                 <select id="ap-role-@membership.Id" value="@editor.Role" @onchange="(e) => OnRoleChanged(editor, e.Value?.ToString())">
                                     @foreach (var role in AssignableRoles)
                                     {
@@ -55,7 +57,7 @@
                             </td>
                             <td>
                                 <fieldset style="border: 0; padding: 0; margin: 0;">
-                                    <legend style="font-size: 0.72rem; font-weight: 600;">Properties</legend>
+                                    <legend style="font-size: 0.72rem; font-weight: 600;">@Loc.T("table.properties")</legend>
                                     @foreach (var property in Properties)
                                     {
                                         <label style="display: flex; align-items: center; gap: 0.375rem; font-weight: 400; font-size: 0.75rem; margin-block-end: 0.125rem;" @key="property.Id">
@@ -67,7 +69,7 @@
                             </td>
                             <td>
                                 <fieldset style="border: 0; padding: 0; margin: 0;">
-                                    <legend style="font-size: 0.72rem; font-weight: 600;">Permissions</legend>
+                                    <legend style="font-size: 0.72rem; font-weight: 600;">@Loc.T("table.permissions")</legend>
                                     @foreach (var flag in RelevantFlags(editor.Role))
                                     {
                                         <label style="display: flex; align-items: center; gap: 0.375rem; font-weight: 400; font-size: 0.75rem; margin-block-end: 0.125rem;" @key="flag">
@@ -78,9 +80,9 @@
                                 </fieldset>
                             </td>
                             <td>
-                                <label for="ap-unit-@membership.Id" style="font-size: 0.72rem;">Unit link</label>
+                                <label for="ap-unit-@membership.Id" style="font-size: 0.72rem;">@Loc.T("table.unit")</label>
                                 <select id="ap-unit-@membership.Id" @bind="editor.UnitIdString">
-                                    <option value="">No unit</option>
+                                    <option value="">@Loc.T("admin.invite.noUnit")</option>
                                     @foreach (var unit in FilteredUnits(editor))
                                     {
                                         <option value="@unit.Id" @key="unit.Id">@unit.UnitNumber</option>
@@ -89,8 +91,8 @@
                             </td>
                             <td>
                                 <div style="display: flex; gap: 0.375rem; flex-wrap: wrap;">
-                                    <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="() => OnApproveAsync(membership.Id)">Approve</button>
-                                    <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => OnRevokeAsync(membership.Id)">Revoke</button>
+                                    <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="() => OnApproveAsync(membership.Id)">@Loc.T("action.approve")</button>
+                                    <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => OnRevokeAsync(membership.Id)">@Loc.T("action.revoke")</button>
                                 </div>
                             </td>
                         </tr>
@@ -129,6 +131,14 @@
     private readonly Dictionary<Guid, ApprovalEditor> _editors = new();
     private bool _isBusy;
     private string _message = string.Empty;
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+    }
 
     private ApprovalEditor GetEditor(FirmMembership membership)
     {
@@ -233,7 +243,7 @@
                 editor.SelectedPropertyIds.ToList(),
                 unitId);
             _editors.Remove(membershipId);
-            _message = "Membership approved.";
+            _message = Loc.T("msg.membershipApproved");
             await OnChanged.InvokeAsync();
         }
         catch (Exception ex)
@@ -253,7 +263,7 @@
         {
             await MembershipService.RevokeMembershipAsync(ActorMembershipId, membershipId);
             _editors.Remove(membershipId);
-            _message = "Membership revoked.";
+            _message = Loc.T("msg.membershipRevoked");
             await OnChanged.InvokeAsync();
         }
         catch (Exception ex)
@@ -264,6 +274,11 @@
         {
             _isBusy = false;
         }
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
     }
 
     private sealed class ApprovalEditor

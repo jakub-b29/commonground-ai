@@ -403,9 +403,10 @@ public sealed class PropertyOnboardingService : IPropertyOnboardingService
     public Task<PropertyAiDiscoveryDossier> DiscoverPropertyDossierFromAddressAsync(
         AddressLookupRequest request,
         CancellationToken ct = default,
-        IProgress<DiscoveryProgressStep>? progress = null)
+        IProgress<DiscoveryProgressStep>? progress = null,
+        string uiLocale = "EN")
     {
-        return _spark.DiscoverPropertyDossierFromAddressAsync(request, ct, progress);
+        return _spark.DiscoverPropertyDossierFromAddressAsync(request, ct, progress, uiLocale);
     }
 
     public async Task<Community> CreatePropertyManualAsync(

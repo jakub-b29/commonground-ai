@@ -1,14 +1,32 @@
 @page "/no-access"
 @layout Layout.AuthLayout
 @attribute [AllowAnonymous]
+@inject WorkspaceLocalization Loc
+@implements IDisposable
 
-<PageTitle>Access denied - CommonGround</PageTitle>
+<PageTitle>@Loc.T("page.noAccessTitle") - CommonGround</PageTitle>
 
 <div class="cg-auth-heading">
-    <h1>Access denied</h1>
-    <p>The active membership does not grant access to this area. Ask a firm manager for approval or a different role.</p>
+    <h1>@Loc.T("page.noAccessTitle")</h1>
+    <p>@Loc.T("page.noAccessLead")</p>
 </div>
 <div class="cg-auth-links">
-    <a href="/login">Sign in</a>
-    <a href="/admin">Firm administration</a>
+    <a href="/login">@Loc.T("nav.signin")</a>
+    <a href="/admin">@Loc.T("page.noAccessAdminLink")</a>
 </div>
+
+@code {
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+    }
+}

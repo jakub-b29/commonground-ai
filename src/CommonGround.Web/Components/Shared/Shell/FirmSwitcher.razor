@@ -1,15 +1,16 @@
 @inject WorkspaceUiState UiState
 @inject WorkspaceAccessService Access
+@inject WorkspaceLocalization Loc
 @implements IDisposable
 
 @if (_memberships.Count > 1)
 {
     <div class="cg-topbar-field">
-        <label for="firm-select">Firm</label>
+        <label for="firm-select">@Loc.T("shell.firmLabel")</label>
         <select id="firm-select" value="@UiState.ActiveMembershipId" @onchange="OnMembershipChanged" disabled="@_isBusy">
             @foreach (var membership in _memberships)
             {
-                <option value="@membership.FirmMembershipId" selected="@(UiState.ActiveMembershipId == membership.FirmMembershipId)" @key="membership.FirmMembershipId">@membership.FirmName · @membership.Role</option>
+                <option value="@membership.FirmMembershipId" selected="@(UiState.ActiveMembershipId == membership.FirmMembershipId)" @key="membership.FirmMembershipId">@membership.FirmName · @GetRoleLabel(membership.Role)</option>
             }
         </select>
     </div>
@@ -21,6 +22,7 @@ else if (!string.IsNullOrWhiteSpace(_firmName))
 
 @code {
     private Action? _stateHandler;
+    private Action? _locHandler;
     private List<MembershipOption> _memberships = new();
     private string _firmName = string.Empty;
     private bool _isBusy;
@@ -29,8 +31,28 @@ else if (!string.IsNullOrWhiteSpace(_firmName))
     {
         _stateHandler = () => InvokeAsync(ReloadAsync);
         UiState.OnChange += _stateHandler;
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
         await ReloadAsync();
     }
+
+    private string GetRoleLabel(WorkspaceSecurityRole role) => role switch
+    {
+        WorkspaceSecurityRole.FirmManager => Loc.T("role.firmManager"),
+        WorkspaceSecurityRole.PropertyManager => Loc.T("role.propertyManager"),
+        WorkspaceSecurityRole.Resident => Loc.T("role.resident"),
+        WorkspaceSecurityRole.Contractor => Loc.T("role.contractor"),
+        WorkspaceSecurityRole.Accountant => Loc.T("role.accountant"),
+        WorkspaceSecurityRole.MaintenanceDispatcher => Loc.T("role.maintenanceDispatcher"),
+        WorkspaceSecurityRole.BoardMemberReadOnly => Loc.T("role.boardMemberReadOnly"),
+        WorkspaceSecurityRole.ExternalAuditorView => Loc.T("role.externalAuditor"),
+        _ => role.ToString()
+    };
+
+    private string GetTerminology(SystemOperatingMode mode) => mode == SystemOperatingMode.UsHoa
+        ? Loc.T("shell.termUsHoa")
+        : Loc.T("shell.termHousing");
 
     private async Task ReloadAsync()
     {
@@ -101,7 +123,7 @@ else if (!string.IsNullOrWhiteSpace(_firmName))
                     var first = allowed.FirstOrDefault();
                     if (first is not null)
                     {
-                        UiState.SelectCommunity(first.Id, first.OperatingMode == SystemOperatingMode.UsHoa ? "US HOA & Condo Mode" : "Housing Association Mode");
+                        UiState.SelectCommunity(first.Id, GetTerminology(first.OperatingMode));
                     }
                 }
                 finally
@@ -117,6 +139,10 @@ else if (!string.IsNullOrWhiteSpace(_firmName))
         if (_stateHandler is not null)
         {
             UiState.OnChange -= _stateHandler;
+        }
+        if (_locHandler is not null)
+        {
+            Loc.OnChange -= _locHandler;
         }
     }
 

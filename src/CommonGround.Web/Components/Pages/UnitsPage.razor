@@ -9,36 +9,36 @@
 @inject NavigationManager Nav
 @implements IDisposable
 
-<PageTitle>Global units &amp; occupancy registry — CommonGround</PageTitle>
+<PageTitle>@Loc.T("page.globalUnitsTitle") — CommonGround</PageTitle>
 
 @if (!_loaded)
 {
-    <p role="status" aria-live="polite">Loading global units registry...</p>
+    <p role="status" aria-live="polite">@Loc.T("units.loadingRegistry")</p>
 }
 else if (_dashboard is null)
 {
-    <div class="cg-card"><p class="cg-empty-text">No communities or units available for the active membership.</p></div>
+    <div class="cg-card"><p class="cg-empty-text">@Loc.T("units.noData")</p></div>
 }
 else
 {
-    <PageHeader Category="Unified Portfolio · Units, Ownership &amp; Occupancy"
-                ContextCode="@($"{_dashboard.Communities.Count} communities · {_dashboard.TotalUnits} units")"
-                Title="Global Units &amp; Occupancy Registry"
-                Subtitle="Cross-community registry of residential, commercial, garage, and storage units with 5-step Unit Creation Wizard, ownership &amp; residency separation, and zero-disclosure registration links.">
+    <PageHeader Category="@Loc.T("units.category")"
+                ContextCode="@($"{_dashboard.Communities.Count} {Loc.T("units.communitiesSuffix")} · {_dashboard.TotalUnits} {Loc.T("units.unitsSuffix")}")"
+                Title="@Loc.T("page.globalUnitsTitle")"
+                Subtitle="@Loc.T("page.globalUnitsLead")">
         <Badges>
-            <StatusBadge Text="@($"{_dashboard.Communities.Count} Communities")" Variant="info" />
-            <StatusBadge Text="@($"{_dashboard.OccupiedUnits} Occupied")" Variant="ok" />
-            <AIBadge Label="Unified Community &amp; Unit Engine" Model="muse-spark-1.3" />
+            <StatusBadge Text="@($"{_dashboard.Communities.Count} {Loc.T("units.communitiesBadge")}")" Variant="info" />
+            <StatusBadge Text="@($"{_dashboard.OccupiedUnits} {Loc.T("units.occupiedSuffix")}")" Variant="ok" />
+            <AIBadge Label="@Loc.T("units.aiEngine")" Model="muse-spark-1.3" />
         </Badges>
         <Actions>
             @if (_isManager && _dashboard.Communities.Count > 0)
             {
                 <button type="button" class="cg-btn cg-btn-sm cg-btn-primary" @onclick="() => _showWizard = !_showWizard">
-                    @(_showWizard ? "Close Unit Wizard" : "+ Add Unit (5-Step Wizard)")
+                    @(_showWizard ? Loc.T("units.closeWizard") : Loc.T("units.addWizard"))
                 </button>
             }
-            <a class="cg-btn cg-btn-sm" href="/admin/residents">Residents &amp; Registrations</a>
-            <a class="cg-btn cg-btn-sm" href="/admin/properties">All Communities</a>
+            <a class="cg-btn cg-btn-sm" href="/admin/residents">@Loc.T("nav.residentsCenter")</a>
+            <a class="cg-btn cg-btn-sm" href="/admin/properties">@Loc.T("units.allCommunities")</a>
         </Actions>
     </PageHeader>
 
@@ -48,25 +48,25 @@ else
     }
 
     <div class="cg-grid-4" style="margin-bottom: 1rem;">
-        <MetricCard Label="Total Units"
+        <MetricCard Label="@Loc.T("units.totalUnits")"
                     Value="@_dashboard.TotalUnits.ToString()"
-                    Subtitle="@($"Across {_dashboard.Communities.Count} communities & {_dashboard.Buildings.Count} buildings")"
-                    BadgeText="Portfolio"
+                    Subtitle="@($"{Loc.T("units.across")} {_dashboard.Communities.Count} {Loc.T("units.communitiesSuffix")} & {_dashboard.Buildings.Count} {Loc.T("units.buildingsSuffix")}")"
+                    BadgeText="@Loc.T("units.portfolioBadge")"
                     StatusVariant="info" />
-        <MetricCard Label="Occupied Units"
+        <MetricCard Label="@Loc.T("units.occupiedUnits")"
                     Value="@_dashboard.OccupiedUnits.ToString()"
-                    Subtitle="@($"{_dashboard.TotalActiveResidents} active assigned residents")"
-                    BadgeText="Active"
+                    Subtitle="@($"{_dashboard.TotalActiveResidents} {Loc.T("units.activeResidentsSuffix")}")"
+                    BadgeText="@Loc.T("units.activeBadge")"
                     StatusVariant="ok" />
-        <MetricCard Label="Vacant Units"
+        <MetricCard Label="@Loc.T("units.vacantUnits")"
                     Value="@_dashboard.VacantUnits.ToString()"
-                    Subtitle="Available for assignment or registration link"
-                    BadgeText="Vacant"
+                    Subtitle="@Loc.T("units.vacantHint")"
+                    BadgeText="@Loc.T("units.vacantBadge")"
                     StatusVariant="neutral" />
-        <MetricCard Label="Pending Registrations"
+        <MetricCard Label="@Loc.T("units.pendingRegs")"
                     Value="@_dashboard.PendingRegistrationUnits.ToString()"
-                    Subtitle="@($"{_dashboard.ArrearsUnitsCount} units with open balance")"
-                    BadgeText="@(_dashboard.PendingRegistrationUnits > 0 ? "Links active" : "Clear")"
+                    Subtitle="@($"{_dashboard.ArrearsUnitsCount} {Loc.T("units.openBalanceSuffix")}")"
+                    BadgeText="@(_dashboard.PendingRegistrationUnits > 0 ? Loc.T("units.linksActive") : Loc.T("units.clearBadge"))"
                     StatusVariant="@(_dashboard.PendingRegistrationUnits > 0 ? "warn" : "ok")" />
     </div>
 
@@ -83,35 +83,35 @@ else
 
     <div class="cg-card">
         <div class="cg-section-header">
-            <h2>Portfolio Units Directory (@FilteredUnits.Count of @_dashboard.Units.Count)</h2>
+            <h2>@Loc.T("units.directoryTitle") (@FilteredUnits.Count @Loc.T("units.of") @_dashboard.Units.Count)</h2>
             <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
                 <input style="min-width: 240px;"
-                       placeholder="Search unit, COM-..., RES-..., owner, resident..."
+                       placeholder="@Loc.T("units.searchPlaceholder")"
                        @bind="_searchQuery"
                        @bind:event="oninput" />
                 <select @bind="_filterCommunityId">
-                    <option value="@Guid.Empty">All Communities (@_dashboard.Communities.Count)</option>
+                    <option value="@Guid.Empty">@Loc.T("units.allCommunities") (@_dashboard.Communities.Count)</option>
                     @foreach (var c in _dashboard.Communities)
                     {
                         <option value="@c.Id" @key="c.Id">@c.Name (@c.CommunityAccountNumber)</option>
                     }
                 </select>
                 <select @bind="_filterBuildingId">
-                    <option value="@Guid.Empty">All Buildings (@FilteredBuildings.Count)</option>
+                    <option value="@Guid.Empty">@Loc.T("units.allBuildings") (@FilteredBuildings.Count)</option>
                     @foreach (var b in FilteredBuildings)
                     {
                         <option value="@b.Id" @key="b.Id">@b.Name</option>
                     }
                 </select>
                 <select @bind="_filterOccupancy">
-                    <option value="">All Occupancy Statuses</option>
+                    <option value="">@Loc.T("units.allOccupancy")</option>
                     @foreach (var st in Enum.GetValues<UnitOccupancyStatus>())
                     {
                         <option value="@st.ToString()" @key="st">@st</option>
                     }
                 </select>
                 <select @bind="_filterKind">
-                    <option value="">All Unit Types</option>
+                    <option value="">@Loc.T("units.allKinds")</option>
                     @foreach (var k in Enum.GetValues<UnitKind>())
                     {
                         <option value="@k.ToString()" @key="k">@k</option>
@@ -124,16 +124,16 @@ else
             <table class="cg-table">
                 <thead>
                     <tr>
-                        <th>Community</th>
-                        <th>Unit No.</th>
-                        <th>Building · Floor · Stack</th>
-                        <th>Type &amp; Area</th>
-                        <th class="num">Share</th>
-                        <th>Legal Owner</th>
-                        <th>Active Resident(s)</th>
-                        <th>Occupancy</th>
-                        <th class="num">Balance</th>
-                        <th>Actions</th>
+                        <th>@Loc.T("units.colCommunity")</th>
+                        <th>@Loc.T("units.colUnitNo")</th>
+                        <th>@Loc.T("units.colBuilding")</th>
+                        <th>@Loc.T("units.colTypeArea")</th>
+                        <th class="num">@Loc.T("units.colShare")</th>
+                        <th>@Loc.T("units.colLegalOwner")</th>
+                        <th>@Loc.T("units.colResidents")</th>
+                        <th>@Loc.T("units.colOccupancy")</th>
+                        <th class="num">@Loc.T("table.balance")</th>
+                        <th>@Loc.T("table.actions")</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -147,12 +147,12 @@ else
                             </td>
                             <td class="mono"><strong>@u.UnitNumber</strong></td>
                             <td>
-                                <div>@u.BuildingName · Floor <span class="num">@u.FloorNumber</span> · Stair <span class="num">@u.StairwellNumber</span></div>
+                                <div>@u.BuildingName · @Loc.T("riser.floor") <span class="num">@u.FloorNumber</span> · @Loc.T("units.stairLabel") <span class="num">@u.StairwellNumber</span></div>
                                 <div class="mono" style="font-size: 0.72rem; color: var(--text-secondary);">@u.VerticalStackCode</div>
                             </td>
                             <td>
                                 <div><span class="cg-badge">@u.Kind</span> <span class="num">@u.FloorAreaM2.ToString("F1") m²</span></div>
-                                <div style="font-size: 0.72rem; color: var(--text-secondary);"><span class="num">@u.RoomsCount</span> rooms · cap <span class="num">@u.OccupancyCapacity</span></div>
+                                <div style="font-size: 0.72rem; color: var(--text-secondary);"><span class="num">@u.RoomsCount</span> @Loc.T("units.roomsSuffix") · @Loc.T("units.capPrefix") <span class="num">@u.OccupancyCapacity</span></div>
                             </td>
                             <td class="num mono">@u.ShareNumerator / @u.ShareDenominator</td>
                             <td>
@@ -162,7 +162,7 @@ else
                             <td>
                                 @if (u.ActiveResidentNames.Count == 0)
                                 {
-                                    <span style="color: var(--text-secondary); font-size: 0.78rem;">No assigned resident</span>
+                                    <span style="color: var(--text-secondary); font-size: 0.78rem;">@Loc.T("units.noResident")</span>
                                 }
                                 else
                                 {
@@ -176,7 +176,7 @@ else
                                 </span>
                                 @if (u.ActiveRegistrationLinksCount > 0)
                                 {
-                                    <span class="cg-badge cg-badge-info" style="margin-left: 0.25rem;">@u.ActiveRegistrationLinksCount link</span>
+                                    <span class="cg-badge cg-badge-info" style="margin-left: 0.25rem;">@u.ActiveRegistrationLinksCount @Loc.T("units.linkSuffix")</span>
                                 }
                             </td>
                             <td class="num mono" style="color: @(u.CurrentBalance > 0 ? "var(--color-danger)" : "var(--color-success)");">
@@ -185,9 +185,9 @@ else
                             <td>
                                 <div style="display: flex; gap: 0.35rem; flex-wrap: wrap;">
                                     <button type="button" class="cg-btn cg-btn-sm @(isSelected ? "cg-btn-primary" : "")" @onclick="() => SelectUnitAsync(u.CommunityId, u.UnitId)">
-                                        @(isSelected ? "Dossier Open" : "Open Dossier")
+                                        @(isSelected ? Loc.T("units.dossierOpen") : Loc.T("units.openDossier"))
                                     </button>
-                                    <a class="cg-btn cg-btn-sm" href="@($"/properties/{u.CommunityId}/units/{u.UnitId}")">Property View</a>
+                                    <a class="cg-btn cg-btn-sm" href="@($"/properties/{u.CommunityId}/units/{u.UnitId}")">@Loc.T("units.propertyView")</a>
                                 </div>
                             </td>
                         </tr>
@@ -331,9 +331,9 @@ else
         _showWizard = false;
         _selectedCommunityId = result.Unit.CommunityId;
         _selectedUnitId = result.Unit.Id;
-        _message = $"Unit {result.Unit.UnitNumber} created in {result.Building.Name}."
-            + (result.Resident is not null ? $" Assigned Resident {result.Resident.FullName} ({result.Resident.ResidentAccountNumber})." : string.Empty)
-            + (!string.IsNullOrWhiteSpace(result.GeneratedRegistrationTokenPlaintext) ? $" Registration link: /register-resident/{result.GeneratedRegistrationTokenPlaintext}" : string.Empty);
+        _message = string.Format(System.Globalization.CultureInfo.InvariantCulture, Loc.T("units.createdFmt"), result.Unit.UnitNumber, result.Building.Name)
+            + (result.Resident is not null ? " " + string.Format(System.Globalization.CultureInfo.InvariantCulture, Loc.T("units.assignedFmt"), result.Resident.FullName, result.Resident.ResidentAccountNumber) : string.Empty)
+            + (!string.IsNullOrWhiteSpace(result.GeneratedRegistrationTokenPlaintext) ? " " + string.Format(System.Globalization.CultureInfo.InvariantCulture, Loc.T("units.regLinkFmt"), result.GeneratedRegistrationTokenPlaintext) : string.Empty);
         await ReloadAsync();
     }
 

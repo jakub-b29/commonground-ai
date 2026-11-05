@@ -7,38 +7,38 @@
 @inject NavigationManager Nav
 @implements IDisposable
 
-<PageTitle>Residents, registrations &amp; unit assignments — CommonGround</PageTitle>
+<PageTitle>@Loc.T("page.adminResidentsTitle") — CommonGround</PageTitle>
 
 @if (!_loaded)
 {
-    <p role="status" aria-live="polite">Loading resident management center...</p>
+    <p role="status" aria-live="polite">@Loc.T("msg.loadingResidents")</p>
 }
 else if (!_isAuthorized)
 {
-    <div class="cg-card"><p class="cg-empty-text">Access denied. Manager permission is required.</p></div>
+    <div class="cg-card"><p class="cg-empty-text">@Loc.T("msg.accessDeniedManager")</p></div>
 }
 else
 {
-        <PageHeader Category="Firm Administration · Resident Identity &amp; Assignments"
-                    ContextCode="@($"{_directory.Count} residents · {_pendingRequestsCount} pending registrations")"
-                    Title="Resident Management, Registration Queue &amp; Assignment Center"
-                    Subtitle="Manage permanent Resident identities (RES-XXXXXXXX), review Mode B registration requests with smart duplicate detection, and execute the 7-step Resident-to-Unit Assignment Wizard.">
+        <PageHeader Category="@Loc.T("admin.residents.category")"
+                    ContextCode="@($"{_directory.Count} {Loc.T("admin.residents.residents")} · {_pendingRequestsCount} {Loc.T("admin.residents.pendingRegs")}")"
+                    Title="@Loc.T("page.adminResidentsTitle")"
+                    Subtitle="@Loc.T("page.adminResidentsLead")">
             <Badges>
-                <StatusBadge Text="@($"{_directory.Count} Resident Profiles")" Variant="info" />
-                <StatusBadge Text="@($"{_pendingRequestsCount} Pending Review")" Variant="@(_pendingRequestsCount > 0 ? "warn" : "ok")" />
-                <AIBadge Label="Smart Identity Dedup &amp; Conflict Guard" Model="muse-spark-1.3" />
+                <StatusBadge Text="@($"{_directory.Count} {Loc.T("admin.residents.profiles")}")" Variant="info" />
+                <StatusBadge Text="@($"{_pendingRequestsCount} {Loc.T("admin.residents.pendingReview")}")" Variant="@(_pendingRequestsCount > 0 ? "warn" : "ok")" />
+                <AIBadge Label="@Loc.T("admin.residents.smartDedup")" Model="muse-spark-1.3" />
             </Badges>
             <Actions>
                 <button type="button" class="cg-btn cg-btn-sm @(_activeTab == "directory" ? "cg-btn-primary" : "")" @onclick='() => _activeTab = "directory"'>
-                    Residents Directory (@_directory.Count)
+                    @Loc.T("admin.residents.directoryTab") (@_directory.Count)
                 </button>
                 <button type="button" class="cg-btn cg-btn-sm @(_activeTab == "queue" ? "cg-btn-primary" : "")" @onclick='() => _activeTab = "queue"'>
-                    Registration Approval Queue (@_requests.Count)
+                    @Loc.T("admin.residents.queueTab") (@_requests.Count)
                 </button>
                 <button type="button" class="cg-btn cg-btn-sm @(_activeTab == "wizard" ? "cg-btn-primary" : "cg-btn-ai")" @onclick="OpenAssignWizardNew">
-                    + Assign Resident to Unit (7-Step Wizard)
+                    @Loc.T("admin.residents.assignWizardBtn")
                 </button>
-                <a class="cg-btn cg-btn-sm" href="/units">Global Units</a>
+                <a class="cg-btn cg-btn-sm" href="/units">@Loc.T("nav.globalUnits")</a>
             </Actions>
         </PageHeader>
 
@@ -52,25 +52,25 @@ else
         }
 
         <div class="cg-grid-4" style="margin-bottom: 1rem;">
-            <MetricCard Label="Resident Identities"
+            <MetricCard Label="@Loc.T("admin.residents.kpiIdentities")"
                         Value="@_directory.Count.ToString()"
-                        Subtitle="Permanent RES-XXXXXXXX accounts"
-                        BadgeText="Independent"
+                        Subtitle="@Loc.T("admin.residents.kpiIdentitiesSub")"
+                        BadgeText="@Loc.T("admin.residents.independent")"
                         StatusVariant="info" />
-            <MetricCard Label="Active Unit Assignments"
+            <MetricCard Label="@Loc.T("admin.residents.kpiActive")"
                         Value="@_directory.Sum(d => d.ActiveAssignments.Count).ToString()"
-                        Subtitle="@($"{_directory.Count(d => d.ActiveAssignments.Count > 0)} residents currently occupying units")"
-                        BadgeText="Occupied"
+                        Subtitle="@($"{_directory.Count(d => d.ActiveAssignments.Count > 0)} {Loc.T("admin.residents.occupying")}")"
+                        BadgeText="@Loc.T("admin.residents.occupied")"
                         StatusVariant="ok" />
-            <MetricCard Label="Unassigned / Former"
+            <MetricCard Label="@Loc.T("admin.residents.kpiUnassigned")"
                         Value="@_directory.Count(d => d.ActiveAssignments.Count == 0).ToString()"
-                        Subtitle="Preserved identities after move-out"
-                        BadgeText="Historical"
+                        Subtitle="@Loc.T("admin.residents.kpiUnassignedSub")"
+                        BadgeText="@Loc.T("admin.residents.historical")"
                         StatusVariant="neutral" />
-            <MetricCard Label="Registration Queue"
+            <MetricCard Label="@Loc.T("admin.residents.kpiQueue")"
                         Value="@_pendingRequestsCount.ToString()"
-                        Subtitle="@($"{_requests.Count} total registration submissions")"
-                        BadgeText="@(_pendingRequestsCount > 0 ? "Action Required" : "All Clear")"
+                        Subtitle="@($"{_requests.Count} {Loc.T("admin.residents.totalSubs")}")"
+                        BadgeText="@(_pendingRequestsCount > 0 ? Loc.T("admin.residents.actionRequired") : Loc.T("admin.residents.allClear"))"
                         StatusVariant="@(_pendingRequestsCount > 0 ? "warn" : "ok")" />
         </div>
 
@@ -78,22 +78,22 @@ else
         {
             <div class="cg-card" style="margin-bottom: 1rem;">
                 <div class="cg-section-header">
-                    <h2>Create Standalone Resident Profile (Independent of Unit Assignment)</h2>
+                    <h2>@Loc.T("admin.residents.createTitle")</h2>
                     <button type="button" class="cg-btn cg-btn-sm" @onclick="() => _showQuickCreateResident = !_showQuickCreateResident">
-                        @(_showQuickCreateResident ? "Cancel" : "+ New Resident Profile")
+                        @(_showQuickCreateResident ? Loc.T("action.cancel") : Loc.T("admin.residents.newProfile"))
                     </button>
                 </div>
                 @if (_showQuickCreateResident)
                 {
                     <div class="cg-grid-4">
-                        <div><label>First Name</label><input @bind="_newResFirst" placeholder="Anna" /></div>
-                        <div><label>Last Name</label><input @bind="_newResLast" placeholder="Kowalska" /></div>
-                        <div><label>Primary Email</label><input type="email" @bind="_newResEmail" placeholder="anna@example.com" /></div>
-                        <div><label>Phone</label><input @bind="_newResPhone" placeholder="+48 500 200 300" /></div>
+                        <div><label>@Loc.T("form.firstName")</label><input @bind="_newResFirst" placeholder="@Loc.T("admin.residents.firstNamePh")" /></div>
+                        <div><label>@Loc.T("form.lastName")</label><input @bind="_newResLast" placeholder="@Loc.T("admin.residents.lastNamePh")" /></div>
+                        <div><label>@Loc.T("admin.residents.primaryEmail")</label><input type="email" @bind="_newResEmail" placeholder="@Loc.T("admin.residents.emailPh")" /></div>
+                        <div><label>@Loc.T("form.phone")</label><input @bind="_newResPhone" placeholder="@Loc.T("admin.residents.phonePh")" /></div>
                     </div>
                     <div class="cg-toolbar" style="margin-top: 0.65rem;">
                         <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="CreateStandaloneResidentAsync">
-                            Create Resident Identity &amp; Generate RES-XXXXXXXX
+                            @Loc.T("admin.residents.createIdentity")
                         </button>
                     </div>
                 }
@@ -101,14 +101,14 @@ else
 
             <div class="cg-card">
                 <div class="cg-section-header">
-                    <h2>Firm Residents Directory (@FilteredDirectory.Count of @_directory.Count)</h2>
+                    <h2>@Loc.T("admin.residents.firmDirectory") (@FilteredDirectory.Count / @_directory.Count)</h2>
                     <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
                         <input style="min-width: 260px;"
-                               placeholder="Search name, RES-..., email, phone, unit, COM-..."
+                               placeholder="@Loc.T("admin.residents.searchPh")"
                                @bind="_searchQuery"
                                @bind:event="oninput" />
                         <select @bind="_filterCommunityId">
-                            <option value="@Guid.Empty">All Communities (@_dashboard?.Communities.Count)</option>
+                            <option value="@Guid.Empty">@Loc.T("admin.residents.allCommunities") (@_dashboard?.Communities.Count)</option>
                             @if (_dashboard is not null)
                             {
                                 @foreach (var c in _dashboard.Communities)
@@ -118,7 +118,7 @@ else
                             }
                         </select>
                         <select @bind="_filterStatus">
-                            <option value="">All Account Statuses</option>
+                            <option value="">@Loc.T("admin.residents.allStatuses")</option>
                             @foreach (var st in Enum.GetValues<ResidentAccountStatus>())
                             {
                                 <option value="@st.ToString()" @key="st">@st</option>
@@ -131,13 +131,13 @@ else
                     <table class="cg-table">
                         <thead>
                             <tr>
-                                <th>Resident Account No.</th>
-                                <th>Full Name &amp; Contact</th>
-                                <th>Account &amp; Verification</th>
-                                <th>Active Community &amp; Unit Assignments</th>
-                                <th class="num">Past Units</th>
-                                <th class="num">Owned Units</th>
-                                <th>Actions</th>
+                                <th>@Loc.T("admin.residents.accountNo")</th>
+                                <th>@Loc.T("admin.residents.fullNameContact")</th>
+                                <th>@Loc.T("admin.residents.accountVerify")</th>
+                                <th>@Loc.T("admin.residents.activeAssign")</th>
+                                <th class="num">@Loc.T("admin.residents.pastUnits")</th>
+                                <th class="num">@Loc.T("admin.residents.ownedUnits")</th>
+                                <th>@Loc.T("table.actions")</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -158,14 +158,14 @@ else
                                     <td>
                                         @if (row.ActiveAssignments.Count == 0)
                                         {
-                                            <span style="font-size: 0.78rem; color: var(--text-secondary);">Unassigned (Identity Active)</span>
+                                            <span style="font-size: 0.78rem; color: var(--text-secondary);">@Loc.T("admin.residents.unassigned")</span>
                                         }
                                         else
                                         {
                                             @foreach (var a in row.ActiveAssignments)
                                             {
                                                 <div @key="a.Assignment.Id" style="font-size: 0.78rem; margin-bottom: 0.2rem;">
-                                                    <strong>Unit @a.UnitNumber</strong> (@a.BuildingName) · @a.CommunityName
+                                                    <strong>@Loc.T("admin.residents.unit") @a.UnitNumber</strong> (@a.BuildingName) · @a.CommunityName
                                                     <span class="mono" style="color: var(--accent-primary);">@a.CommunityAccountNumber</span>
                                                     <span class="cg-badge">@a.Assignment.AssignmentType</span>
                                                 </div>
@@ -176,8 +176,8 @@ else
                                     <td class="num">@row.OwnedUnitsCount</td>
                                     <td>
                                         <div style="display: flex; gap: 0.35rem; flex-wrap: wrap;">
-                                            <a class="cg-btn cg-btn-sm cg-btn-primary" href="@($"/admin/residents/{row.Profile.Id}")">Open Profile</a>
-                                            <button type="button" class="cg-btn cg-btn-sm" @onclick="() => OpenAssignWizardForResident(row.Profile.Id)">Assign to Unit</button>
+                                            <a class="cg-btn cg-btn-sm cg-btn-primary" href="@($"/admin/residents/{row.Profile.Id}")">@Loc.T("admin.residents.openProfile")</a>
+                                            <button type="button" class="cg-btn cg-btn-sm" @onclick="() => OpenAssignWizardForResident(row.Profile.Id)">@Loc.T("admin.residents.assignToUnit")</button>
                                         </div>
                                     </td>
                                 </tr>
@@ -191,13 +191,13 @@ else
         {
             <div class="cg-card">
                 <div class="cg-section-header">
-                    <h2>Resident Registration Requests Queue (@_requests.Count)</h2>
-                    <span class="cg-badge">@_pendingRequestsCount Pending Approval</span>
+                    <h2>@Loc.T("admin.residents.queueTitle") (@_requests.Count)</h2>
+                    <span class="cg-badge">@_pendingRequestsCount @Loc.T("admin.residents.pendingApproval")</span>
                 </div>
 
                 @if (_requests.Count == 0)
                 {
-                    <p class="cg-empty-text">No resident registration submissions recorded yet.</p>
+                    <p class="cg-empty-text">@Loc.T("admin.residents.noRequests")</p>
                 }
                 else
                 {
@@ -215,29 +215,29 @@ else
                                         <span class="cg-badge">@req.ApprovalMode</span>
                                     </div>
                                     <div style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 0.25rem;">
-                                        Target: <strong>@item.CommunityName</strong> (<span class="mono">@item.CommunityAccountNumber</span>) · @item.BuildingName · <strong class="mono">Unit @item.UnitNumber</strong>
-                                        · Link: <em>@item.TokenReference</em> · Submitted <span class="mono">@req.SubmittedAtUtc.ToString("yyyy-MM-dd HH:mm")</span>
+                                        @Loc.T("admin.residents.target"): <strong>@item.CommunityName</strong> (<span class="mono">@item.CommunityAccountNumber</span>) · @item.BuildingName · <strong class="mono">@Loc.T("admin.residents.unit") @item.UnitNumber</strong>
+                                        · @Loc.T("admin.residents.link"): <em>@item.TokenReference</em> · @Loc.T("admin.residents.submitted") <span class="mono">@req.SubmittedAtUtc.ToString("yyyy-MM-dd HH:mm")</span>
                                     </div>
                                     @if (!string.IsNullOrWhiteSpace(req.ResidentNotes))
                                     {
-                                        <div style="font-size: 0.78rem; margin-top: 0.2rem;">Note from resident: <em>@req.ResidentNotes</em></div>
+                                        <div style="font-size: 0.78rem; margin-top: 0.2rem;">@Loc.T("admin.residents.noteFrom"): <em>@req.ResidentNotes</em></div>
                                     }
                                 </div>
                                 @if (req.MatchedOrCreatedResidentProfileId.HasValue)
                                 {
-                                    <a class="cg-btn cg-btn-sm" href="@($"/admin/residents/{req.MatchedOrCreatedResidentProfileId.Value}")">Open Resident Identity</a>
+                                    <a class="cg-btn cg-btn-sm" href="@($"/admin/residents/{req.MatchedOrCreatedResidentProfileId.Value}")">@Loc.T("admin.residents.openIdentity")</a>
                                 }
                             </div>
 
                             @if (item.PotentialMatches.Count > 0)
                             {
                                 <div style="margin-top: 0.5rem; padding: 0.5rem; background: var(--bg-canvas); border-radius: 6px; font-size: 0.76rem;">
-                                    <strong>Smart Identity Match Candidates (@item.PotentialMatches.Count):</strong>
+                                    <strong>@Loc.T("admin.residents.matchCandidates") (@item.PotentialMatches.Count):</strong>
                                     @foreach (var m in item.PotentialMatches.Take(3))
                                     {
                                         <div @key="m.Profile.Id" style="margin-top: 0.2rem;">
                                             <span class="mono" style="color: var(--accent-primary);">@m.Profile.ResidentAccountNumber</span>
-                                            <strong>@m.Profile.FullName</strong> (@m.Profile.PrimaryEmail) — @m.MatchReason (Confidence: <span class="num">@m.ConfidenceScore%</span>)
+                                            <strong>@m.Profile.FullName</strong> (@m.Profile.PrimaryEmail) — @m.MatchReason (@Loc.T("admin.residents.confidence"): <span class="num">@m.ConfidenceScore%</span>)
                                         </div>
                                     }
                                 </div>
@@ -246,7 +246,7 @@ else
                             @if (item.ConflictReport.HasConflict)
                             {
                                 <div style="margin-top: 0.5rem; padding: 0.5rem; border: 1px solid var(--color-warning); border-radius: 6px; font-size: 0.76rem;">
-                                    <strong>Occupancy Conflict Warning:</strong> @string.Join(" ", item.ConflictReport.Warnings)
+                                    <strong>@Loc.T("admin.residents.conflictWarning"):</strong> @string.Join(" ", item.ConflictReport.Warnings)
                                 </div>
                             }
 
@@ -254,7 +254,7 @@ else
                             {
                                 <div class="cg-grid-4" style="margin-top: 0.65rem;">
                                     <div>
-                                        <label>Target Community</label>
+                                        <label>@Loc.T("admin.residents.targetCommunity")</label>
                                         <select value="@GetOverrideCommunityId(req)" @onchange="e => SetOverrideCommunityId(req.Id, e.Value?.ToString())">
                                             @foreach (var c in _dashboard.Communities)
                                             {
@@ -263,16 +263,16 @@ else
                                         </select>
                                     </div>
                                     <div>
-                                        <label>Target Unit (Can Reassign)</label>
+                                        <label>@Loc.T("admin.residents.targetUnit")</label>
                                         <select value="@GetOverrideUnitId(req)" @onchange="e => SetOverrideUnitId(req.Id, e.Value?.ToString())">
                                             @foreach (var u in GetUnitsForCommunity(GetOverrideCommunityId(req)))
                                             {
-                                                <option value="@u.UnitId" @key="u.UnitId">Unit @u.UnitNumber (@u.BuildingName · @u.OccupancyStatus)</option>
+                                                <option value="@u.UnitId" @key="u.UnitId">@Loc.T("admin.residents.unit") @u.UnitNumber (@u.BuildingName · @u.OccupancyStatus)</option>
                                             }
                                         </select>
                                     </div>
                                     <div>
-                                        <label>Assignment Role</label>
+                                        <label>@Loc.T("admin.residents.assignmentRole")</label>
                                         <select value="@GetReviewAssignmentType(req.Id)" @onchange="e => SetReviewAssignmentType(req.Id, e.Value?.ToString())">
                                             @foreach (var t in Enum.GetValues<ResidentAssignmentType>())
                                             {
@@ -281,23 +281,23 @@ else
                                         </select>
                                     </div>
                                     <div>
-                                        <label>Decision / Rejection Notes</label>
-                                        <input value="@GetReviewNotes(req.Id)" @onchange="e => SetReviewNotes(req.Id, e.Value?.ToString())" placeholder="Verified lease / ID..." />
+                                        <label>@Loc.T("admin.residents.decisionNotes")</label>
+                                        <input value="@GetReviewNotes(req.Id)" @onchange="e => SetReviewNotes(req.Id, e.Value?.ToString())" placeholder="@Loc.T("admin.residents.decisionPh")" />
                                     </div>
                                 </div>
                                 <div class="cg-toolbar" style="margin-top: 0.5rem;">
                                     <button type="button" class="cg-btn cg-btn-sm cg-btn-primary" disabled="@_isBusy" @onclick="() => DecideRequestAsync(req, true)">
-                                        Approve &amp; Activate Resident Assignment
+                                        @Loc.T("admin.residents.approveActivate")
                                     </button>
                                     <button type="button" class="cg-btn cg-btn-sm" disabled="@_isBusy" @onclick="() => DecideRequestAsync(req, false)">
-                                        Reject Request
+                                        @Loc.T("admin.residents.rejectRequest")
                                     </button>
                                 </div>
                             }
                             else if (!string.IsNullOrWhiteSpace(req.DecisionNotesOrRejectionReason))
                             {
                                 <div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.35rem;">
-                                    Reviewed by @req.ReviewedByName on <span class="mono">@req.ReviewedAtUtc?.ToString("yyyy-MM-dd HH:mm")</span>: @req.DecisionNotesOrRejectionReason
+                                    @Loc.T("admin.residents.reviewedBy") @req.ReviewedByName @Loc.T("admin.residents.on") <span class="mono">@req.ReviewedAtUtc?.ToString("yyyy-MM-dd HH:mm")</span>: @req.DecisionNotesOrRejectionReason
                                 </div>
                             }
                         </div>
@@ -310,10 +310,10 @@ else
             <div class="cg-card" style="border: 1px solid var(--accent-primary);">
                 <div class="cg-section-header">
                     <div>
-                        <span class="cg-badge cg-badge-info">Step @_wizStep of 7</span>
-                        <h2 style="display: inline; margin-left: 0.5rem;">Firm-Initiated Resident-to-Unit Assignment Wizard</h2>
+                        <span class="cg-badge cg-badge-info">@Loc.T("admin.wizard.stepOf") @_wizStep @Loc.T("admin.wizard.of7")</span>
+                        <h2 style="display: inline; margin-left: 0.5rem;">@Loc.T("admin.wizard.assignTitle")</h2>
                     </div>
-                    <button type="button" class="cg-btn cg-btn-sm" @onclick='() => _activeTab = "directory"'>Close Wizard</button>
+                    <button type="button" class="cg-btn cg-btn-sm" @onclick='() => _activeTab = "directory"'>@Loc.T("admin.wizard.close")</button>
                 </div>
 
                 <div style="display: flex; gap: 0.35rem; flex-wrap: wrap; margin-bottom: 1rem;">
@@ -332,16 +332,16 @@ else
                 {
                     <div class="cg-grid-2">
                         <div>
-                            <label>Resident Identity Mode</label>
+                            <label>@Loc.T("admin.wizard.identityMode")</label>
                             <select @bind="_wizCreateNewResident">
-                                <option value="false">Select Existing Resident Profile (RES-XXXXXXXX)</option>
-                                <option value="true">Create New Resident Profile Automatically</option>
+                                <option value="false">@Loc.T("admin.wizard.selectExisting")</option>
+                                <option value="true">@Loc.T("admin.wizard.createNew")</option>
                             </select>
                         </div>
                         @if (!_wizCreateNewResident)
                         {
                             <div>
-                                <label>Existing Resident Profile</label>
+                                <label>@Loc.T("admin.wizard.existingProfile")</label>
                                 <select @bind="_wizExistingResidentId">
                                     @foreach (var r in _directory)
                                     {
@@ -354,14 +354,14 @@ else
                     @if (_wizCreateNewResident)
                     {
                         <div class="cg-grid-4" style="margin-top: 0.65rem;">
-                            <div><label>First Name</label><input @bind="_wizFirstName" placeholder="Piotr" /></div>
-                            <div><label>Last Name</label><input @bind="_wizLastName" placeholder="Nowak" /></div>
-                            <div><label>Email</label><input type="email" @bind="_wizEmail" placeholder="piotr.nowak@example.com" /></div>
-                            <div><label>Phone</label><input @bind="_wizPhone" placeholder="+48 600 100 200" /></div>
+                            <div><label>@Loc.T("form.firstName")</label><input @bind="_wizFirstName" placeholder="@Loc.T("admin.residents.firstNamePh")" /></div>
+                            <div><label>@Loc.T("form.lastName")</label><input @bind="_wizLastName" placeholder="@Loc.T("admin.residents.lastNamePh")" /></div>
+                            <div><label>@Loc.T("admin.residents.email")</label><input type="email" @bind="_wizEmail" placeholder="@Loc.T("admin.residents.emailPh")" /></div>
+                            <div><label>@Loc.T("form.phone")</label><input @bind="_wizPhone" placeholder="@Loc.T("admin.residents.phonePh")" /></div>
                         </div>
                         <div class="cg-grid-3" style="margin-top: 0.65rem;">
                             <div>
-                                <label>Preferred Language</label>
+                                <label>@Loc.T("admin.wizard.language")</label>
                                 <select @bind="_wizLanguage">
                                     <option value="EN">EN</option>
                                     <option value="PL">PL</option>
@@ -370,8 +370,8 @@ else
                                     <option value="FR">FR</option>
                                 </select>
                             </div>
-                            <div><label>Emergency Contact Name</label><input @bind="_wizEmergencyName" /></div>
-                            <div><label>Emergency Contact Phone</label><input @bind="_wizEmergencyPhone" /></div>
+                            <div><label>@Loc.T("admin.wizard.emergencyName")</label><input @bind="_wizEmergencyName" /></div>
+                            <div><label>@Loc.T("admin.wizard.emergencyPhone")</label><input @bind="_wizEmergencyPhone" /></div>
                         </div>
                     }
                 }
@@ -379,7 +379,7 @@ else
                 {
                     <div class="cg-grid-2">
                         <div>
-                            <label>Select Target Community (COM-XXXXXXXX)</label>
+                            <label>@Loc.T("admin.wizard.targetCommunity")</label>
                             <select value="@_wizCommunityId" @onchange="OnWizardCommunityChanged">
                                 @foreach (var c in _dashboard.Communities)
                                 {
@@ -393,7 +393,7 @@ else
                 {
                     <div class="cg-grid-2">
                         <div>
-                            <label>Select Building</label>
+                            <label>@Loc.T("admin.wizard.selectBuilding")</label>
                             <select value="@_wizBuildingId" @onchange="OnWizardBuildingChanged">
                                 @foreach (var b in WizardBuildings)
                                 {
@@ -407,11 +407,11 @@ else
                 {
                     <div class="cg-grid-2">
                         <div>
-                            <label>Select Target Unit</label>
+                            <label>@Loc.T("admin.wizard.selectUnit")</label>
                             <select @bind="_wizUnitId">
                                 @foreach (var u in WizardUnits)
                                 {
-                                    <option value="@u.UnitId" @key="u.UnitId">Unit @u.UnitNumber (@u.Kind · @u.FloorAreaM2.ToString("F1") m² · @u.OccupancyStatus)</option>
+                                    <option value="@u.UnitId" @key="u.UnitId">@Loc.T("admin.residents.unit") @u.UnitNumber (@u.Kind · @u.FloorAreaM2.ToString("F1") m² · @u.OccupancyStatus)</option>
                                 }
                             </select>
                         </div>
@@ -421,7 +421,7 @@ else
                 {
                     <div class="cg-grid-3">
                         <div>
-                            <label>Assignment Role / Type</label>
+                            <label>@Loc.T("admin.wizard.roleType")</label>
                             <select @bind="_wizAssignmentType">
                                 @foreach (var t in Enum.GetValues<ResidentAssignmentType>())
                                 {
@@ -430,15 +430,15 @@ else
                             </select>
                         </div>
                         <div>
-                            <label>Assignment Status</label>
+                            <label>@Loc.T("admin.wizard.assignStatus")</label>
                             <select @bind="_wizStatus">
-                                <option value="@UnitAssignmentStatus.Active">Active</option>
-                                <option value="@UnitAssignmentStatus.PendingMoveIn">Pending Move-In</option>
+                                <option value="@UnitAssignmentStatus.Active">@Loc.T("status.active")</option>
+                                <option value="@UnitAssignmentStatus.PendingMoveIn">@Loc.T("admin.wizard.pendingMoveIn")</option>
                             </select>
                         </div>
                         <div style="display: flex; align-items: center; gap: 0.5rem; padding-top: 1.4rem;">
                             <input id="wiz-primary" type="checkbox" @bind="_wizIsPrimary" />
-                            <label for="wiz-primary" style="margin: 0;">Primary Resident for Unit</label>
+                            <label for="wiz-primary" style="margin: 0;">@Loc.T("admin.wizard.primaryResident")</label>
                         </div>
                     </div>
                 }
@@ -446,35 +446,35 @@ else
                 {
                     <div class="cg-grid-3">
                         <div>
-                            <label>Move-In Date</label>
+                            <label>@Loc.T("admin.wizard.moveIn")</label>
                             <input type="date" @bind="_wizMoveInDate" />
                         </div>
                         <div>
-                            <label>Planned Move-Out Date (Optional)</label>
+                            <label>@Loc.T("admin.wizard.moveOut")</label>
                             <input type="date" @bind="_wizMoveOutDate" />
                         </div>
                         <div>
-                            <label>Assignment Reason / Notes</label>
-                            <input @bind="_wizNotes" placeholder="Signed lease agreement / deed transfer" />
+                            <label>@Loc.T("admin.wizard.reason")</label>
+                            <input @bind="_wizNotes" placeholder="@Loc.T("admin.wizard.reasonPh")" />
                         </div>
                     </div>
                 }
                 else if (_wizStep == 7)
                 {
                     <div class="cg-subcard" style="margin-bottom: 0.75rem;">
-                        <h3>Assignment Confirmation Summary</h3>
+                        <h3>@Loc.T("admin.wizard.summary")</h3>
                         <div class="cg-grid-3" style="margin-top: 0.5rem; font-size: 0.82rem;">
                             <div>
-                                <div style="color: var(--text-secondary);">Resident</div>
-                                <strong>@(_wizCreateNewResident ? $"{_wizFirstName} {_wizLastName} (New RES-XXXXXXXX)" : SelectedWizardResidentLabel)</strong>
+                                <div style="color: var(--text-secondary);">@Loc.T("admin.wizard.resident")</div>
+                                <strong>@(_wizCreateNewResident ? $"{_wizFirstName} {_wizLastName} ({Loc.T("admin.wizard.newRes")})" : SelectedWizardResidentLabel)</strong>
                             </div>
                             <div>
-                                <div style="color: var(--text-secondary);">Target Community &amp; Unit</div>
-                                <strong>@SelectedWizardCommunityLabel · Unit @SelectedWizardUnitLabel</strong>
+                                <div style="color: var(--text-secondary);">@Loc.T("admin.wizard.targetUnit")</div>
+                                <strong>@SelectedWizardCommunityLabel · @Loc.T("admin.residents.unit") @SelectedWizardUnitLabel</strong>
                             </div>
                             <div>
-                                <div style="color: var(--text-secondary);">Role &amp; Effective Date</div>
-                                <strong>@_wizAssignmentType (@(_wizIsPrimary ? "Primary" : "Secondary")) · @_wizMoveInDate.ToString("yyyy-MM-dd")</strong>
+                                <div style="color: var(--text-secondary);">@Loc.T("admin.wizard.roleDate")</div>
+                                <strong>@_wizAssignmentType (@(_wizIsPrimary ? Loc.T("admin.wizard.primary") : Loc.T("admin.wizard.secondary"))) · @_wizMoveInDate.ToString("yyyy-MM-dd")</strong>
                             </div>
                         </div>
                     </div>
@@ -482,7 +482,7 @@ else
                     @if (_wizConflict is not null && _wizConflict.HasConflict)
                     {
                         <div class="cg-subcard" style="border: 1px solid var(--color-warning); margin-bottom: 0.75rem;">
-                            <strong style="color: var(--color-warning);">Occupancy Conflict Detected</strong>
+                            <strong style="color: var(--color-warning);">@Loc.T("admin.wizard.conflict")</strong>
                             <ul style="margin: 0.35rem 0 0.5rem 1.2rem; font-size: 0.8rem;">
                                 @foreach (var w in _wizConflict.Warnings)
                                 {
@@ -490,15 +490,15 @@ else
                                 }
                             </ul>
                             <div>
-                                <label>Explicit Conflict Override Reason (Required to proceed)</label>
-                                <input @bind="_wizOverrideReason" placeholder="Replacing outgoing primary resident / approved co-tenancy..." />
+                                <label>@Loc.T("admin.wizard.overrideReason")</label>
+                                <input @bind="_wizOverrideReason" placeholder="@Loc.T("admin.wizard.overridePh")" />
                             </div>
                         </div>
                     }
                     else
                     {
                         <div class="cg-subcard" style="border-left: 3px solid var(--color-success); margin-bottom: 0.75rem;">
-                            No occupancy conflicts detected for the selected unit. Ready to assign.
+                            @Loc.T("admin.wizard.noConflict")
                         </div>
                     }
                 }
@@ -507,18 +507,18 @@ else
                     <div>
                         @if (_wizStep > 1)
                         {
-                            <button type="button" class="cg-btn" @onclick="() => GoToWizardStepAsync(_wizStep - 1)">Previous Step</button>
+                            <button type="button" class="cg-btn" @onclick="() => GoToWizardStepAsync(_wizStep - 1)">@Loc.T("admin.wizard.previous")</button>
                         }
                     </div>
                     <div style="display: flex; gap: 0.5rem;">
                         @if (_wizStep < 7)
                         {
-                            <button type="button" class="cg-btn cg-btn-primary" @onclick="() => GoToWizardStepAsync(_wizStep + 1)">Next Step</button>
+                            <button type="button" class="cg-btn cg-btn-primary" @onclick="() => GoToWizardStepAsync(_wizStep + 1)">@Loc.T("admin.wizard.next")</button>
                         }
                         else
                         {
                             <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="SubmitWizardAssignmentAsync">
-                                @(_isBusy ? "Assigning..." : "Confirm & Execute Resident Assignment")
+                                @(_isBusy ? Loc.T("admin.wizard.assigning") : Loc.T("admin.wizard.confirm"))
                             </button>
                         }
                     </div>
@@ -627,12 +627,12 @@ else
     private string SelectedWizardResidentLabel =>
         _directory.FirstOrDefault(d => d.Profile.Id == _wizExistingResidentId) is { } r
             ? $"{r.Profile.FullName} ({r.Profile.ResidentAccountNumber})"
-            : "Selected Resident";
+            : Loc.T("admin.residents.selectedResident");
 
     private string SelectedWizardCommunityLabel =>
         _dashboard?.Communities.FirstOrDefault(c => c.Id == _wizCommunityId) is { } c
             ? $"{c.Name} ({c.CommunityAccountNumber})"
-            : "Community";
+            : Loc.T("admin.residents.communityFallback");
 
     private string SelectedWizardUnitLabel =>
         _dashboard?.Units.FirstOrDefault(u => u.UnitId == _wizUnitId)?.UnitNumber ?? "—";
@@ -700,7 +700,7 @@ else
         _message = string.Empty;
         if (string.IsNullOrWhiteSpace(_newResFirst) && string.IsNullOrWhiteSpace(_newResLast))
         {
-            _error = "Resident name is required.";
+            _error = Loc.T("msg.residentNameRequired");
             return;
         }
         _isBusy = true;
@@ -713,7 +713,7 @@ else
             _newResEmail = string.Empty;
             _newResPhone = string.Empty;
             _showQuickCreateResident = false;
-            _message = $"Resident identity {created.FullName} created with permanent Resident Account Number {created.ResidentAccountNumber}.";
+            _message = $"{Loc.T("admin.residents.identityCreated")} {created.FullName} ({created.ResidentAccountNumber}).";
             await ReloadAsync();
         }
         catch (Exception ex)
@@ -786,8 +786,8 @@ else
                 _actorName,
                 _membershipId);
             _message = approve
-                ? $"Registration request for {decided.SubmittedFullName} approved and assigned."
-                : $"Registration request for {decided.SubmittedFullName} rejected.";
+                ? $"{Loc.T("admin.residents.approvedFor")} {decided.SubmittedFullName} {Loc.T("admin.residents.approvedTail")}"
+                : $"{Loc.T("admin.residents.rejectedFor")} {decided.SubmittedFullName}.";
             await ReloadAsync();
         }
         catch (Exception ex)
@@ -834,15 +834,15 @@ else
         }
     }
 
-    private static string GetWizardStepLabel(int step) => step switch
+    private string GetWizardStepLabel(int step) => step switch
     {
-        1 => "Resident Identity",
-        2 => "Community",
-        3 => "Building",
-        4 => "Unit",
-        5 => "Role & Type",
-        6 => "Move-In Dates",
-        _ => "Conflict Check & Confirm"
+        1 => Loc.T("admin.wizard.step1"),
+        2 => Loc.T("admin.wizard.step2"),
+        3 => Loc.T("admin.wizard.step3"),
+        4 => Loc.T("admin.wizard.step4"),
+        5 => Loc.T("admin.wizard.step5"),
+        6 => Loc.T("admin.wizard.step6"),
+        _ => Loc.T("admin.wizard.step7")
     };
 
     private async Task GoToWizardStepAsync(int step)
@@ -883,7 +883,7 @@ else
                 _wizNotes,
                 _wizOverrideReason);
             var assignment = await Workspace.AssignResidentToUnitManualAsync(req, _role, _actorName, _membershipId);
-            _message = $"Resident {assignment.ResidentProfile?.FullName} ({assignment.ResidentProfile?.ResidentAccountNumber}) assigned to Unit {SelectedWizardUnitLabel}.";
+            _message = $"{Loc.T("admin.residents.assigned")} {assignment.ResidentProfile?.FullName} ({assignment.ResidentProfile?.ResidentAccountNumber}) {Loc.T("admin.residents.toUnit")} {SelectedWizardUnitLabel}.";
             _activeTab = "directory";
             await ReloadAsync();
         }

@@ -7,32 +7,34 @@
 @inject IAppDbContextFactory DbFactory
 @inject IMembershipService MembershipService
 @inject NavigationManager Nav
+@inject WorkspaceLocalization Loc
+@implements IDisposable
 
-<PageTitle>People and approvals - CommonGround</PageTitle>
+<PageTitle>@Loc.T("page.adminMembersTitle") - CommonGround</PageTitle>
 
 <div class="cg-page-header">
     <div>
-        <h1>People and approvals</h1>
-        <p class="cg-page-lead">Unified queue for pending approvals, invitations, join links and active members.</p>
+        <h1>@Loc.T("page.adminMembersTitle")</h1>
+        <p class="cg-page-lead">@Loc.T("page.adminMembersLead")</p>
     </div>
-    <a class="cg-btn" href="/admin">Back to overview</a>
+    <a class="cg-btn" href="/admin">@Loc.T("action.backToOverview")</a>
 </div>
 
 @if (!_loaded)
 {
-    <p role="status" aria-live="polite">Loading members.</p>
+    <p role="status" aria-live="polite">@Loc.T("msg.loadingMembers")</p>
 }
 else if (!_isAuthorized || !_firmId.HasValue || !_actorId.HasValue)
 {
-    <div class="cg-card"><p class="cg-empty-text">Access denied. Firm manager permission is required.</p></div>
+    <div class="cg-card"><p class="cg-empty-text">@Loc.T("msg.accessDeniedFirm")</p></div>
 }
 else
 {
     <div class="cg-card">
-        <div class="cg-toolbar" role="tablist" aria-label="Member sections">
-            <button type="button" role="tab" aria-selected="@(_tab == "pending")" class="cg-btn @(_tab == "pending" ? "cg-btn-selected" : string.Empty)" @onclick='() => _tab = "pending"' disabled="@_isBusy">Pending approvals (@_pending.Count)</button>
-            <button type="button" role="tab" aria-selected="@(_tab == "invites")" class="cg-btn @(_tab == "invites" ? "cg-btn-selected" : string.Empty)" @onclick='() => _tab = "invites"' disabled="@_isBusy">Invitations and join links (@_invitations.Count)</button>
-            <button type="button" role="tab" aria-selected="@(_tab == "active")" class="cg-btn @(_tab == "active" ? "cg-btn-selected" : string.Empty)" @onclick='() => _tab = "active"' disabled="@_isBusy">Active members (@_active.Count)</button>
+        <div class="cg-toolbar" role="tablist" aria-label="@Loc.T("admin.members.sections")">
+            <button type="button" role="tab" aria-selected="@(_tab == "pending")" class="cg-btn @(_tab == "pending" ? "cg-btn-selected" : string.Empty)" @onclick='() => _tab = "pending"' disabled="@_isBusy">@Loc.T("admin.members.pendingTab") (@_pending.Count)</button>
+            <button type="button" role="tab" aria-selected="@(_tab == "invites")" class="cg-btn @(_tab == "invites" ? "cg-btn-selected" : string.Empty)" @onclick='() => _tab = "invites"' disabled="@_isBusy">@Loc.T("admin.members.invitesTab") (@_invitations.Count)</button>
+            <button type="button" role="tab" aria-selected="@(_tab == "active")" class="cg-btn @(_tab == "active" ? "cg-btn-selected" : string.Empty)" @onclick='() => _tab = "active"' disabled="@_isBusy">@Loc.T("admin.members.activeTab") (@_active.Count)</button>
         </div>
     </div>
 
@@ -46,30 +48,30 @@ else
             <InviteMemberCard FirmId="_firmId.Value" Properties="_properties" OnInvitationCreated="ReloadAsync" />
             <div class="cg-card">
                 <div class="cg-section-header">
-                    <h2>Invitations and join links</h2>
-                    <span class="cg-badge">@_invitations.Count pending</span>
+                    <h2>@Loc.T("admin.members.invitesTitle")</h2>
+                    <span class="cg-badge">@_invitations.Count @Loc.T("admin.members.pendingBadge")</span>
                 </div>
                 @if (!string.IsNullOrWhiteSpace(_firmCode))
                 {
                     <div class="cg-callout" style="overflow-wrap: anywhere;">
-                        Join with firm code <code class="mono num" style="font-variant-numeric: tabular-nums;">@_firmCode</code> or invitation link <a href="/accept-invite?code=@Uri.EscapeDataString(_firmCode)">@($"/accept-invite?code={_firmCode}")</a>
+                        @Loc.T("admin.members.joinWithCode") <code class="mono num" style="font-variant-numeric: tabular-nums;">@_firmCode</code> @Loc.T("admin.members.orLink") <a href="/accept-invite?code=@Uri.EscapeDataString(_firmCode)">@($"/accept-invite?code={_firmCode}")</a>
                     </div>
                 }
                 <div class="cg-table-wrap">
                     <table class="cg-table">
                         <thead>
                             <tr>
-                                <th>Recipient</th>
-                                <th>Role</th>
-                                <th>Status</th>
-                                <th>Expires</th>
-                                <th>Actions</th>
+                                <th>@Loc.T("table.recipient")</th>
+                                <th>@Loc.T("table.role")</th>
+                                <th>@Loc.T("table.status")</th>
+                                <th>@Loc.T("table.expires")</th>
+                                <th>@Loc.T("table.actions")</th>
                             </tr>
                         </thead>
                         <tbody>
                             @if (_invitations.Count == 0)
                             {
-                                <tr><td colspan="5" style="color: var(--color-text-secondary);">No invitations found.</td></tr>
+                                <tr><td colspan="5" style="color: var(--color-text-secondary);">@Loc.T("admin.members.noInvitations")</td></tr>
                             }
                             @foreach (var invitation in _invitations)
                             {
@@ -81,7 +83,7 @@ else
                                     <td>
                                         @if (invitation.Status == InvitationStatus.Pending)
                                         {
-                                            <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => OnRevokeInvitationAsync(invitation.Id)">Revoke</button>
+                                            <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => OnRevokeInvitationAsync(invitation.Id)">@Loc.T("action.revoke")</button>
                                         }
                                     </td>
                                 </tr>
@@ -96,35 +98,35 @@ else
     {
         <div class="cg-card">
             <div class="cg-section-header">
-                <h2>Active members</h2>
-                <span class="cg-badge">@_active.Count active</span>
+                <h2>@Loc.T("admin.members.activeTitle")</h2>
+                <span class="cg-badge">@_active.Count @Loc.T("admin.members.activeBadge")</span>
             </div>
             <div class="cg-table-wrap">
                 <table class="cg-table">
                     <thead>
                         <tr>
-                            <th>Member</th>
-                            <th>Role</th>
-                            <th>Properties</th>
-                            <th>Actions</th>
+                            <th>@Loc.T("table.member")</th>
+                            <th>@Loc.T("table.role")</th>
+                            <th>@Loc.T("table.properties")</th>
+                            <th>@Loc.T("table.actions")</th>
                         </tr>
                     </thead>
                     <tbody>
                         @if (_active.Count == 0)
                         {
-                            <tr><td colspan="4" style="color: var(--color-text-secondary);">No active members found.</td></tr>
+                            <tr><td colspan="4" style="color: var(--color-text-secondary);">@Loc.T("admin.members.noActive")</td></tr>
                         }
                         @foreach (var membership in _active)
                         {
-                            var userName = _users.TryGetValue(membership.UserId, out var account) ? account.FullName : "Member";
+                            var userName = _users.TryGetValue(membership.UserId, out var account) ? account.FullName : Loc.T("admin.members.memberFallback");
                             var userEmail = _users.TryGetValue(membership.UserId, out var mail) ? mail.Email : string.Empty;
                             var scope = _accessByMembership.TryGetValue(membership.Id, out var access) ? access : new List<string>();
                             <tr @key="membership.Id">
                                 <td><strong>@userName</strong><div style="font-size: 0.72rem; color: var(--color-text-secondary);">@userEmail</div></td>
                                 <td><span class="cg-badge">@membership.Role</span></td>
-                                <td style="font-size: 0.75rem;">@(scope.Count == 0 ? "Firm scope" : string.Join(", ", scope))</td>
+                                <td style="font-size: 0.75rem;">@(scope.Count == 0 ? Loc.T("admin.members.firmScope") : string.Join(", ", scope))</td>
                                 <td>
-                                    <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => OnRevokeMembershipAsync(membership.Id)">Revoke</button>
+                                    <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => OnRevokeMembershipAsync(membership.Id)">@Loc.T("action.revoke")</button>
                                 </td>
                             </tr>
                         }
@@ -159,9 +161,13 @@ else
     private Dictionary<Guid, User> _users = new();
     private Dictionary<Guid, JoinRequest> _joinRequests = new();
     private Dictionary<Guid, List<string>> _accessByMembership = new();
+    private Action? _locHandler;
 
     protected override async Task OnInitializedAsync()
     {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
         try
         {
             var firmId = await Access.GetFirmIdAsync();
@@ -270,7 +276,7 @@ else
         try
         {
             await InvitationService.RevokeInvitationAsync(invitationId, _actorId.Value);
-            _message = "Invitation revoked.";
+            _message = Loc.T("msg.invitationRevoked");
             await ReloadAsync();
         }
         catch (Exception ex)
@@ -293,7 +299,7 @@ else
         try
         {
             await MembershipService.RevokeMembershipAsync(_actorId.Value, membershipId);
-            _message = "Membership revoked.";
+            _message = Loc.T("msg.membershipRevoked");
             await ReloadAsync();
         }
         catch (Exception ex)
@@ -304,5 +310,10 @@ else
         {
             _isBusy = false;
         }
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
     }
 }

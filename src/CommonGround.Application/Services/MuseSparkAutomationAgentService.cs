@@ -73,10 +73,83 @@ public sealed record ToolObservationResult(
 
 public sealed class SparkAgentPermissionEvaluator
 {
+    public static int GetRolePrivilegeRank(WorkspaceSecurityRole role) => role switch
+    {
+        WorkspaceSecurityRole.FirmManager => 100,
+        WorkspaceSecurityRole.PropertyManager => 90,
+        WorkspaceSecurityRole.Accountant => 70,
+        WorkspaceSecurityRole.MaintenanceDispatcher => 60,
+        WorkspaceSecurityRole.BoardMemberReadOnly => 40,
+        WorkspaceSecurityRole.Contractor => 30,
+        WorkspaceSecurityRole.Resident => 20,
+        WorkspaceSecurityRole.ExternalAuditorView => 10,
+        _ => 0
+    };
+
+    public static async Task<Guid?> DetectTargetCommunityFromGoalAsync(
+        IAppDbContext db,
+        string? userGoal,
+        Guid? fallbackCommunityId,
+        CancellationToken ct = default)
+    {
+        if (!string.IsNullOrWhiteSpace(userGoal))
+        {
+            var communities = await db.Communities
+                .AsNoTracking()
+                .Select(c => new
+                {
+                    c.Id,
+                    c.Name,
+                    c.CommunityAccountNumber,
+                    c.StreetAddress,
+                    c.City
+                })
+                .ToListAsync(ct);
+
+            var goalLower = userGoal.ToLowerInvariant();
+            foreach (var c in communities)
+            {
+                if (!string.IsNullOrWhiteSpace(c.CommunityAccountNumber)
+                    && goalLower.Contains(c.CommunityAccountNumber.ToLowerInvariant(), StringComparison.Ordinal))
+                {
+                    return c.Id;
+                }
+                if (!string.IsNullOrWhiteSpace(c.Name)
+                    && goalLower.Contains(c.Name.ToLowerInvariant(), StringComparison.Ordinal))
+                {
+                    return c.Id;
+                }
+                // Check distinctive 2-word prefix of community name (e.g. "Amber Park", "Oakridge Palms")
+                if (!string.IsNullOrWhiteSpace(c.Name))
+                {
+                    var words = c.Name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                    if (words.Length >= 2)
+                    {
+                        var twoWordPrefix = $"{words[0]} {words[1]}".ToLowerInvariant();
+                        if (twoWordPrefix.Length >= 6 && goalLower.Contains(twoWordPrefix, StringComparison.Ordinal))
+                        {
+                            return c.Id;
+                        }
+                    }
+                }
+                if (!string.IsNullOrWhiteSpace(c.StreetAddress)
+                    && c.StreetAddress.Length >= 6
+                    && goalLower.Contains(c.StreetAddress.ToLowerInvariant(), StringComparison.Ordinal))
+                {
+                    return c.Id;
+                }
+            }
+        }
+
+        return fallbackCommunityId;
+    }
+
     public async Task<SparkAgentPermissionContext> ResolveContextAsync(
         ClaimsPrincipal? principal,
         IAppDbContext db,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        Guid? targetCommunityId = null,
+        string? userGoal = null)
     {
         if (principal == null || !principal.Identity?.IsAuthenticated == true)
         {
@@ -140,48 +213,95 @@ public sealed class SparkAgentPermissionEvaluator
         WorkspaceMembershipStatus status = WorkspaceMembershipStatus.Approved;
         WorkspacePermissionFlags permissions = WorkspacePermissionPresets.DefaultForRole(role);
 
-        // Introspect FirmMembership from database if available
+        // Detect target property from the question or activeCommunityId so we can resolve the highest permission for that property
+        var effectiveCommunityId = await DetectTargetCommunityFromGoalAsync(db, userGoal, targetCommunityId, ct);
+        Guid? targetCommunityFirmId = null;
+        if (effectiveCommunityId.HasValue && effectiveCommunityId.Value != Guid.Empty)
+        {
+            targetCommunityFirmId = await db.Communities
+                .AsNoTracking()
+                .Where(c => c.Id == effectiveCommunityId.Value)
+                .Select(c => (Guid?)c.ManagementFirmId)
+                .FirstOrDefaultAsync(ct);
+        }
+
+        // Introspect all FirmMemberships for the user and select the highest possible permission level for the target property
         if (userId != Guid.Empty)
         {
-            FirmMembership? membership = null;
-            if (activeMembershipId != Guid.Empty)
-            {
-                membership = await db.FirmMemberships
-                    .AsNoTracking()
-                    .Include(m => m.PropertyAccesses)
-                    .Include(m => m.UnitLinks)
-                    .FirstOrDefaultAsync(m => m.Id == activeMembershipId, ct);
-            }
-
-            membership ??= await db.FirmMemberships
+            var candidates = await db.FirmMemberships
                 .AsNoTracking()
                 .Include(m => m.PropertyAccesses)
                 .Include(m => m.UnitLinks)
-                .FirstOrDefaultAsync(m => m.UserId == userId, ct);
+                .Where(m => m.UserId == userId || (activeMembershipId != Guid.Empty && m.Id == activeMembershipId))
+                .ToListAsync(ct);
 
-            if (membership != null)
+            if (candidates.Count > 0)
             {
-                role = membership.Role;
-                status = membership.Status;
-                firmId ??= membership.ManagementFirmId;
-                activeMembershipId = membership.Id;
-                permissions = membership.GrantedPermissions != 0
-                    ? membership.GrantedPermissions
+                var approved = candidates.Where(m => m.Status == WorkspaceMembershipStatus.Approved).ToList();
+                var pool = approved.Count > 0 ? approved : candidates;
+
+                List<FirmMembership> propertyMatches;
+                if (effectiveCommunityId.HasValue && effectiveCommunityId.Value != Guid.Empty)
+                {
+                    var targetCom = effectiveCommunityId.Value;
+                    propertyMatches = pool.Where(m =>
+                        m.PropertyAccesses.Any(pa => pa.CommunityId == targetCom)
+                        || m.UnitLinks.Any(ul => ul.CommunityId == targetCom)
+                        || (m.Role == WorkspaceSecurityRole.FirmManager && (!targetCommunityFirmId.HasValue || m.ManagementFirmId == targetCommunityFirmId.Value))
+                        || (m.PropertyAccesses.Count == 0 && (!targetCommunityFirmId.HasValue || m.ManagementFirmId == targetCommunityFirmId.Value)))
+                        .ToList();
+
+                    if (propertyMatches.Count == 0)
+                    {
+                        propertyMatches = pool;
+                    }
+                }
+                else
+                {
+                    propertyMatches = pool;
+                }
+
+                var bestMembership = propertyMatches
+                    .OrderByDescending(m => GetRolePrivilegeRank(m.Role))
+                    .ThenByDescending(m => m.Id == activeMembershipId ? 1 : 0)
+                    .First();
+
+                role = bestMembership.Role;
+                status = bestMembership.Status;
+                firmId = bestMembership.ManagementFirmId != Guid.Empty ? bestMembership.ManagementFirmId : firmId;
+                activeMembershipId = bestMembership.Id;
+
+                WorkspacePermissionFlags combinedPermissions = 0;
+                foreach (var m in propertyMatches)
+                {
+                    var memberPerms = m.GrantedPermissions != 0
+                        ? m.GrantedPermissions
+                        : WorkspacePermissionPresets.DefaultForRole(m.Role);
+                    combinedPermissions |= memberPerms;
+                }
+                permissions = combinedPermissions != 0
+                    ? combinedPermissions
                     : WorkspacePermissionPresets.DefaultForRole(role);
 
-                foreach (var acc in membership.PropertyAccesses)
+                foreach (var m in pool)
                 {
-                    if (!allowedCommunityIds.Contains(acc.CommunityId))
+                    foreach (var acc in m.PropertyAccesses)
                     {
-                        allowedCommunityIds.Add(acc.CommunityId);
+                        if (!allowedCommunityIds.Contains(acc.CommunityId))
+                        {
+                            allowedCommunityIds.Add(acc.CommunityId);
+                        }
                     }
                 }
 
-                if (membership.UnitLinks.Count > 0)
+                var unitLink = bestMembership.UnitLinks.FirstOrDefault(ul => !effectiveCommunityId.HasValue || ul.CommunityId == effectiveCommunityId.Value)
+                    ?? bestMembership.UnitLinks.FirstOrDefault()
+                    ?? propertyMatches.SelectMany(m => m.UnitLinks).FirstOrDefault();
+
+                if (unitLink != null)
                 {
-                    var link = membership.UnitLinks[0];
-                    linkedUnitId = link.UnitId;
-                    var unit = await db.Units.AsNoTracking().FirstOrDefaultAsync(u => u.Id == link.UnitId, ct);
+                    linkedUnitId = unitLink.UnitId;
+                    var unit = await db.Units.AsNoTracking().FirstOrDefaultAsync(u => u.Id == unitLink.UnitId, ct);
                     if (unit != null)
                     {
                         linkedUnitNumber = unit.UnitNumber;
@@ -241,7 +361,7 @@ public sealed class SparkAgentPermissionEvaluator
             return new SparkAgentPermissionEvaluationResult(true, 0, 0);
         }
 
-        if (normalizedTool is "execute_database_query" or "query_system_entities" or "get_workspace_overview")
+        if (normalizedTool is "execute_database_query" or "query_system_entities" or "get_workspace_overview" or "generate_custom_info_image")
         {
             var targetComId = ResolveCommunityId(args);
             if (targetComId.HasValue && !context.CanAccessCommunity(targetComId.Value))
@@ -1949,8 +2069,50 @@ public sealed class SparkAgentToolExecutor(
                     }, $"SHA-256 Audit Chain Verification: {(isValid ? "VALID" : "COMPROMISED")} ({verifiedCount} events verified, Hash: {latestHash})");
                 }
 
+                // G44. generate_custom_info_image (muse-image-1.0)
+                case "generate_custom_info_image":
+                {
+                    var title = args.GetValueOrDefault("title") ?? "Property Visual Notice";
+                    var subtitle = args.GetValueOrDefault("subtitle") ?? "Generated with muse-image-1.0 • 640x400 PNG";
+                    var rawLines = args.GetValueOrDefault("infoLines") ?? args.GetValueOrDefault("details") ?? string.Empty;
+                    var infoLines = rawLines
+                        .Split(new[] { '|', ';', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                        .Select(s => s.Trim())
+                        .Where(s => !string.IsNullOrWhiteSpace(s))
+                        .ToList();
+                    if (infoLines.Count == 0)
+                    {
+                        infoLines.Add(subtitle);
+                    }
+                    var badgeText = args.GetValueOrDefault("badgeText") ?? "NOTICE";
+                    var qrUrl = args.GetValueOrDefault("qrUrl");
+                    var uiLocale = args.GetValueOrDefault("uiLocale") ?? "EN";
+
+                    var imgResult = await workspace.GenerateCustomPropertyImageAsync(
+                        comId,
+                        title,
+                        subtitle,
+                        infoLines,
+                        badgeText,
+                        qrUrl,
+                        uiLocale,
+                        ct);
+
+                    return MakeResult(new
+                    {
+                        imageDataUrl = imgResult.ImageDataUrl,
+                        modelName = imgResult.ModelName,
+                        resolution = imgResult.Resolution,
+                        latencyMs = imgResult.LatencyMs,
+                        title = imgResult.Title,
+                        subtitle = imgResult.Subtitle,
+                        renderedInfoLines = imgResult.RenderedInfoLines,
+                        generatedAtUtc = imgResult.GeneratedAtUtc
+                    }, $"Generated {imgResult.Resolution} visual '{imgResult.Title}' via {imgResult.ModelName} ({imgResult.LatencyMs} ms)");
+                }
+
                 default:
-                    return MakeError($"Tool '{toolName}' is not recognized in the 43-tool catalog.");
+                    return MakeError($"Tool '{toolName}' is not recognized in the tool catalog.");
             }
         }
         catch (Exception ex)
@@ -2401,17 +2563,42 @@ public sealed class MuseSparkAutomationAgentService(
         bool stepByStepMode,
         IProgress<SparkAgentLiveStepEvent>? progress = null,
         string? userClarificationResponse = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string uiLocale = "EN")
     {
         if (string.IsNullOrWhiteSpace(userGoal))
         {
             throw new ArgumentException("User goal cannot be empty.", nameof(userGoal));
         }
 
+        var normalizedLocale = string.IsNullOrWhiteSpace(uiLocale) ? "EN" : uiLocale.Trim().ToUpperInvariant();
         await using var db = await dbFactory.CreateDbContextAsync(ct);
-        var permContext = await permissionEvaluator.ResolveContextAsync(userPrincipal, db, ct);
-        var targetCommunityId = activeCommunityId
+
+        var detectedCommunityId = await SparkAgentPermissionEvaluator.DetectTargetCommunityFromGoalAsync(
+            db,
+            userGoal,
+            activeCommunityId,
+            ct);
+        var permContext = await permissionEvaluator.ResolveContextAsync(
+            userPrincipal,
+            db,
+            ct,
+            detectedCommunityId,
+            userGoal);
+
+        var targetCommunityId = detectedCommunityId
+            ?? activeCommunityId
             ?? (permContext.AllowedCommunityIds.Count > 0 ? permContext.AllowedCommunityIds[0] : Guid.Empty);
+
+        var effectivePropertyName = string.Empty;
+        if (targetCommunityId != Guid.Empty)
+        {
+            effectivePropertyName = await db.Communities
+                .AsNoTracking()
+                .Where(c => c.Id == targetCommunityId)
+                .Select(c => c.Name)
+                .FirstOrDefaultAsync(ct) ?? string.Empty;
+        }
 
         var run = new AgentRun
         {
@@ -2451,8 +2638,10 @@ public sealed class MuseSparkAutomationAgentService(
             var workspaceContextJson = JsonSerializer.Serialize(new
             {
                 activeCommunityId = targetCommunityId,
+                activeCommunityName = effectivePropertyName,
                 role = permContext.Role.ToString(),
-                allowedCommunities = permContext.AllowedCommunityIds
+                allowedCommunities = permContext.AllowedCommunityIds,
+                uiLocale = normalizedLocale
             }, JsonOpts);
 
             var accountPermissionJson = JsonSerializer.Serialize(new
@@ -2461,10 +2650,11 @@ public sealed class MuseSparkAutomationAgentService(
                 role = permContext.Role.ToString(),
                 isFirmManager = permContext.IsFirmManager,
                 grantedPermissions = permContext.GrantedPermissions.ToString(),
-                linkedUnitNumber = permContext.LinkedUnitNumber
+                linkedUnitNumber = permContext.LinkedUnitNumber,
+                resolvedForProperty = effectivePropertyName
             }, JsonOpts);
 
-            var toolCatalogJson = "[43-Tool Catalog across Introspection, Firm, Communities, Buildings, Units, Residents, Financials, Maintenance, Governance, Vision, Voice, Security]";
+            var toolCatalogJson = "[44-Tool Catalog across Introspection, Firm, Communities, Buildings, Units, Residents, Financials, Maintenance, Governance, Vision, Voice, Custom Image Generation (generate_custom_info_image), Security]";
             var scratchpadHistoryJson = JsonSerializer.Serialize(scratchpad, JsonOpts);
 
             // Stream thinking event
@@ -2488,7 +2678,8 @@ public sealed class MuseSparkAutomationAgentService(
                 workspaceContextJson,
                 toolCatalogJson,
                 scratchpadHistoryJson,
-                ct);
+                ct,
+                normalizedLocale);
 
             totalLatencyMs += turnResult.LatencyMs;
             if (turnResult.UsedLiveApi)
@@ -2499,7 +2690,7 @@ public sealed class MuseSparkAutomationAgentService(
             // Case A: Model emitted Final Answer
             if (turnResult.IsFinalAnswer)
             {
-                finalMarkdown = turnResult.FinalResponseMarkdown;
+                finalMarkdown = CleanMarkdownOutput(turnResult.FinalResponseMarkdown);
                 var finalEv = new SparkAgentLiveStepEvent(
                     RunId: run.Id,
                     StepNumber: stepCounter,
@@ -2533,7 +2724,32 @@ public sealed class MuseSparkAutomationAgentService(
             if (turnResult.ToolCalls.Count > 0)
             {
                 var toolCall = turnResult.ToolCalls[0];
+                if (!toolCall.Arguments.ContainsKey("uiLocale"))
+                {
+                    toolCall.Arguments["uiLocale"] = normalizedLocale;
+                }
+
+                // If tool specifies a target communityId, re-resolve the user's highest permission for that property
+                if ((toolCall.Arguments.TryGetValue("communityId", out var argComStr) || toolCall.Arguments.TryGetValue("targetCommunityId", out argComStr))
+                    && Guid.TryParse(argComStr, out var argComId)
+                    && argComId != Guid.Empty
+                    && argComId != targetCommunityId)
+                {
+                    var reResolved = await permissionEvaluator.ResolveContextAsync(userPrincipal, db, ct, argComId, userGoal);
+                    if (reResolved.CanAccessCommunity(argComId))
+                    {
+                        permContext = reResolved;
+                        targetCommunityId = argComId;
+                        effectivePropertyName = await db.Communities
+                            .AsNoTracking()
+                            .Where(c => c.Id == targetCommunityId)
+                            .Select(c => c.Name)
+                            .FirstOrDefaultAsync(ct) ?? effectivePropertyName;
+                    }
+                }
+
                 var argsJson = JsonSerializer.Serialize(toolCall.Arguments, JsonOpts);
+                var humanInputSummary = BuildHumanInputSummary(toolCall.Arguments);
 
                 // Permission Evaluation
                 var permCheck = permissionEvaluator.EvaluateToolPermission(permContext, toolCall.ToolName, toolCall.Arguments);
@@ -2551,7 +2767,8 @@ public sealed class MuseSparkAutomationAgentService(
                     ObservationJson: null,
                     FinalMarkdown: null,
                     DeepLinkUrl: null,
-                    LatencyMs: 5));
+                    LatencyMs: 5,
+                    HumanInputSummary: humanInputSummary));
 
                 if (!permCheck.IsPermitted)
                 {
@@ -2585,7 +2802,10 @@ public sealed class MuseSparkAutomationAgentService(
                         ObservationJson: denialObsJson,
                         FinalMarkdown: null,
                         DeepLinkUrl: null,
-                        LatencyMs: 10);
+                        LatencyMs: 10,
+                        HumanInputSummary: humanInputSummary,
+                        ObservationSummary: permCheck.DenialReason ?? "Permission denied for active account role.",
+                        Highlights: new[] { $"Required Permission: {permCheck.RequiredFlags}", $"Active Role: {permContext.Role}" });
                     stepsLog.Add(obsEv);
                     progress?.Report(obsEv);
 
@@ -2636,7 +2856,9 @@ public sealed class MuseSparkAutomationAgentService(
                         FinalMarkdown: null,
                         DeepLinkUrl: null,
                         LatencyMs: 10,
-                        ClarificationOptions: options);
+                        ClarificationOptions: options,
+                        HumanInputSummary: humanInputSummary,
+                        ObservationSummary: question);
                     stepsLog.Add(clarEv);
                     progress?.Report(clarEv);
 
@@ -2662,11 +2884,14 @@ public sealed class MuseSparkAutomationAgentService(
                         UsedLiveApi: usedLiveApi,
                         IsAwaitingClarification: true,
                         ClarificationQuestion: question,
-                        ClarificationOptions: options);
+                        ClarificationOptions: options,
+                        EffectiveRole: permContext.Role.ToString(),
+                        EffectivePropertyName: effectivePropertyName);
                 }
 
                 // Execute Tool
                 var toolObs = await toolExecutor.ExecuteToolAsync(toolCall.ToolName, toolCall.Arguments, permContext, targetCommunityId, ct);
+                var (highlights, generatedImageDataUrl, generatedImageMetaSummary) = ExtractObservationHighlightsAndImage(toolObs.ObservationJson);
                 var execEv = new SparkAgentLiveStepEvent(
                     RunId: run.Id,
                     StepNumber: stepCounter,
@@ -2679,7 +2904,12 @@ public sealed class MuseSparkAutomationAgentService(
                     ObservationJson: toolObs.ObservationJson,
                     FinalMarkdown: null,
                     DeepLinkUrl: toolObs.DeepLinkUrl,
-                    LatencyMs: 25);
+                    LatencyMs: 25,
+                    HumanInputSummary: humanInputSummary,
+                    ObservationSummary: toolObs.Summary,
+                    GeneratedImageDataUrl: generatedImageDataUrl,
+                    GeneratedImageMetaSummary: generatedImageMetaSummary,
+                    Highlights: highlights);
                 stepsLog.Add(execEv);
                 progress?.Report(execEv);
 
@@ -2725,7 +2955,125 @@ public sealed class MuseSparkAutomationAgentService(
             FinalResponseMarkdown: finalMarkdown,
             Steps: stepsLog,
             TotalLatencyMs: totalLatencyMs,
-            UsedLiveApi: usedLiveApi);
+            UsedLiveApi: usedLiveApi,
+            EffectiveRole: permContext.Role.ToString(),
+            EffectivePropertyName: effectivePropertyName);
+    }
+
+    private static string CleanMarkdownOutput(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return string.Empty;
+        }
+        var cleaned = Regex.Replace(raw, @"\[JSON-BEGIN\][\s\S]*?\[JSON-END\]", string.Empty, RegexOptions.IgnoreCase).Trim();
+        cleaned = Regex.Replace(cleaned, @"```json[\s\S]*?```", string.Empty, RegexOptions.IgnoreCase).Trim();
+        return string.IsNullOrWhiteSpace(cleaned) ? raw.Trim() : cleaned;
+    }
+
+    private static string BuildHumanInputSummary(IReadOnlyDictionary<string, string> args)
+    {
+        if (args.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var parts = new List<string>();
+        foreach (var kv in args)
+        {
+            if (string.IsNullOrWhiteSpace(kv.Value)
+                || string.Equals(kv.Key, "uiLocale", StringComparison.OrdinalIgnoreCase)
+                || kv.Value.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+            var val = kv.Value.Length > 48 ? kv.Value[..47] + "…" : kv.Value;
+            parts.Add($"{FormatFriendlyKey(kv.Key)}: {val}");
+            if (parts.Count >= 4)
+            {
+                break;
+            }
+        }
+        return string.Join(" • ", parts);
+    }
+
+    private static (IReadOnlyList<string> Highlights, string? ImageDataUrl, string? ImageMetaSummary) ExtractObservationHighlightsAndImage(string? observationJson)
+    {
+        var highlights = new List<string>();
+        string? imageDataUrl = null;
+        string? modelName = null;
+        string? resolution = null;
+
+        if (string.IsNullOrWhiteSpace(observationJson))
+        {
+            return (highlights, null, null);
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(observationJson);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var prop in doc.RootElement.EnumerateObject())
+                {
+                    if (prop.Value.ValueKind == JsonValueKind.String)
+                    {
+                        var s = prop.Value.GetString() ?? string.Empty;
+                        if (s.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase))
+                        {
+                            imageDataUrl ??= s;
+                            continue;
+                        }
+                        if (string.Equals(prop.Name, "modelName", StringComparison.OrdinalIgnoreCase))
+                        {
+                            modelName = s;
+                        }
+                        if (string.Equals(prop.Name, "resolution", StringComparison.OrdinalIgnoreCase))
+                        {
+                            resolution = s;
+                        }
+                        if (!string.IsNullOrWhiteSpace(s) && s.Length <= 160)
+                        {
+                            highlights.Add($"{FormatFriendlyKey(prop.Name)}: {s}");
+                        }
+                    }
+                    else if (prop.Value.ValueKind is JsonValueKind.Number or JsonValueKind.True or JsonValueKind.False)
+                    {
+                        highlights.Add($"{FormatFriendlyKey(prop.Name)}: {prop.Value.GetRawText()}");
+                    }
+                    else if (prop.Value.ValueKind == JsonValueKind.Array && string.Equals(prop.Name, "renderedInfoLines", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var lines = prop.Value.EnumerateArray()
+                            .Where(x => x.ValueKind == JsonValueKind.String)
+                            .Select(x => x.GetString())
+                            .Where(x => !string.IsNullOrWhiteSpace(x))
+                            .ToList();
+                        if (lines.Count > 0)
+                        {
+                            highlights.Add($"Rendered on image: {string.Join(" | ", lines)}");
+                        }
+                    }
+                }
+            }
+        }
+        catch
+        {
+        }
+
+        string? imageMeta = null;
+        if (!string.IsNullOrWhiteSpace(imageDataUrl))
+        {
+            imageMeta = $"{modelName ?? "muse-image-1.0"} • {resolution ?? "640×400 PNG"}";
+        }
+
+        return (highlights.Take(6).ToList(), imageDataUrl, imageMeta);
+    }
+
+    private static string FormatFriendlyKey(string camelKey)
+    {
+        if (string.IsNullOrWhiteSpace(camelKey)) return string.Empty;
+        var spaced = Regex.Replace(camelKey, "([a-z])([A-Z])", "$1 $2");
+        return char.ToUpperInvariant(spaced[0]) + spaced[1..];
     }
 
     private static async Task AppendPermissionDeniedAuditEventAsync(

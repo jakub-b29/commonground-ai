@@ -1,3 +1,6 @@
+@inject WorkspaceLocalization Loc
+@implements IDisposable
+
 <div class="cg-kpi-card @(IsAi ? "cg-kpi-card-ai" : "") @CssClass">
     <div class="cg-kpi-label">
         <span>@Label</span>
@@ -7,7 +10,7 @@
         }
         else if (IsAi)
         {
-            <span class="ai-dot" title="CommonGround Intelligence" aria-hidden="true"></span>
+            <span class="ai-dot" title="@Loc.T("a11y.commonGroundIntel")" aria-hidden="true"></span>
         }
     </div>
     <div class="cg-kpi-value" style="@ValueStyle">@Value</div>
@@ -36,5 +39,22 @@
     [Parameter] public string? ValueStyle { get; set; }
     [Parameter] public string? CssClass { get; set; }
     [Parameter] public RenderFragment? SubContent { get; set; }
+
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null)
+        {
+            Loc.OnChange -= _locHandler;
+        }
+    }
 }
 

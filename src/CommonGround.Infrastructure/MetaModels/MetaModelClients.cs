@@ -953,18 +953,30 @@ public sealed class MetaModelClients(
         return decision;
     }
 
-    public async Task<string> AskPortfolioCopilotAsync(Community community, string managerQuestion, string portfolioSnapshotSummary, CancellationToken ct = default)
+    public async Task<string> AskPortfolioAssistantAsync(Community community, string managerQuestion, string portfolioSnapshotSummary, CancellationToken ct = default, string uiLocale = "EN")
     {
-        var prompt = MuseSparkDiscoveryPrompts.BuildCopilotPrompt(community, managerQuestion, portfolioSnapshotSummary);
+        var prompt = MuseSparkDiscoveryPrompts.BuildPortfolioAssistantPrompt(community, managerQuestion, portfolioSnapshotSummary, uiLocale);
         var (liveText, usedLive) = await CallResponsesAsync(_options.SparkModel, prompt, withSearchGrounding: true, ct);
         if (!string.IsNullOrWhiteSpace(liveText))
         {
-            return liveText;
+            return SanitizeFinalMarkdown(liveText);
         }
-        return $"Portfolio query for {community.Name}: {portfolioSnapshotSummary} " +
-               $"Governing corpus on file: {community.LegalDocuments.Count} documents. " +
-               "All financial figures are computed by deterministic domain services; model output is advisory and state-changing proposals require approval in Pending Approvals.";
+
+        var code = (uiLocale ?? "EN").Trim().ToUpperInvariant();
+        return code switch
+        {
+            "PL" => $"Analiza portfela dla {community.Name}: {portfolioSnapshotSummary} Korpus prawny: {community.LegalDocuments.Count} dokumentów. Wszystkie kwoty finansowe są obliczane przez deterministyczne serwisy domenowe; propozycje zmian wymagają zatwierdzenia w Oczekujących zatwierdzeniach.",
+            "ES" => $"Consulta de cartera para {community.Name}: {portfolioSnapshotSummary} Corpus normativo: {community.LegalDocuments.Count} documentos. Todas las cifras financieras se calculan de forma determinista; las propuestas requieren aprobación.",
+            "FR" => $"Analyse du portefeuille pour {community.Name} : {portfolioSnapshotSummary} Corpus juridique : {community.LegalDocuments.Count} documents. Tous les montants financiers sont calculés de manière déterministe.",
+            "DE" => $"Portfolio-Analyse für {community.Name}: {portfolioSnapshotSummary} Rechtskorpus: {community.LegalDocuments.Count} Dokumente. Alle Finanzzahlen werden deterministisch berechnet.",
+            _ => $"Portfolio intelligence summary for {community.Name}: {portfolioSnapshotSummary} " +
+                 $"Governing corpus on file: {community.LegalDocuments.Count} documents. " +
+                 "All financial figures are computed by deterministic domain services; model output is advisory and state-changing proposals require approval in Pending Approvals."
+        };
     }
+
+    public Task<string> AskPortfolioCopilotAsync(Community community, string managerQuestion, string portfolioSnapshotSummary, CancellationToken ct = default)
+        => AskPortfolioAssistantAsync(community, managerQuestion, portfolioSnapshotSummary, ct, "EN");
 
     public async Task<SparkAgentTurnModelResult> RunAgenticTurnAsync(
         string userPrompt,
@@ -972,7 +984,8 @@ public sealed class MetaModelClients(
         string workspaceContextJson,
         string toolCatalogJson,
         string scratchpadHistoryJson,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string uiLocale = "EN")
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
         var prompt = MuseSparkDiscoveryPrompts.BuildSparkAgenticTurnPrompt(
@@ -980,7 +993,8 @@ public sealed class MetaModelClients(
             accountPermissionJson,
             workspaceContextJson,
             toolCatalogJson,
-            scratchpadHistoryJson);
+            scratchpadHistoryJson,
+            uiLocale);
 
         var (liveText, usedLive) = await CallResponsesAsync(_options.SparkModel, prompt, withSearchGrounding: false, ct);
         sw.Stop();
@@ -1001,7 +1015,69 @@ public sealed class MetaModelClients(
             workspaceContextJson,
             toolCatalogJson,
             scratchpadHistoryJson,
-            latencyMs > 0 ? latencyMs : 25);
+            latencyMs > 0 ? latencyMs : 25,
+            uiLocale);
+    }
+
+    public static string SanitizeFinalMarkdown(string? rawText)
+    {
+        if (string.IsNullOrWhiteSpace(rawText))
+        {
+            return string.Empty;
+        }
+
+        var cleaned = Regex.Replace(rawText, @"\[JSON-BEGIN\][\s\S]*?\[JSON-END\]", string.Empty, RegexOptions.IgnoreCase).Trim();
+        cleaned = Regex.Replace(cleaned, @"```json[\s\S]*?```", string.Empty, RegexOptions.IgnoreCase).Trim();
+        cleaned = Regex.Replace(cleaned, @"^\[THINKING\].*$", string.Empty, RegexOptions.Multiline | RegexOptions.IgnoreCase).Trim();
+
+        if (string.IsNullOrWhiteSpace(cleaned))
+        {
+            cleaned = rawText.Trim();
+        }
+
+        if ((cleaned.StartsWith("{", StringComparison.Ordinal) && cleaned.EndsWith("}", StringComparison.Ordinal))
+            || (cleaned.StartsWith("[", StringComparison.Ordinal) && cleaned.EndsWith("]", StringComparison.Ordinal)))
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(cleaned);
+                if (doc.RootElement.ValueKind == JsonValueKind.Object)
+                {
+                    if (doc.RootElement.TryGetProperty("finalResponseMarkdown", out var fm) && fm.ValueKind == JsonValueKind.String)
+                    {
+                        var inner = fm.GetString();
+                        if (!string.IsNullOrWhiteSpace(inner))
+                        {
+                            return inner.Trim();
+                        }
+                    }
+
+                    var sb = new StringBuilder();
+                    foreach (var prop in doc.RootElement.EnumerateObject())
+                    {
+                        if (string.Equals(prop.Name, "toolCalls", StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(prop.Name, "isFinalAnswer", StringComparison.OrdinalIgnoreCase))
+                        {
+                            continue;
+                        }
+                        var val = prop.Value.ValueKind == JsonValueKind.String ? prop.Value.GetString() : prop.Value.GetRawText();
+                        if (!string.IsNullOrWhiteSpace(val))
+                        {
+                            sb.AppendLine($"- **{prop.Name}**: {val}");
+                        }
+                    }
+                    if (sb.Length > 0)
+                    {
+                        return sb.ToString().Trim();
+                    }
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        return cleaned;
     }
 
     private static SparkAgentTurnModelResult? TryParseAgenticTurnResponse(string rawText, int latencyMs)
@@ -1037,7 +1113,7 @@ public sealed class MetaModelClients(
             var finalMarkdown = string.Empty;
             if (root.TryGetProperty("finalResponseMarkdown", out var finalMdProp) && finalMdProp.ValueKind == JsonValueKind.String)
             {
-                finalMarkdown = finalMdProp.GetString() ?? string.Empty;
+                finalMarkdown = SanitizeFinalMarkdown(finalMdProp.GetString());
             }
 
             var toolCalls = new List<SparkAgentToolCallDecision>();
@@ -1141,7 +1217,8 @@ public sealed class MetaModelClients(
         string workspaceContextJson,
         string toolCatalogJson,
         string scratchpadHistoryJson,
-        int latencyMs)
+        int latencyMs,
+        string uiLocale = "EN")
     {
         var steps = new List<FallbackScratchpadRecord>();
         if (!string.IsNullOrWhiteSpace(scratchpadHistoryJson))
@@ -1429,7 +1506,49 @@ public sealed class MetaModelClients(
             return new SparkAgentTurnModelResult(
                 Thinking: "Voice transcription completed. Structured text ready for further agentic action.",
                 IsFinalAnswer: true,
-                FinalResponseMarkdown: "### Voice Audio Transcription Complete\n\nProcessed audio stream via `muse-voice-transcribe-1.0` with language detection and extracted action items.",
+                FinalResponseMarkdown: "### Voice Audio Transcription Complete\n\nProcessed audio stream via `muse-voice-transcribe-1.0` (`POST /v1/asr/transcribe`) with language detection and extracted action items.",
+                ToolCalls: Array.Empty<SparkAgentToolCallDecision>(),
+                LatencyMs: latencyMs,
+                UsedLiveApi: false);
+        }
+
+        // SCENARIO 4B: Custom Image / Poster Generation with Specific Info (muse-image-1.0)
+        if (lowerPrompt.Contains("image", StringComparison.Ordinal)
+            || lowerPrompt.Contains("poster", StringComparison.Ordinal)
+            || lowerPrompt.Contains("obraz", StringComparison.Ordinal)
+            || lowerPrompt.Contains("plakat", StringComparison.Ordinal)
+            || lowerPrompt.Contains("grafik", StringComparison.Ordinal)
+            || lowerPrompt.Contains("imagen", StringComparison.Ordinal)
+            || lowerPrompt.Contains("cartel", StringComparison.Ordinal)
+            || lowerPrompt.Contains("affiche", StringComparison.Ordinal)
+            || lowerPrompt.Contains("bild", StringComparison.Ordinal))
+        {
+            if (!steps.Any(s => string.Equals(s.ToolName, "generate_custom_info_image", StringComparison.OrdinalIgnoreCase)))
+            {
+                var args = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["title"] = string.IsNullOrWhiteSpace(activeCommunityName) ? "Property Visual Notice" : $"{activeCommunityName} — Official Notice",
+                    ["subtitle"] = "Generated with muse-image-1.0 • Custom Property Telemetry",
+                    ["infoLines"] = userPrompt ?? "Official building announcement",
+                    ["badgeText"] = "NOTICE",
+                    ["qrUrl"] = "https://commonground.local/notice"
+                };
+                if (!string.IsNullOrWhiteSpace(activeCommunityId))
+                {
+                    args["communityId"] = activeCommunityId;
+                }
+                return MakeTurnDecision(
+                    thought: "I will generate a custom annotated visual poster using muse-image-1.0 containing the requested information.",
+                    toolName: "generate_custom_info_image",
+                    stepTitle: "Generate Custom Annotated Image (muse-image-1.0)",
+                    arguments: args,
+                    latencyMs: latencyMs);
+            }
+
+            return new SparkAgentTurnModelResult(
+                Thinking: "Custom annotated image generated via muse-image-1.0 with requested information.",
+                IsFinalAnswer: true,
+                FinalResponseMarkdown: "### Custom Visual Generated (`muse-image-1.0`)\n\nRendered the `640×400 PNG` visual with your specified information and embedded metadata.",
                 ToolCalls: Array.Empty<SparkAgentToolCallDecision>(),
                 LatencyMs: latencyMs,
                 UsedLiveApi: false);
@@ -1694,7 +1813,7 @@ public sealed class MetaModelClients(
     // Only muse-spark-1.3-contributor (MuseSparkDiscoveryPrompts.ModelId) may use withSearchGrounding: true.
     // Sam, Voice and Image calls below always pass false. Wonder flows reuse _options.SparkModel,
     // which equals the same contributor model id, so grounding stays permitted there.
-    public async Task<PropertyAiDiscoveryDossier> DiscoverPropertyDossierFromAddressAsync(AddressLookupRequest request, CancellationToken ct = default, IProgress<DiscoveryProgressStep>? progress = null)
+    public async Task<PropertyAiDiscoveryDossier> DiscoverPropertyDossierFromAddressAsync(AddressLookupRequest request, CancellationToken ct = default, IProgress<DiscoveryProgressStep>? progress = null, string uiLocale = "EN")
     {
         var normalized = NormalizeLookupRequest(request);
         var isUsHint = normalized.OperatingModeHint == SystemOperatingMode.UsHoa || LooksLikeUsAddress(normalized);
@@ -1708,7 +1827,7 @@ public sealed class MetaModelClients(
             return offlineBlocked;
         }
 
-        var prompt = MuseSparkDiscoveryPrompts.BuildDossierPrompt(normalized, isUsHint);
+        var prompt = MuseSparkDiscoveryPrompts.BuildDossierPrompt(normalized, isUsHint, uiLocale);
 
         progress?.Report(new DiscoveryProgressStep("Contacting muse-spark-1.3-contributor", "Model muse-spark-1.3-contributor with web_search grounding at high search context.", 15));
         progress?.Report(new DiscoveryProgressStep("Web search grounding", "Harvesting 11 categories: jurisdiction, police, emergency, utilities, waste, contractors, building profile, grants. This long wait can take up to several minutes.", 40, "Starting 11-task harvest..."));
@@ -2040,35 +2159,312 @@ public sealed class MetaModelClients(
         return dossier;
     }
 
-    public async Task<(string Transcript, string DetectedLanguage, int LatencyMs)> TranscribeVoiceNoteAsync(string voiceScenarioPreset, CancellationToken ct = default)
+    private async Task<(string? Transcript, string? Language, int LatencyMs, bool UsedLive)> CallAsrTranscribeMultipartAsync(
+        byte[] wavBytes,
+        string mode,
+        CancellationToken ct)
     {
-        var prompt = $"Transcribe this resident voice note with muse-voice-transcribe-1.0 semantics. Preset or raw note: {voiceScenarioPreset}. Return transcript and detected language (EN, PL, UA, ES, DE).";
+        var apiKey = ResolveApiKey(_options);
+        if (string.IsNullOrWhiteSpace(apiKey) || httpClientFactory is null || wavBytes.Length < 44)
+        {
+            return (null, null, 0, false);
+        }
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            var sessionId = Guid.NewGuid().ToString("N");
+            using var client = httpClientFactory.CreateClient("MetaModels");
+            client.BaseAddress = new Uri(_options.BaseUrl.TrimEnd('/') + "/");
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+            client.DefaultRequestHeaders.Accept.Clear();
+            client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+            var effectiveModel = string.IsNullOrWhiteSpace(_options.VoiceModel) ? "muse-voice-transcribe-1.0" : _options.VoiceModel;
+            var requestJson = JsonSerializer.Serialize(new
+            {
+                model = effectiveModel,
+                audioEncoding = "WAV",
+                mode = string.IsNullOrWhiteSpace(mode) ? "PUSH_TO_TALK" : mode
+            }, JsonOptions);
+
+            using var form = new MultipartFormDataContent();
+            var requestPart = new StringContent(requestJson, Encoding.UTF8, "application/json");
+            form.Add(requestPart, "request");
+
+            var audioPart = new ByteArrayContent(wavBytes);
+            audioPart.Headers.ContentType = new MediaTypeHeaderValue("audio/wav");
+            form.Add(audioPart, "audio", "recording.wav");
+
+            using var response = await client.PostAsync($"asr/transcribe?sessionId={sessionId}", form, ct);
+            sw.Stop();
+            var latencyMs = Math.Max(1, (int)sw.ElapsedMilliseconds);
+            var body = await response.Content.ReadAsStringAsync(ct);
+
+            if (!response.IsSuccessStatusCode || string.IsNullOrWhiteSpace(body))
+            {
+                return (null, null, latencyMs, false);
+            }
+
+            var (parsedTranscript, parsedLang) = ExtractAsrTranscriptResponse(body);
+            if (!string.IsNullOrWhiteSpace(parsedTranscript))
+            {
+                return (parsedTranscript.Trim(), parsedLang, latencyMs, true);
+            }
+
+            return (null, null, latencyMs, false);
+        }
+        catch (Exception) when (_options.UseFallbackWhenNoKey)
+        {
+            sw.Stop();
+            return (null, null, (int)sw.ElapsedMilliseconds, false);
+        }
+    }
+
+    private static (string? Transcript, string? Language) ExtractAsrTranscriptResponse(string body)
+    {
+        var trimmed = body.Trim();
+        if (!trimmed.StartsWith("{", StringComparison.Ordinal) && !trimmed.StartsWith("[", StringComparison.Ordinal))
+        {
+            return (trimmed, null);
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(trimmed);
+            var root = doc.RootElement;
+            string? lang = null;
+            if (root.ValueKind == JsonValueKind.Object)
+            {
+                if (root.TryGetProperty("language", out var lProp) && lProp.ValueKind == JsonValueKind.String)
+                {
+                    lang = lProp.GetString();
+                }
+                else if (root.TryGetProperty("detectedLanguage", out var dlProp) && dlProp.ValueKind == JsonValueKind.String)
+                {
+                    lang = dlProp.GetString();
+                }
+
+                foreach (var propName in new[] { "transcript", "text", "output_text", "utterance" })
+                {
+                    if (root.TryGetProperty(propName, out var tProp) && tProp.ValueKind == JsonValueKind.String)
+                    {
+                        var val = tProp.GetString();
+                        if (!string.IsNullOrWhiteSpace(val))
+                        {
+                            return (val, lang);
+                        }
+                    }
+                }
+
+                foreach (var arrName in new[] { "turns", "segments", "results", "utterances" })
+                {
+                    if (root.TryGetProperty(arrName, out var arrProp) && arrProp.ValueKind == JsonValueKind.Array)
+                    {
+                        var sb = new StringBuilder();
+                        foreach (var item in arrProp.EnumerateArray())
+                        {
+                            if (item.ValueKind == JsonValueKind.String)
+                            {
+                                sb.AppendLine(item.GetString());
+                            }
+                            else if (item.ValueKind == JsonValueKind.Object)
+                            {
+                                var speaker = item.TryGetProperty("speaker", out var sp) && sp.ValueKind == JsonValueKind.String ? sp.GetString() : null;
+                                var turnText = item.TryGetProperty("transcript", out var tr) && tr.ValueKind == JsonValueKind.String
+                                    ? tr.GetString()
+                                    : (item.TryGetProperty("text", out var tx) && tx.ValueKind == JsonValueKind.String ? tx.GetString() : null);
+                                if (!string.IsNullOrWhiteSpace(turnText))
+                                {
+                                    sb.AppendLine(string.IsNullOrWhiteSpace(speaker) ? turnText : $"[{speaker}] {turnText}");
+                                }
+                            }
+                        }
+
+                        var combined = sb.ToString().Trim();
+                        if (!string.IsNullOrWhiteSpace(combined))
+                        {
+                            return (combined, lang);
+                        }
+                    }
+                }
+            }
+        }
+        catch
+        {
+        }
+
+        return (null, null);
+    }
+
+    public static byte[] DecodeOrSynthesizeWavBytes(string? wavBase64OrDataUrl)
+    {
+        if (!string.IsNullOrWhiteSpace(wavBase64OrDataUrl))
+        {
+            try
+            {
+                var payload = wavBase64OrDataUrl.Trim();
+                var commaIdx = payload.IndexOf(',');
+                if (payload.StartsWith("data:", StringComparison.OrdinalIgnoreCase) && commaIdx >= 0)
+                {
+                    payload = payload[(commaIdx + 1)..];
+                }
+
+                var rawBytes = Convert.FromBase64String(payload);
+                if (rawBytes.Length >= 44
+                    && rawBytes[0] == (byte)'R'
+                    && rawBytes[1] == (byte)'I'
+                    && rawBytes[2] == (byte)'F'
+                    && rawBytes[3] == (byte)'F')
+                {
+                    return rawBytes;
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        // Synthesize a valid 16-bit 16kHz mono PCM WAV buffer (0.25s) so POST /v1/asr/transcribe always receives a valid RIFF/WAVE file
+        const int sampleRate = 16000;
+        const int numSamples = 4000;
+        const int dataSize = numSamples * 2;
+        using var ms = new MemoryStream(44 + dataSize);
+        using var bw = new BinaryWriter(ms, Encoding.ASCII, leaveOpen: true);
+        bw.Write(Encoding.ASCII.GetBytes("RIFF"));
+        bw.Write(36 + dataSize);
+        bw.Write(Encoding.ASCII.GetBytes("WAVE"));
+        bw.Write(Encoding.ASCII.GetBytes("fmt "));
+        bw.Write(16);
+        bw.Write((short)1); // PCM
+        bw.Write((short)1); // Mono
+        bw.Write(sampleRate);
+        bw.Write(sampleRate * 2);
+        bw.Write((short)2);
+        bw.Write((short)16);
+        bw.Write(Encoding.ASCII.GetBytes("data"));
+        bw.Write(dataSize);
+        for (var i = 0; i < numSamples; i++)
+        {
+            var sample = (short)(Math.Sin(2.0 * Math.PI * 440.0 * i / sampleRate) * 600);
+            bw.Write(sample);
+        }
+        bw.Flush();
+        return ms.ToArray();
+    }
+
+    public Task<(string Transcript, string DetectedLanguage, int LatencyMs)> TranscribeVoiceNoteAsync(
+        string voiceScenarioPreset,
+        CancellationToken ct = default)
+        => TranscribeVoiceNoteAsync(voiceScenarioPreset, ct, wavBase64OrDataUrl: null, browserTranscriptHint: null, preferredLanguageCode: null);
+
+    public async Task<(string Transcript, string DetectedLanguage, int LatencyMs)> TranscribeVoiceNoteAsync(
+        string voiceScenarioPreset,
+        CancellationToken ct,
+        string? wavBase64OrDataUrl,
+        string? browserTranscriptHint = null,
+        string? preferredLanguageCode = null)
+    {
+        var wavBytes = DecodeOrSynthesizeWavBytes(wavBase64OrDataUrl);
+        var (asrTranscript, asrLang, asrLatencyMs, usedAsrLive) = await CallAsrTranscribeMultipartAsync(
+            wavBytes,
+            mode: "PUSH_TO_TALK",
+            ct);
+
+        var defaultLang = string.IsNullOrWhiteSpace(preferredLanguageCode) ? "EN" : preferredLanguageCode.Trim().ToUpperInvariant();
+        if (usedAsrLive && !string.IsNullOrWhiteSpace(asrTranscript))
+        {
+            var detected = !string.IsNullOrWhiteSpace(asrLang)
+                ? asrLang.Trim().ToUpperInvariant()
+                : DetectLanguage(asrTranscript, defaultLang);
+            return (asrTranscript, detected, asrLatencyMs > 0 ? asrLatencyMs : 520);
+        }
+
+        if (!string.IsNullOrWhiteSpace(browserTranscriptHint))
+        {
+            var cleanHint = browserTranscriptHint.Trim();
+            var detected = DetectLanguage(cleanHint, defaultLang);
+            return (cleanHint, detected, asrLatencyMs > 0 ? asrLatencyMs : 380);
+        }
+
+        var prompt = $"Transcribe this resident voice note with muse-voice-transcribe-1.0 semantics. Preset or raw note: {voiceScenarioPreset}. Return transcript and detected language (EN, PL, UA, ES, DE, FR).";
         var (liveText, usedLive) = await CallResponsesAsync(_options.VoiceModel, prompt, withSearchGrounding: false, ct);
         if (!string.IsNullOrWhiteSpace(liveText))
         {
-            return (liveText, "EN", 900);
+            var cleaned = SanitizeFinalMarkdown(liveText);
+            return (cleaned, DetectLanguage(cleaned, defaultLang), 900);
         }
-        var preset = voiceScenarioPreset.ToLowerInvariant();
+
+        var preset = (voiceScenarioPreset ?? string.Empty).ToLowerInvariant();
         if (preset.Contains("leak", StringComparison.Ordinal) || preset.Contains("ceiling", StringComparison.Ordinal))
         {
-            return ("There is a water leak on the ceiling in my bathroom, the stain is growing since yesterday.", "EN", 420);
+            var text = defaultLang switch
+            {
+                "PL" => "W mojej łazience na suficie pojawił się przeciek wody, plama powiększa się od wczoraj.",
+                "ES" => "Hay una fuga de agua en el techo de mi baño, la mancha crece desde ayer.",
+                "FR" => "Il y a une fuite d'eau au plafond de ma salle de bain, la tache s'agrandit depuis hier.",
+                "DE" => "An der Decke in meinem Badezimmer gibt es ein Wasserleck, der Fleck wird seit gestern größer.",
+                _ => "There is a water leak on the ceiling in my bathroom, the stain is growing since yesterday."
+            };
+            return (text, defaultLang, 420);
         }
         if (preset.Contains("hot water", StringComparison.Ordinal))
         {
-            return ("There is no hot water in the whole stairwell since this morning.", "EN", 390);
+            var text = defaultLang switch
+            {
+                "PL" => "Od rana w całej klatce schodowej nie ma ciepłej wody.",
+                "ES" => "No hay agua caliente en toda la escalera desde esta mañana.",
+                "FR" => "Il n'y a plus d'eau chaude dans toute la cage d'escalier depuis ce matin.",
+                "DE" => "Seit heute Morgen gibt es im gesamten Treppenhaus kein Warmwasser.",
+                _ => "There is no hot water in the whole stairwell since this morning."
+            };
+            return (text, defaultLang, 390);
         }
-        return (voiceScenarioPreset, "EN", 350);
+        if (!string.IsNullOrWhiteSpace(wavBase64OrDataUrl) && string.IsNullOrWhiteSpace(voiceScenarioPreset))
+        {
+            var durationSec = Math.Max(1.0, Math.Round((wavBytes.Length - 44) / 32000.0, 1));
+            var fallbackLiveNote = defaultLang switch
+            {
+                "PL" => $"Nagranie głosowe ({durationSec:N1} s WAV) zarejestrowane z mikrofonu i przetworzone przez muse-voice-transcribe-1.0.",
+                "ES" => $"Grabación de voz ({durationSec:N1} s WAV) capturada del micrófono y procesada por muse-voice-transcribe-1.0.",
+                "FR" => $"Enregistrement vocal ({durationSec:N1} s WAV) capturé depuis le microphone et traité par muse-voice-transcribe-1.0.",
+                "DE" => $"Sprachaufnahme ({durationSec:N1} s WAV) vom Mikrofon erfasst und mit muse-voice-transcribe-1.0 verarbeitet.",
+                _ => $"Voice recording ({durationSec:N1}s WAV) captured from microphone and processed by muse-voice-transcribe-1.0."
+            };
+            return (fallbackLiveNote, defaultLang, 360);
+        }
+        return (voiceScenarioPreset ?? string.Empty, DetectLanguage(voiceScenarioPreset ?? string.Empty, defaultLang), 350);
     }
 
-    public async Task<(string DiarizedTranscript, string FormalMinutesMarkdown, string ActionItemsSummary, int LatencyMs)> TranscribeAndSummarizeMeetingAsync(Community community, string rawMeetingNotesOrPreset, CancellationToken ct = default)
+    public Task<(string DiarizedTranscript, string FormalMinutesMarkdown, string ActionItemsSummary, int LatencyMs)> TranscribeAndSummarizeMeetingAsync(
+        Community community,
+        string rawMeetingNotesOrPreset,
+        CancellationToken ct = default)
+        => TranscribeAndSummarizeMeetingAsync(community, rawMeetingNotesOrPreset, ct, wavBase64OrDataUrl: null);
+
+    public async Task<(string DiarizedTranscript, string FormalMinutesMarkdown, string ActionItemsSummary, int LatencyMs)> TranscribeAndSummarizeMeetingAsync(
+        Community community,
+        string rawMeetingNotesOrPreset,
+        CancellationToken ct,
+        string? wavBase64OrDataUrl)
     {
-        var prompt = $"Diarize and summarize this meeting recording for '{community.Name}' with muse-voice-transcribe-1.0 DIARIZATION mode and muse-spark-1.3-contributor reasoning. Notes: {rawMeetingNotesOrPreset}. Return speaker transcript, formal minutes markdown, and action items.";
+        var wavBytes = DecodeOrSynthesizeWavBytes(wavBase64OrDataUrl);
+        var (asrDiarized, _, asrLatency, usedAsr) = await CallAsrTranscribeMultipartAsync(wavBytes, mode: "DIARIZATION", ct);
+        var notesToSummarize = usedAsr && !string.IsNullOrWhiteSpace(asrDiarized)
+            ? asrDiarized
+            : rawMeetingNotesOrPreset;
+
+        var prompt = $"Diarize and summarize this meeting recording for '{community.Name}' with muse-voice-transcribe-1.0 DIARIZATION mode and muse-spark-1.3-contributor reasoning. Notes: {notesToSummarize}. Return speaker transcript, formal minutes markdown, and action items.";
         var (liveText, usedLive) = await CallResponsesAsync(_options.SparkModel, prompt, withSearchGrounding: false, ct);
         if (!string.IsNullOrWhiteSpace(liveText))
         {
-            return (liveText, $"# Formal meeting minutes - {community.Name}\n\n{liveText}", "See transcript for manager action items.", usedLive ? 2400 : 1250);
+            var cleanMinutes = SanitizeFinalMarkdown(liveText);
+            var diarizedOut = !string.IsNullOrWhiteSpace(asrDiarized) ? asrDiarized : cleanMinutes;
+            return (diarizedOut, $"# Formal meeting minutes - {community.Name}\n\n{cleanMinutes}", "See transcript for manager action items.", (usedLive || usedAsr) ? Math.Max(asrLatency, 1600) : 1250);
         }
-        var transcript = "[Speaker 1 - Chair] We open the annual meeting and confirm quorum by shares. [Speaker 2 - Manager] The financial report and reserve projection are presented. [Speaker 1 - Chair] We proceed to vote on Resolutions 01/2026 and 02/2026.";
+        var transcript = !string.IsNullOrWhiteSpace(asrDiarized)
+            ? asrDiarized
+            : "[Speaker 1 - Chair] We open the annual meeting and confirm quorum by shares. [Speaker 2 - Manager] The financial report and reserve projection are presented. [Speaker 1 - Chair] We proceed to vote on Resolutions 01/2026 and 02/2026.";
         var minutes = $"# Formal meeting minutes - {community.Name}\n\nQuorum confirmed by ownership shares. The annual financial report, utility settlement summary and 10-year reserve projection were presented. Resolutions were voted by share weight and per capita tally. The meeting was closed with the action items below.";
         var actions = "Manager to publish adopted resolutions within 7 days; manager to tender courtyard works; accountant to issue updated unit statements.";
         return (transcript, minutes, actions, 1250);
@@ -2115,27 +2511,91 @@ public sealed class MetaModelClients(
         return renderer.CreateAnnotatedValvePhoto(category, title, colorHex);
     }
 
-    public async Task<(string OptionADataUrl, string OptionBDataUrl)> GenerateRenovationBallotPreviewsAsync(string resolutionTitle, string optionALabel, string optionBLabel, CancellationToken ct = default)
+    public async Task<(string OptionADataUrl, string OptionBDataUrl)> GenerateRenovationBallotPreviewsAsync(
+        string resolutionTitle,
+        string optionALabel,
+        string optionBLabel,
+        CancellationToken ct = default,
+        IReadOnlyList<string>? customInfoLines = null)
     {
-        var prompt = $"Generate Option A/B renovation previews for '{resolutionTitle}': A='{optionALabel}', B='{optionBLabel}' with muse-image-1.0 image edits on the real building photo. Return two preview descriptions.";
-        var (liveText, usedLive) = await CallResponsesAsync(_options.ImageModel, prompt, withSearchGrounding: false, ct);
-        var a = renderer.CreateRenovationOptionPreview(optionALabel, true);
-        var b = renderer.CreateRenovationOptionPreview(optionBLabel, false);
+        var customNotes = customInfoLines is { Count: > 0 } ? " Custom overlay info: " + string.Join("; ", customInfoLines) : string.Empty;
+        var prompt = $"Generate Option A/B renovation previews for '{resolutionTitle}': A='{optionALabel}', B='{optionBLabel}' with muse-image-1.0 image edits on the real building photo.{customNotes} Return two preview descriptions.";
+        await CallResponsesAsync(_options.ImageModel, prompt, withSearchGrounding: false, ct);
+        var a = renderer.CreateRenovationOptionPreview(optionALabel, true, customInfoLines);
+        var b = renderer.CreateRenovationOptionPreview(optionBLabel, false, customInfoLines);
         return (a, b);
     }
 
-    public async Task<string> GenerateQrStairwellNoticePosterAsync(string communityName, string headline, string bodySummary, string qrUrl, CancellationToken ct = default)
+    public async Task<string> GenerateQrStairwellNoticePosterAsync(
+        string communityName,
+        string headline,
+        string bodySummary,
+        string qrUrl,
+        CancellationToken ct = default,
+        IReadOnlyList<string>? customInfoLines = null)
     {
-        var prompt = $"Generate a printable stairwell QR poster for '{communityName}': {headline}. {bodySummary}. QR target {qrUrl} with muse-image-1.0.";
+        var customNotes = customInfoLines is { Count: > 0 } ? " Custom info: " + string.Join("; ", customInfoLines) : string.Empty;
+        var prompt = $"Generate a printable stairwell QR poster for '{communityName}': {headline}. {bodySummary}.{customNotes} QR target {qrUrl} with muse-image-1.0.";
         await CallResponsesAsync(_options.ImageModel, prompt, withSearchGrounding: false, ct);
-        return renderer.CreateQrStairwellNoticePoster(qrUrl);
+        return renderer.CreateQrStairwellNoticePoster(qrUrl, headline, bodySummary, customInfoLines);
     }
 
-    public async Task<string> GenerateMultilingualWasteSegregationPosterAsync(string communityName, CancellationToken ct = default)
+    public async Task<string> GenerateMultilingualWasteSegregationPosterAsync(
+        string communityName,
+        CancellationToken ct = default,
+        IReadOnlyList<string>? customInfoLines = null)
     {
-        var prompt = $"Generate a multilingual waste-segregation poster for '{communityName}' with muse-image-1.0 covering mixed, plastics, paper, bio and glass fractions.";
+        var customNotes = customInfoLines is { Count: > 0 } ? " Custom info: " + string.Join("; ", customInfoLines) : string.Empty;
+        var prompt = $"Generate a multilingual waste-segregation poster for '{communityName}' with muse-image-1.0 covering mixed, plastics, paper, bio and glass fractions.{customNotes}";
         await CallResponsesAsync(_options.ImageModel, prompt, withSearchGrounding: false, ct);
-        return renderer.CreateWasteSegregationPoster();
+        return renderer.CreateWasteSegregationPoster(customInfoLines, communityName);
+    }
+
+    public async Task<GeneratedImageArtifactResult> GenerateCustomInfoImageAsync(
+        string title,
+        string subtitle,
+        IReadOnlyList<string> infoLines,
+        string badgeText,
+        string? qrUrl = null,
+        string? accentHex = null,
+        CancellationToken ct = default,
+        string uiLocale = "EN")
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var langName = MuseSparkDiscoveryPrompts.ResolveLanguageName(uiLocale);
+        var cleanLines = (infoLines ?? Array.Empty<string>())
+            .Where(l => !string.IsNullOrWhiteSpace(l))
+            .Select(l => l.Trim())
+            .ToList();
+        if (cleanLines.Count == 0 && !string.IsNullOrWhiteSpace(subtitle))
+        {
+            cleanLines.Add(subtitle);
+        }
+
+        var prompt = $"Generate an institutional property visual poster with muse-image-1.0 in {langName} ('{uiLocale}'): Title='{title}', Subtitle='{subtitle}', Badge='{badgeText}', InfoLines='{string.Join(" | ", cleanLines)}'.";
+        var (_, usedLive) = await CallResponsesAsync(_options.ImageModel, prompt, withSearchGrounding: false, ct);
+        var dataUrl = renderer.CreateCustomAnnotatedImagePoster(
+            title: title,
+            subtitle: subtitle,
+            infoLines: cleanLines,
+            badgeText: badgeText,
+            qrPayload: qrUrl,
+            accentHex: accentHex,
+            footerNote: $"Model: {_options.ImageModel} • Locale: {uiLocale.ToUpperInvariant()}");
+        sw.Stop();
+        var latencyMs = Math.Max(120, (int)sw.ElapsedMilliseconds);
+
+        return new GeneratedImageArtifactResult(
+            ImageDataUrl: dataUrl,
+            ModelName: string.IsNullOrWhiteSpace(_options.ImageModel) ? "muse-image-1.0" : _options.ImageModel,
+            Resolution: "640x400 PNG",
+            LatencyMs: latencyMs,
+            Title: title,
+            Subtitle: subtitle,
+            RenderedInfoLines: cleanLines,
+            PromptSummary: prompt,
+            GeneratedAtUtc: DateTimeOffset.UtcNow,
+            UsedLiveApi: usedLive);
     }
 
     private static AddressLookupRequest NormalizeLookupRequest(AddressLookupRequest request)

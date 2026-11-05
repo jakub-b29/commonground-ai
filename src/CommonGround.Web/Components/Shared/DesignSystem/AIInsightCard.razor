@@ -1,3 +1,6 @@
+@inject WorkspaceLocalization Loc
+@implements IDisposable
+
 <div class="ai-card @CssClass" style="padding: 0.9rem 1rem; @Style">
     <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.5rem;">
         <div style="display: inline-flex; align-items: center; gap: 0.45rem; font-weight: 600; font-size: 0.85rem; color: var(--text-primary);">
@@ -7,11 +10,11 @@
         <div style="display: inline-flex; align-items: center; gap: 0.4rem;">
             @if (!string.IsNullOrWhiteSpace(Model))
             {
-                <AIBadge Label="@BadgeLabel" Model="@Model" ShowPulseDot="false" />
+                <AIBadge Label="@ResolvedBadgeLabel" Model="@Model" ShowPulseDot="false" />
             }
             @if (ConfidencePercent.HasValue)
             {
-                <span class="cg-badge cg-badge-ok mono">@ConfidencePercent.Value.ToString("N0")% confidence</span>
+                <span class="cg-badge cg-badge-ok mono">@(ConfidencePercent.Value.ToString("N0") + Loc.T("ai.confidenceSuffix"))</span>
             }
         </div>
     </div>
@@ -36,12 +39,31 @@
 @code {
     [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
     [Parameter] public string? Summary { get; set; }
-    [Parameter] public string BadgeLabel { get; set; } = "AI Analysis";
+    [Parameter] public string? BadgeLabel { get; set; }
     [Parameter] public string? Model { get; set; }
     [Parameter] public double? ConfidencePercent { get; set; }
     [Parameter] public string? CssClass { get; set; }
     [Parameter] public string? Style { get; set; }
     [Parameter] public RenderFragment? ChildContent { get; set; }
     [Parameter] public RenderFragment? Actions { get; set; }
+
+    private Action? _locHandler;
+
+    private string ResolvedBadgeLabel => string.IsNullOrWhiteSpace(BadgeLabel) ? Loc.T("ai.analysisBadge") : BadgeLabel;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null)
+        {
+            Loc.OnChange -= _locHandler;
+        }
+    }
 }
 

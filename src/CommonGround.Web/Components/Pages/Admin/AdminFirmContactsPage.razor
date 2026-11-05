@@ -6,67 +6,69 @@
 @inject IAppDbContextFactory DbFactory
 @inject CommonGroundWorkspaceService Workspace
 @inject NavigationManager Nav
+@inject WorkspaceLocalization Loc
+@implements IDisposable
 
-<PageTitle>Firm contacts — CommonGround</PageTitle>
+<PageTitle>@Loc.T("page.adminContactsTitle") — CommonGround</PageTitle>
 
-<PageHeader Category="Firm Administration"
-            Title="Firm contacts"
-            Subtitle="Firm and association legal details, emergency dispatch numbers, and email confirmation policy.">
+<PageHeader Category="@Loc.T("admin.category")"
+            Title="@Loc.T("page.adminContactsTitle")"
+            Subtitle="@Loc.T("page.adminContactsLead")">
     <Actions>
-        <a class="cg-btn" href="/admin">Back to overview</a>
+        <a class="cg-btn" href="/admin">@Loc.T("action.backToOverview")</a>
     </Actions>
 </PageHeader>
 
 @if (!_loaded)
 {
-    <p role="status" aria-live="polite">Loading firm contacts.</p>
+    <p role="status" aria-live="polite">@Loc.T("msg.loadingContacts")</p>
 }
 else if (!_isAuthorized || _firm is null)
 {
-    <div class="cg-card"><p class="cg-empty-text">Access denied. Firm manager permission is required.</p></div>
+    <div class="cg-card"><p class="cg-empty-text">@Loc.T("msg.accessDeniedFirm")</p></div>
 }
 else
 {
     <div class="cg-stack">
         <div class="cg-card">
             <div class="cg-section-header">
-                <h2>Unified Management Firm &amp; Governance Directory</h2>
-                <span class="cg-badge mono">Firm Code: @_firm.FirmGroupCode</span>
+                <h2>@Loc.T("admin.contacts.directoryTitle")</h2>
+                <span class="cg-badge mono">@Loc.T("admin.contacts.firmCode"): @_firm.FirmGroupCode</span>
             </div>
             <p style="color: var(--text-secondary); font-size: 0.8125rem; margin-block-end: 0.85rem;">
-                Unified administrative, legal, emergency dispatch, and association governance contacts shared across your portfolio. Individual Community Contacts are configured per property under each Community Profile.
+                @Loc.T("admin.contacts.directoryLead")
             </p>
             <div class="cg-grid-3">
-                <div><label for="admin-firm-legal">Management firm legal name</label><input id="admin-firm-legal" @bind="_firm.ManagingFirmLegalName" /></div>
-                <div><label for="admin-firm-tax">Firm tax ID / registration</label><input id="admin-firm-tax" @bind="_firm.FirmTaxIdOrNip" /></div>
-                <div><label for="admin-firm-lic">Professional license number</label><input id="admin-firm-lic" @bind="_firm.LicenseNumber" /></div>
-                <div><label for="admin-firm-dir">Managing director / principal</label><input id="admin-firm-dir" @bind="_firm.LeadDirectorName" /></div>
-                <div><label for="admin-firm-office">Headquarters / office address</label><input id="admin-firm-office" @bind="_firm.OfficeAddress" /></div>
-                <div><label for="admin-firm-support">Administration &amp; support email</label><input id="admin-firm-support" type="email" @bind="_firm.SupportEmail" /></div>
-                <div><label for="admin-firm-dispatch">24/7 emergency dispatch phone</label><input id="admin-firm-dispatch" type="tel" @bind="_firm.EmergencyDispatchPhone" /></div>
-                <div><label for="admin-hoa-pres">Portfolio governance / board liaison</label><input id="admin-hoa-pres" @bind="_firm.BoardPresidentName" /></div>
-                <div><label for="admin-hoa-email">Governance &amp; board desk email</label><input id="admin-hoa-email" type="email" @bind="_firm.HoaBoardEmail" /></div>
+                <div><label for="admin-firm-legal">@Loc.T("admin.contacts.legalName")</label><input id="admin-firm-legal" @bind="_firm.ManagingFirmLegalName" /></div>
+                <div><label for="admin-firm-tax">@Loc.T("admin.contacts.taxId")</label><input id="admin-firm-tax" @bind="_firm.FirmTaxIdOrNip" /></div>
+                <div><label for="admin-firm-lic">@Loc.T("admin.contacts.license")</label><input id="admin-firm-lic" @bind="_firm.LicenseNumber" /></div>
+                <div><label for="admin-firm-dir">@Loc.T("admin.contacts.director")</label><input id="admin-firm-dir" @bind="_firm.LeadDirectorName" /></div>
+                <div><label for="admin-firm-office">@Loc.T("admin.contacts.office")</label><input id="admin-firm-office" @bind="_firm.OfficeAddress" /></div>
+                <div><label for="admin-firm-support">@Loc.T("admin.contacts.supportEmail")</label><input id="admin-firm-support" type="email" @bind="_firm.SupportEmail" /></div>
+                <div><label for="admin-firm-dispatch">@Loc.T("admin.contacts.dispatchPhone")</label><input id="admin-firm-dispatch" type="tel" @bind="_firm.EmergencyDispatchPhone" /></div>
+                <div><label for="admin-hoa-pres">@Loc.T("admin.contacts.boardLiaison")</label><input id="admin-hoa-pres" @bind="_firm.BoardPresidentName" /></div>
+                <div><label for="admin-hoa-email">@Loc.T("admin.contacts.boardEmail")</label><input id="admin-hoa-email" type="email" @bind="_firm.HoaBoardEmail" /></div>
             </div>
             <div class="cg-toolbar" style="margin-top: 0.85rem;">
-                <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="OnSaveAsync">Save firm contact directory</button>
+                <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="OnSaveAsync">@Loc.T("action.saveContacts")</button>
             </div>
         </div>
 
         <div class="cg-card">
             <div class="cg-section-header">
-                <h2>Firm security</h2>
+                <h2>@Loc.T("admin.contacts.securityTitle")</h2>
                 <span class="cg-badge mono">@_firm.FirmGroupCode</span>
             </div>
             <div>
                 <label class="cg-check-row" for="admin-require-email">
                     <input id="admin-require-email" type="checkbox" checked="@_firm.RequireEmailConfirmation" @onchange="OnEmailPolicyChangedAsync" disabled="@_isBusy" />
-                    <span>Require email confirmation for new members</span>
+                    <span>@Loc.T("admin.contacts.requireEmail")</span>
                 </label>
-                <p style="color: var(--text-secondary); font-size: 0.78125rem; margin-block-start: 0.375rem;">When enabled, new accounts stay pending until the email link is confirmed.</p>
+                <p style="color: var(--text-secondary); font-size: 0.78125rem; margin-block-start: 0.375rem;">@Loc.T("admin.contacts.requireEmailHint")</p>
             </div>
             <div class="cg-subcard" style="margin-block-start: 0.85rem;">
-                <strong>Join code approval note</strong>
-                <p style="color: var(--text-secondary); font-size: 0.78125rem; margin-block-start: 0.375rem;">Share the join code <code class="mono num">@_firm.FirmGroupCode</code> with new members. They join with the link <a href="/accept-invite?code=@Uri.EscapeDataString(_firm.FirmGroupCode)">@($"/accept-invite?code={_firm.FirmGroupCode}")</a>. Every join request enters the approval queue and needs manager approval before access is granted.</p>
+                <strong>@Loc.T("admin.contacts.joinNoteTitle")</strong>
+                <p style="color: var(--text-secondary); font-size: 0.78125rem; margin-block-start: 0.375rem;">@Loc.T("admin.contacts.joinNoteLead") <code class="mono num">@_firm.FirmGroupCode</code> <a href="/accept-invite?code=@Uri.EscapeDataString(_firm.FirmGroupCode)">@($"/accept-invite?code={_firm.FirmGroupCode}")</a>. @Loc.T("admin.contacts.joinNoteTail")</p>
             </div>
         </div>
     </div>
@@ -84,9 +86,13 @@ else
     private bool _isAuthorized;
     private bool _isBusy;
     private string _message = string.Empty;
+    private Action? _locHandler;
 
     protected override async Task OnInitializedAsync()
     {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
         try
         {
             var firmId = await Access.GetFirmIdAsync();
@@ -139,7 +145,7 @@ else
         {
             var role = await Access.GetRoleAsync() ?? WorkspaceSecurityRole.FirmManager;
             _firm = await Workspace.SetFirmEmailConfirmationPolicyAsync(_firm.Id, enabled, role);
-            _message = "Email confirmation policy updated.";
+            _message = Loc.T("msg.emailPolicyUpdated");
         }
         catch (Exception ex)
         {
@@ -178,7 +184,7 @@ else
                 _firm.HoaBoardEmail,
                 _firm.HoaHotlinePhone,
                 role);
-            _message = "Contact details saved.";
+            _message = Loc.T("msg.contactsSaved");
         }
         catch (Exception ex)
         {
@@ -188,5 +194,10 @@ else
         {
             _isBusy = false;
         }
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
     }
 }

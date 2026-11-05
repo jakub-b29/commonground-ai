@@ -5,45 +5,45 @@
 @inject WorkspaceLocalization Loc
 @implements IDisposable
 
-<PageTitle>Join firm - CommonGround</PageTitle>
+<PageTitle>@Loc.T("joinFirm.title") - CommonGround</PageTitle>
 
 <div class="cg-auth-heading">
-    <h1>Join firm</h1>
-    <p>Join firm @FirmCode with a pending approval request.</p>
+    <h1>@Loc.T("joinFirm.heading")</h1>
+    <p>@string.Format(System.Globalization.CultureInfo.InvariantCulture, Loc.T("joinFirm.leadFmt"), FirmCode)</p>
 </div>
 
 <form method="post" action="/auth/join-firm" class="cg-form-stack">
     <input type="hidden" name="firmCode" value="@FirmCode" />
     <div>
-        <label for="join-name">Full name</label>
+        <label for="join-name">@Loc.T("form.name")</label>
         <input id="join-name" name="fullName" required autocomplete="name" />
     </div>
     <div>
-        <label for="join-email">Work email</label>
+        <label for="join-email">@Loc.T("form.workEmail")</label>
         <input id="join-email" name="email" type="email" required autocomplete="username" />
     </div>
     <div>
-        <label for="join-phone">Phone number</label>
+        <label for="join-phone">@Loc.T("form.phone")</label>
         <input id="join-phone" name="phone" type="tel" autocomplete="tel" />
     </div>
     <div>
-        <label for="join-unit">Unit number</label>
+        <label for="join-unit">@Loc.T("form.unitNumber")</label>
         <input id="join-unit" name="unit" autocomplete="off" />
     </div>
     <div>
-        <label for="join-proof">Ownership proof or note</label>
+        <label for="join-proof">@Loc.T("form.proof")</label>
         <input id="join-proof" name="proof" autocomplete="off" />
     </div>
     <div>
-        <label for="join-pass">Password</label>
+        <label for="join-pass">@Loc.T("form.password")</label>
         <input id="join-pass" name="password" type="password" required minlength="8" autocomplete="new-password" />
     </div>
-    <button type="submit" class="cg-btn cg-btn-primary cg-btn-block">Request to join</button>
+    <button type="submit" class="cg-btn cg-btn-primary cg-btn-block">@Loc.T("joinFirm.submit")</button>
 </form>
 
 <div class="cg-auth-links">
-    <a href="/login">Sign in</a>
-    <a href="/register-firm">Register a new firm</a>
+    <a href="/login">@Loc.T("nav.signin")</a>
+    <a href="/register-firm">@Loc.T("auth.createFirmLink")</a>
 </div>
 
 @code {

@@ -13,11 +13,21 @@
         <select id="visRes" value="@_selectedId" @onchange="OnSelect">
             @foreach (var r in Resolutions.OrderBy(r => r.Number))
             {
-                <option value="@r.Id" selected="@(_selectedId == r.Id)">@r.Number – @r.Title</option>
+                <option value="@r.Id" selected="@(_selectedId == r.Id)" @key="r.Id">@r.Number – @r.Title</option>
             }
         </select>
     </div>
-    <div class="cg-toolbar">
+
+    <div style="margin-top: 0.6rem;">
+        <label for="visCustomInfo">@Loc.T("image.customInfoLabel")</label>
+        <input id="visCustomInfo"
+               type="text"
+               class="cg-input"
+               placeholder="@Loc.T("image.linesPlaceholder")"
+               @bind="_customInfoLinesRaw" />
+    </div>
+
+    <div class="cg-toolbar" style="margin-top: 0.65rem;">
         <button type="button" class="cg-btn cg-btn-primary" disabled="@(_isBusy || _selectedId == Guid.Empty)" @onclick="OnVisuals">@Loc.T("action.generatePreviews")</button>
         <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="OnMinutes">@Loc.T("action.transcribe")</button>
         <a class="cg-btn" href="/api/export/minutes-pdf/@CommunityId">@Loc.T("action.exportPdf")</a>
@@ -26,7 +36,11 @@
 
     @if (_selected is not null)
     {
-        <div class="cg-grid-2" style="margin-block-start: 0.75rem;">
+        <div class="mono cg-text-xs" style="margin-top: 0.55rem; color: var(--accent-primary);">
+            @Loc.T("image.metaLabel"): muse-image-1.0 • 640×400 PNG @( _renderedLines.Count > 0 ? $"• {string.Join(" | ", _renderedLines)}" : "" )
+        </div>
+
+        <div class="cg-grid-2" style="margin-block-start: 0.55rem;">
             <div>
                 <div class="cg-photo-caption">@(_selected.OptionALabel ?? "Option A")</div>
                 @if (!string.IsNullOrWhiteSpace(_selected.OptionAPreviewDataUrl))
@@ -67,6 +81,8 @@
     private Resolution? _selected;
     private bool _isBusy;
     private string _message = string.Empty;
+    private string _customInfoLinesRaw = "5-year facade warranty preserved; Zero special assessment surcharge; Verified by statutory compliance";
+    private List<string> _renderedLines = new();
     private Action? _locHandler;
 
     protected override async Task OnInitializedAsync()
@@ -102,8 +118,13 @@
         _isBusy = true;
         try
         {
-            _selected = await Workspace.GenerateRenovationVisualsAndQrPosterAsync(CommunityId, _selected.Id);
-            _message = Loc.T("msg.previewsGenerated");
+            var customLines = (_customInfoLinesRaw ?? string.Empty)
+                .Split(new[] { ';', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .ToList();
+            _renderedLines = customLines;
+            _selected = await Workspace.GenerateRenovationVisualsAndQrPosterAsync(CommunityId, _selected.Id, default, customLines);
+            _message = $"{Loc.T("msg.previewsGenerated")} (muse-image-1.0 • 640×400 PNG)";
             await OnChanged.InvokeAsync();
         }
         catch (Exception ex) { _message = ex.Message; }

@@ -7,7 +7,7 @@
     <Authorized>
         <header class="cg-top-header" role="banner">
             <div class="cg-header-left">
-                <nav class="cg-breadcrumb-trail" aria-label="Breadcrumb">
+                <nav class="cg-breadcrumb-trail" aria-label="@Loc.T("shell.breadcrumb")">
                     <span class="mono" style="color: var(--accent-ai-light); font-weight: 600;">CommonGround</span>
                     <span class="cg-breadcrumb-sep">/</span>
                     <span class="cg-breadcrumb-current">@GetCurrentRouteLabel()</span>
@@ -19,8 +19,8 @@
             <div class="cg-header-right">
                 <ThemeSwitcher Compact="false" />
                 <div class="cg-topbar-field">
-                    <label for="lang-select" class="visually-hidden">Language</label>
-                    <select id="lang-select" value="@Loc.CurrentLanguage" @onchange="OnLanguageChanged" disabled="@_isBusy" title="Interface language" style="min-width: 64px;">
+                    <label for="lang-select" class="visually-hidden">@Loc.T("form.language")</label>
+                    <select id="lang-select" value="@Loc.CurrentLanguage" @onchange="OnLanguageChanged" disabled="@_isBusy" title="@Loc.T("form.language")" style="min-width: 64px;">
                         @foreach (var lang in Loc.SupportedLanguages)
                         {
                             <option value="@lang" selected="@(Loc.CurrentLanguage == lang)" @key="lang">@lang.ToUpperInvariant()</option>
@@ -28,21 +28,21 @@
                     </select>
                 </div>
                 <div class="cg-topbar-actions">
-                    <button type="button" class="cg-btn cg-btn-ai cg-btn-sm @(UiState.IsSparkAgentChatOpen ? "cg-btn-selected" : "")" disabled="@_isBusy" @onclick="OnToggleSparkAgent" title="Spark Automation Agent (muse-spark-1.3)">
+                    <button type="button" class="cg-btn cg-btn-ai cg-btn-sm @(UiState.IsSparkAgentChatOpen ? "cg-btn-selected" : "")" disabled="@_isBusy" @onclick="OnToggleSparkAgent" title="@Loc.T("shell.sparkAgentTitle")">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="margin-right: 0.35rem;">
                             <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
                         </svg>
-                        <span>Spark Agent</span>
+                        <span>@Loc.T("shell.sparkAgent")</span>
                     </button>
-                    <button type="button" class="cg-btn cg-btn-ai cg-btn-sm" disabled="@_isBusy" @onclick="OnToggleQuery" title="Portfolio query (muse-spark-1.3)">
+                    <button type="button" class="cg-btn cg-btn-ai cg-btn-sm" disabled="@_isBusy" @onclick="OnToggleQuery" title="@Loc.T("shell.portfolioQueryTitle")">
                         <span class="ai-dot" aria-hidden="true"></span>
-                        <span>Portfolio query</span>
+                        <span>@Loc.T("shell.portfolioQuery")</span>
                     </button>
-                    <button type="button" class="cg-btn cg-btn-sm @(UiState.IsEmergencyDrawerOpen ? "cg-btn-danger" : "")" disabled="@_isBusy" @onclick="OnToggleEmergency" title="Emergency contacts">
-                        <span>Emergency contacts</span>
+                    <button type="button" class="cg-btn cg-btn-sm @(UiState.IsEmergencyDrawerOpen ? "cg-btn-danger" : "")" disabled="@_isBusy" @onclick="OnToggleEmergency" title="@Loc.T("shell.emergencyContacts")">
+                        <span>@Loc.T("shell.emergencyContacts")</span>
                     </button>
                     <form method="post" action="/auth/logout" class="cg-inline-form">
-                        <button type="submit" class="cg-btn cg-btn-sm cg-btn-ghost">Sign out</button>
+                        <button type="submit" class="cg-btn cg-btn-sm cg-btn-ghost">@Loc.T("nav.signOut")</button>
                     </form>
                 </div>
             </div>
@@ -70,37 +70,37 @@
     private string GetCurrentRouteLabel()
     {
         var relative = Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0].Trim('/');
-        if (string.IsNullOrEmpty(relative)) return "Workspace Hub";
-        if (relative.Equals("admin", StringComparison.OrdinalIgnoreCase)) return "Firm Administration · Overview";
-        if (relative.Equals("admin/members", StringComparison.OrdinalIgnoreCase)) return "Firm Administration · Members & Approvals";
-        if (relative.Equals("admin/properties", StringComparison.OrdinalIgnoreCase)) return "Firm Administration · Properties Registry";
-        if (relative.Equals("admin/properties/new", StringComparison.OrdinalIgnoreCase)) return "Firm Administration · New Property Wizard";
-        if (relative.Equals("admin/contacts", StringComparison.OrdinalIgnoreCase)) return "Firm Administration · Contacts";
-        if (relative.Equals("admin/audit", StringComparison.OrdinalIgnoreCase)) return "Firm Administration · Security Audit Trail";
+        if (string.IsNullOrEmpty(relative)) return Loc.T("shell.routeWorkspaceHub");
+        if (relative.Equals("admin", StringComparison.OrdinalIgnoreCase)) return Loc.T("shell.routeFirmOverview");
+        if (relative.Equals("admin/members", StringComparison.OrdinalIgnoreCase)) return Loc.T("shell.routeFirmMembers");
+        if (relative.Equals("admin/properties", StringComparison.OrdinalIgnoreCase)) return Loc.T("shell.routeFirmRegistry");
+        if (relative.Equals("admin/properties/new", StringComparison.OrdinalIgnoreCase)) return Loc.T("shell.routeFirmNew");
+        if (relative.Equals("admin/contacts", StringComparison.OrdinalIgnoreCase)) return Loc.T("shell.routeFirmContacts");
+        if (relative.Equals("admin/audit", StringComparison.OrdinalIgnoreCase)) return Loc.T("shell.routeFirmAudit");
         if (relative.StartsWith("properties/", StringComparison.OrdinalIgnoreCase))
         {
             var segments = relative.Split('/', StringSplitOptions.RemoveEmptyEntries);
             var section = segments.Length >= 3 ? segments[2] : "overview";
             return section.ToLowerInvariant() switch
             {
-                "overview" => "Property Workspace · Overview",
-                "units" => "Property Workspace · Units & Riser Matrix",
-                "infrastructure" => "Property Workspace · Infrastructure & Permits",
-                "maintenance" => "Property Workspace · Work Orders & SAM 3.1",
-                "financials" => "Property Workspace · Accounting & Utilities",
-                "governance" => "Property Workspace · Governance & Voting",
-                "team" => "Property Workspace · Community Team",
-                "settings" => "Property Workspace · Property Settings",
-                _ => "Property Workspace"
+                "overview" => Loc.T("shell.routeWsOverview"),
+                "units" => Loc.T("shell.routeWsUnits"),
+                "infrastructure" => Loc.T("shell.routeWsInfra"),
+                "maintenance" => Loc.T("shell.routeWsMaint"),
+                "financials" => Loc.T("shell.routeWsFinancials"),
+                "governance" => Loc.T("shell.routeWsGovernance"),
+                "team" => Loc.T("shell.routeWsTeam"),
+                "settings" => Loc.T("shell.routeWsSettings"),
+                _ => Loc.T("shell.routeWsDefault")
             };
         }
         return relative.ToLowerInvariant() switch
         {
-            "my-unit" => "Personal · My Unit Dossier",
-            "account" => "Personal · Account & Profile",
-            "pending" => "Personal · Pending Membership Status",
-            "choose-membership" => "Personal · Switch Membership",
-            _ => "Workspace"
+            "my-unit" => Loc.T("shell.routePersonalMyUnit"),
+            "account" => Loc.T("shell.routePersonalAccount"),
+            "pending" => Loc.T("shell.routePersonalPending"),
+            "choose-membership" => Loc.T("shell.routePersonalChoose"),
+            _ => Loc.T("shell.routeWorkspace")
         };
     }
 

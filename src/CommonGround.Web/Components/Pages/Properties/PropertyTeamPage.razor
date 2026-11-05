@@ -7,31 +7,31 @@
 @inject IAppDbContextFactory DbFactory
 @implements IDisposable
 
-<PageTitle>Property team — CommonGround</PageTitle>
+<PageTitle>@Loc.T("property.team.pageTitle")</PageTitle>
 
-<PageHeader Category="Community Roster & Access"
-            ContextCode="@($"{_rows.Count} members")"
-            Title="Property team & assigned members"
-            Subtitle="Assigned property managers, accounting auditors, maintenance dispatchers, contractors, and verified unit residents.">
+<PageHeader Category="@Loc.T("property.team.category")"
+            ContextCode="@($"{_rows.Count} {Loc.T("property.team.membersSuffix")}")"
+            Title="@Loc.T("property.team.title")"
+            Subtitle="@Loc.T("property.team.subtitle")">
     <Actions>
-        <a class="cg-btn cg-btn-sm cg-btn-primary" href="/admin/residents">Residents &amp; Registrations</a>
-        <a class="cg-btn cg-btn-sm" href="@($"/properties/{Id}/units")">Units &amp; Occupancy</a>
-        <a class="cg-btn cg-btn-sm" href="/admin/members">Manage members &amp; invitations</a>
+        <a class="cg-btn cg-btn-sm cg-btn-primary" href="/admin/residents">@Loc.T("property.team.residentsLink")</a>
+        <a class="cg-btn cg-btn-sm" href="@($"/properties/{Id}/units")">@Loc.T("property.team.unitsLink")</a>
+        <a class="cg-btn cg-btn-sm" href="/admin/members">@Loc.T("property.team.membersLink")</a>
     </Actions>
 </PageHeader>
 
 <RequirePropertyAccess PropertyId="Id">
     @if (!_loaded)
     {
-        <p role="status" aria-live="polite">Loading.</p>
+        <p role="status" aria-live="polite">@Loc.T("msg.loading")</p>
     }
     else
     {
         <div class="bento-card">
             <div class="bento-card-header">
                 <div class="cg-panel-title">
-                    <span>Assigned members</span>
-                    <span class="cg-badge cg-badge-info">@_rows.Count members</span>
+                    <span>@Loc.T("property.team.assigned")</span>
+                    <span class="cg-badge cg-badge-info">@_rows.Count @Loc.T("property.team.membersSuffix")</span>
                 </div>
             </div>
             <div class="bento-card-body" style="padding: 0;">
@@ -39,11 +39,11 @@
                     <table class="cg-table">
                         <thead>
                             <tr>
-                                <th>Name</th>
-                                <th>Email</th>
-                                <th>Role</th>
-                                <th>Linked unit</th>
-                                <th>Primary manager</th>
+                                <th>@Loc.T("table.name")</th>
+                                <th>@Loc.T("form.email")</th>
+                                <th>@Loc.T("table.role")</th>
+                                <th>@Loc.T("table.linkedUnit")</th>
+                                <th>@Loc.T("table.primaryManager")</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -57,11 +57,11 @@
                                     <td>
                                         @if (row.IsPrimaryManager)
                                         {
-                                            <span class="cg-badge cg-badge-ok">Primary manager</span>
+                                            <span class="cg-badge cg-badge-ok">@Loc.T("property.team.primaryBadge")</span>
                                         }
                                         else
                                         {
-                                            <span style="color: var(--text-muted);">No</span>
+                                            <span style="color: var(--text-muted);">@Loc.T("property.team.noBadge")</span>
                                         }
                                     </td>
                                 </tr>

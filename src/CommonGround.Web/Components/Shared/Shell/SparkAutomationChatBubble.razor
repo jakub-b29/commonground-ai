@@ -3,9 +3,11 @@
 @using CommonGround.Domain.Entities
 @using CommonGround.Domain.Enums
 @using CommonGround.Web.Services
-@using System.Text.Json
+@using Microsoft.JSInterop
 @inject IMuseSparkAutomationAgentService AgentService
 @inject IMuseVoiceTranscriber VoiceTranscriber
+@inject CommonGroundWorkspaceService Workspace
+@inject IJSRuntime JS
 @inject WorkspaceUiState UiState
 @inject WorkspaceLocalization Loc
 @inject WorkspaceAccessService Access
@@ -18,21 +20,21 @@
     <button type="button"
             class="cg-spark-launcher @(_isRunning ? "cg-spark-launcher-active" : "")"
             @onclick="OnOpenChat"
-            title="Open Spark Automation Agent (muse-spark-1.3)"
-            aria-label="Open Spark Automation Agent">
+            title="@Loc.T("spark.launcherTitle")"
+            aria-label="@Loc.T("spark.launcherAria")">
         <span class="cg-spark-icon-wrapper" aria-hidden="true">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
             </svg>
         </span>
-        <span class="cg-spark-launcher-label">Spark Agent</span>
+        <span class="cg-spark-launcher-label">@Loc.T("spark.launcherLabel")</span>
         @if (_isRunning)
         {
             <span class="cg-spark-pulse-dot" aria-hidden="true"></span>
         }
         else if (_steps.Count > 0)
         {
-            <span class="cg-spark-step-counter" title="Executed steps">@_steps.Count</span>
+            <span class="cg-spark-step-counter" title="@Loc.T("spark.launcherStepsTitle")">@_steps.Count</span>
         }
     </button>
 }
@@ -41,7 +43,7 @@ else
     <!-- Floating Chat Bubble Window -->
     <aside class="cg-spark-chat-window @(UiState.IsSparkAgentExpanded ? "cg-spark-chat-expanded" : "")"
            role="dialog"
-           aria-label="Spark Automation Agent"
+           aria-label="@Loc.T("spark.dialogAria")"
            aria-modal="false">
         
         <!-- Header -->
@@ -54,11 +56,11 @@ else
                 </span>
                 <div>
                     <div style="display: flex; align-items: center; gap: 0.45rem;">
-                        <h2 class="cg-spark-title">Spark Automation Agent</h2>
+                        <h2 class="cg-spark-title">@Loc.T("spark.chatTitle")</h2>
                         <span class="cg-spark-badge-pill">muse-spark-1.3</span>
                     </div>
                     <div class="cg-spark-subtitle">
-                        ReAct Loop · 43 Tools · Server-Side Guard
+                        @Loc.T("spark.chatSubtitle")
                     </div>
                 </div>
             </div>
@@ -69,8 +71,8 @@ else
                 <button type="button"
                         class="cg-btn-icon"
                         @onclick="OnToggleExpanded"
-                        title="@(UiState.IsSparkAgentExpanded ? "Restore compact window" : "Expand window")"
-                        aria-label="@(UiState.IsSparkAgentExpanded ? "Restore compact window" : "Expand window")">
+                        title="@Loc.T(UiState.IsSparkAgentExpanded ? "spark.restoreWindow" : "spark.expandWindow")"
+                        aria-label="@Loc.T(UiState.IsSparkAgentExpanded ? "spark.restoreWindow" : "spark.expandWindow")">
                     @if (UiState.IsSparkAgentExpanded)
                     {
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -94,8 +96,8 @@ else
                 <button type="button"
                         class="cg-btn-icon"
                         @onclick="OnClearHistory"
-                        title="Clear conversation and steps"
-                        aria-label="Clear conversation">
+                        title="@Loc.T("spark.clearTitle")"
+                        aria-label="@Loc.T("spark.clearAria")">
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <polyline points="3 6 5 6 21 6"></polyline>
                         <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
@@ -105,8 +107,8 @@ else
                 <button type="button"
                         class="cg-btn-icon"
                         @onclick="OnCloseChat"
-                        title="Close chat window"
-                        aria-label="Close chat">
+                        title="@Loc.T("spark.closeTitle")"
+                        aria-label="@Loc.T("spark.closeAria")">
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <line x1="18" y1="6" x2="6" y2="18"></line>
                         <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -121,23 +123,23 @@ else
                 <button type="button"
                         class="cg-spark-mode-btn @(!_stepByStepMode ? "active" : "")"
                         @onclick="() => SetStepByStepMode(false)"
-                        title="Autonomous Loop: automatically executes permitted steps to completion">
-                    <span>Autonomous Loop</span>
+                        title="@Loc.T("spark.modeAutoTitle")">
+                    <span>@Loc.T("spark.modeAuto")</span>
                 </button>
                 <button type="button"
                         class="cg-spark-mode-btn @(_stepByStepMode ? "active" : "")"
                         @onclick="() => SetStepByStepMode(true)"
-                        title="Step-by-Step Interactive Mode: pauses before or after each tool call for confirmation">
-                    <span>Step-by-Step</span>
+                        title="@Loc.T("spark.modeStepTitle")">
+                    <span>@Loc.T("spark.modeStep")</span>
                 </button>
             </div>
 
             <div class="cg-spark-context-tags">
-                <span class="cg-context-tag" title="Active community scope">
-                    <span class="mono">@(UiState.SelectedCommunityId.HasValue ? "Community Scoped" : "Portfolio Wide")</span>
+                <span class="cg-context-tag" title="@Loc.T("spark.scopeTitle")">
+                    <span class="mono">@(!string.IsNullOrWhiteSpace(_lastResult?.EffectivePropertyName) ? _lastResult.EffectivePropertyName : (UiState.SelectedCommunityId.HasValue ? Loc.T("spark.scopeCommunity") : Loc.T("spark.scopePortfolio")))</span>
                 </span>
-                <span class="cg-context-tag cg-context-role" title="Current security role">
-                    <span class="mono">@UiState.ActiveSecurityRole</span>
+                <span class="cg-context-tag cg-context-role" title="@StatusTextOrFallback("spark.highestPermissionTitle", "Highest account permission resolved for target property")">
+                    <span class="mono">@(!string.IsNullOrWhiteSpace(_lastResult?.EffectiveRole) ? _lastResult.EffectiveRole : UiState.ActiveSecurityRole.ToString())</span>
                 </span>
             </div>
         </div>
@@ -150,25 +152,26 @@ else
                 <div class="cg-spark-welcome">
                     <div class="cg-spark-welcome-badge">
                         <span class="ai-dot" aria-hidden="true"></span>
-                        <span>Autonomous ReAct Operations</span>
+                        <span>@Loc.T("spark.welcomeBadge")</span>
                     </div>
-                    <h3 class="cg-spark-welcome-title">How can Spark Agent assist your operations?</h3>
+                    <h3 class="cg-spark-welcome-title">@Loc.T("spark.welcomeTitle")</h3>
                     <p class="cg-spark-welcome-desc">
-                        Direct access to 43 tools across units, residents, financials, utility settlements, warranties, and emergency systems with real-time permission boundaries.
+                        @Loc.T("spark.welcomeDesc")
                     </p>
 
                     <div class="cg-spark-recipes-section">
                         <div class="cg-spark-recipes-header">
-                            <span>Role-Aware Quick-Start Recipes (@UiState.ActiveSecurityRole)</span>
+                            <span>@Loc.T("spark.recipesHeader") (@UiState.ActiveSecurityRole)</span>
                         </div>
                         <div class="cg-spark-recipes-grid">
                             @foreach (var recipe in GetRoleRecipes())
                             {
                                 <button type="button"
                                         class="cg-spark-recipe-card"
-                                        @onclick="() => SelectRecipe(recipe.Goal)">
-                                    <div class="cg-spark-recipe-title">@recipe.Title</div>
-                                    <div class="cg-spark-recipe-goal">@recipe.Goal</div>
+                                        @key="recipe.TitleKey"
+                                        @onclick="() => SelectRecipe(ResolveRecipeGoal(recipe))">
+                                    <div class="cg-spark-recipe-title">@ResolveRecipeTitle(recipe)</div>
+                                    <div class="cg-spark-recipe-goal">@ResolveRecipeGoal(recipe)</div>
                                 </button>
                             }
                         </div>
@@ -182,13 +185,13 @@ else
                 {
                     <div class="cg-spark-message-user">
                         <div class="cg-spark-message-user-header">
-                            <span class="mono">Operator Instruction</span>
+                            <span class="mono">@Loc.T("spark.operatorInstruction")</span>
                         </div>
                         <div class="cg-spark-message-user-text">@_currentGoal</div>
                     </div>
                 }
 
-                <!-- Step Stream Cards -->
+                <!-- Step Stream Cards (Clean Human-Readable Output Only — No Raw JSON) -->
                 <div class="cg-spark-steps-list">
                     @foreach (var step in _steps)
                     {
@@ -197,12 +200,12 @@ else
                             <!-- Card Header -->
                             <div class="cg-step-header">
                                 <div class="cg-step-title-group">
-                                    <span class="cg-step-number mono">Step @step.StepNumber</span>
+                                    <span class="cg-step-number mono">@Loc.T("spark.stepLabel") @step.StepNumber</span>
                                     <span class="cg-step-phase">@step.Phase</span>
                                     
                                     @if (!string.IsNullOrWhiteSpace(step.ToolName))
                                     {
-                                        <span class="cg-step-tool-tag mono">@step.ToolName</span>
+                                        <span class="cg-step-tool-tag mono">@FormatToolDisplayName(step.ToolName)</span>
                                     }
                                 </div>
 
@@ -210,7 +213,7 @@ else
                                     @if (step.PermissionGranted.HasValue)
                                     {
                                         <span class="cg-perm-badge @(step.PermissionGranted.Value ? "cg-perm-permitted" : "cg-perm-denied")">
-                                            @(step.PermissionBadgeText ?? (step.PermissionGranted.Value ? "PERMITTED" : "DENIED"))
+                                            @(step.PermissionBadgeText ?? (step.PermissionGranted.Value ? Loc.T("spark.permitted") : Loc.T("spark.denied")))
                                         </span>
                                     }
 
@@ -233,30 +236,56 @@ else
                                 </div>
                             }
 
-                            <!-- Tool Arguments Preview -->
-                            @if (!string.IsNullOrWhiteSpace(step.ToolArgumentsJson) && step.ToolArgumentsJson != "{}")
+                            <!-- Clean Human-Readable Input Summary -->
+                            @if (!string.IsNullOrWhiteSpace(step.HumanInputSummary))
                             {
                                 <div class="cg-step-args">
-                                    <div class="cg-step-args-label mono">Tool Arguments:</div>
-                                    <pre class="cg-code-box mono">@FormatJsonPretty(step.ToolArgumentsJson)</pre>
+                                    <div class="cg-step-args-label mono">@Loc.T("spark.toolArgsLabel")</div>
+                                    <div style="font-size: 0.78rem; color: var(--text-secondary); padding: 0.35rem 0.5rem; background: var(--bg-elevated); border-radius: 6px; border: 1px solid var(--border-subtle);">
+                                        @step.HumanInputSummary
+                                    </div>
                                 </div>
                             }
 
-                            <!-- Observation Phase Content -->
-                            @if (!string.IsNullOrWhiteSpace(step.ObservationJson))
+                            <!-- Clean Human-Readable Observation Summary & Highlights -->
+                            @if (!string.IsNullOrWhiteSpace(step.ObservationSummary) || (step.Highlights is { Count: > 0 }) || !string.IsNullOrWhiteSpace(step.GeneratedImageDataUrl) || !string.IsNullOrWhiteSpace(step.DeepLinkUrl))
                             {
-                                var isCollapsed = _collapsedObservations.Contains(step.StepNumber);
                                 <div class="cg-step-observation">
-                                    <div class="cg-step-obs-header" @onclick="() => ToggleObservationCollapse(step.StepNumber)">
-                                        <span class="mono" style="font-weight: 600;">System Observation</span>
-                                        <button type="button" class="cg-btn-link-xs">
-                                            @(isCollapsed ? "Expand JSON ▼" : "Collapse ▲")
-                                        </button>
-                                    </div>
-
-                                    @if (!isCollapsed)
+                                    @if (!string.IsNullOrWhiteSpace(step.ObservationSummary))
                                     {
-                                        <pre class="cg-json-box mono">@FormatJsonPretty(step.ObservationJson)</pre>
+                                        <div style="font-size: 0.82rem; font-weight: 600; color: var(--text-primary); margin-bottom: 0.35rem;">
+                                            @step.ObservationSummary
+                                        </div>
+                                    }
+
+                                    @if (step.Highlights is { Count: > 0 })
+                                    {
+                                        <ul style="margin: 0.25rem 0 0.5rem 1.1rem; padding: 0; font-size: 0.78rem; color: var(--text-secondary);">
+                                            @foreach (var hl in step.Highlights)
+                                            {
+                                                <li @key="hl" style="margin-bottom: 0.18rem;">@hl</li>
+                                            }
+                                        </ul>
+                                    }
+
+                                    @if (!string.IsNullOrWhiteSpace(step.GeneratedImageDataUrl))
+                                    {
+                                        <div style="margin-top: 0.5rem; padding: 0.55rem; background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 8px;">
+                                            <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; margin-bottom: 0.4rem;">
+                                                <span class="mono cg-text-xs" style="color: var(--accent-primary); font-weight: 600;">
+                                                    @(step.GeneratedImageMetaSummary ?? "muse-image-1.0 • 640×400 PNG")
+                                                </span>
+                                                <a href="@step.GeneratedImageDataUrl"
+                                                   download="@($"commonground-visual-{step.StepNumber}.png")"
+                                                   class="cg-btn cg-btn-xs cg-btn-outline"
+                                                   style="text-decoration: none;">
+                                                    @StatusTextOrFallback("image.downloadPng", "Download PNG")
+                                                </a>
+                                            </div>
+                                            <img src="@step.GeneratedImageDataUrl"
+                                                 alt="@(step.ObservationSummary ?? "Generated Visual")"
+                                                 style="width: 100%; max-height: 240px; object-fit: contain; border-radius: 6px; border: 1px solid var(--border-subtle);" />
+                                        </div>
                                     }
 
                                     @if (!string.IsNullOrWhiteSpace(step.DeepLinkUrl))
@@ -265,7 +294,7 @@ else
                                             <button type="button"
                                                     class="cg-btn cg-btn-ai cg-btn-xs"
                                                     @onclick="() => NavigateToDeepLink(step.DeepLinkUrl)">
-                                                <span>Open in Workspace →</span>
+                                                <span>@Loc.T("spark.openWorkspace")</span>
                                             </button>
                                             <span class="mono cg-text-xs" style="color: var(--text-muted);">@step.DeepLinkUrl</span>
                                         </div>
@@ -282,7 +311,7 @@ else
                                             <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
                                             <polyline points="22 4 12 14.01 9 11.01"></polyline>
                                         </svg>
-                                        <strong>Operational Synthesis & Verification</strong>
+                                        <strong>@Loc.T("spark.synthesisTitle")</strong>
                                     </div>
                                     <div class="cg-final-markdown">
                                         @FormatMarkdownToHtml(step.FinalMarkdown)
@@ -304,7 +333,7 @@ else
                                         <line x1="12" y1="17" x2="12.01" y2="17"></line>
                                     </svg>
                                 </span>
-                                <strong>Agent Clarification Required</strong>
+                                <strong>@Loc.T("spark.clarificationTitle")</strong>
                             </div>
 
                             <p class="cg-clarification-question">@_clarificationQuestion</p>
@@ -316,6 +345,7 @@ else
                                     {
                                         <button type="button"
                                                 class="cg-btn cg-btn-sm cg-btn-ai"
+                                                @key="opt"
                                                 disabled="@_isRunning"
                                                 @onclick="() => SubmitClarificationAsync(opt)">
                                             @opt
@@ -325,19 +355,19 @@ else
                             }
 
                             <div class="cg-clarification-custom">
-                                <label for="cg-clarification-input" class="visually-hidden">Custom response</label>
+                                <label for="cg-clarification-input" class="visually-hidden">@Loc.T("spark.customResponseLabel")</label>
                                 <input id="cg-clarification-input"
                                        type="text"
                                        class="cg-input"
                                        @bind="_clarificationCustomAnswer"
-                                       placeholder="Or type custom specification..."
+                                       placeholder="@Loc.T("spark.customResponsePlaceholder")"
                                        disabled="@_isRunning"
                                        @onkeyup="OnClarificationInputKeyUp" />
                                 <button type="button"
                                         class="cg-btn cg-btn-primary cg-btn-sm"
                                         disabled="@(string.IsNullOrWhiteSpace(_clarificationCustomAnswer) || _isRunning)"
                                         @onclick="() => SubmitClarificationAsync(_clarificationCustomAnswer)">
-                                    Submit
+                                    @Loc.T("spark.submitLabel")
                                 </button>
                             </div>
                         </div>
@@ -348,11 +378,11 @@ else
                     {
                         <div class="cg-step-interactive-prompt">
                             <div class="cg-interactive-prompt-header">
-                                <span class="mono" style="font-weight: 600; color: var(--accent-ai-light);">Step-by-Step Interactive Mode Paused</span>
-                                <span class="mono cg-text-xs">Turn complete</span>
+                                <span class="mono" style="font-weight: 600; color: var(--accent-ai-light);">@Loc.T("spark.stepPausedTitle")</span>
+                                <span class="mono cg-text-xs">@Loc.T("spark.turnComplete")</span>
                             </div>
                             <p class="cg-interactive-prompt-desc">
-                                The agent paused for operator validation. Review the observation above, then choose to continue to the next step or cancel.
+                                @Loc.T("spark.stepPausedDesc")
                             </p>
                             <div class="cg-interactive-prompt-actions">
                                 <button type="button"
@@ -361,12 +391,12 @@ else
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                         <polygon points="5 3 19 12 5 21 5 3"></polygon>
                                     </svg>
-                                    <span>Execute Next Step</span>
+                                    <span>@Loc.T("spark.executeNext")</span>
                                 </button>
                                 <button type="button"
                                         class="cg-btn cg-btn-ghost cg-btn-sm"
                                         @onclick="CancelStepAsync">
-                                    <span>Cancel Session</span>
+                                    <span>@Loc.T("spark.cancelSession")</span>
                                 </button>
                             </div>
                         </div>
@@ -377,45 +407,128 @@ else
                     {
                         <div class="cg-running-indicator">
                             <span class="cg-spark-pulse-dot" aria-hidden="true"></span>
-                            <span class="mono" style="font-size: 0.75rem; color: var(--accent-ai-light);">Spark Agent thinking and formulating ReAct decisions...</span>
+                            <span class="mono" style="font-size: 0.75rem; color: var(--accent-ai-light);">@Loc.T("spark.runningHint")</span>
                         </div>
                     }
                 </div>
             }
         </div>
 
-        <!-- Voice Note Recording Panel (Collapsible) -->
+        <!-- Custom Image Studio Panel (Collapsible) -->
+        @if (_isImageStudioOpen)
+        {
+            <div class="cg-voice-tray">
+                <div class="cg-voice-tray-header">
+                    <div style="display: flex; align-items: center; gap: 0.45rem;">
+                        <span class="cg-spark-badge-pill">muse-image-1.0</span>
+                        <strong style="font-size: 0.78rem;">@StatusTextOrFallback("image.studioTitle", "Custom Visual & Info Generator (640×400 PNG)")</strong>
+                    </div>
+                    <button type="button" class="cg-btn-icon-xs" @onclick="ToggleImageStudio" aria-label="@Loc.T("spark.closeAria")">✕</button>
+                </div>
+                <p style="font-size: 0.72rem; color: var(--text-secondary); margin: 0 0 0.45rem 0;">
+                    @StatusTextOrFallback("image.studioDesc", "Render specific property notices, emergency instructions, or inspection details directly onto a 640×400 PNG visual.")
+                </p>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; margin-bottom: 0.4rem;">
+                    <input type="text"
+                           class="cg-input"
+                           style="font-size: 0.76rem; padding: 0.35rem 0.5rem;"
+                           placeholder="@StatusTextOrFallback("image.titlePlaceholder", "Image headline / title")"
+                           @bind="_customImageTitle" />
+                    <input type="text"
+                           class="cg-input"
+                           style="font-size: 0.76rem; padding: 0.35rem 0.5rem;"
+                           placeholder="@StatusTextOrFallback("image.subtitlePlaceholder", "Subtitle / building or stairwell")"
+                           @bind="_customImageSubtitle" />
+                </div>
+                <textarea class="cg-input"
+                          rows="2"
+                          style="font-size: 0.75rem; padding: 0.35rem 0.5rem; margin-bottom: 0.4rem; width: 100%;"
+                          placeholder="@StatusTextOrFallback("image.linesPlaceholder", "Specific info lines to render on the image (separate with new line or semicolon ';')")"
+                          @bind="_customImageLinesRaw"></textarea>
+                <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;">
+                    <input type="text"
+                           class="cg-input"
+                           style="font-size: 0.74rem; padding: 0.3rem 0.5rem; flex: 1;"
+                           placeholder="@StatusTextOrFallback("image.qrPlaceholder", "Optional QR link (e.g. https://commonground.local/notice)")"
+                           @bind="_customImageQrUrl" />
+                    <button type="button"
+                            class="cg-btn cg-btn-ai cg-btn-xs"
+                            disabled="@_isGeneratingCustomImage"
+                            @onclick="GenerateCustomImageInChatAsync">
+                        @(_isGeneratingCustomImage
+                            ? StatusTextOrFallback("image.generatingBtn", "Rendering muse-image-1.0...")
+                            : StatusTextOrFallback("image.generateBtn", "Generate Image with Info"))
+                    </button>
+                </div>
+            </div>
+        }
+
+        <!-- Voice Note Recording Panel (Collapsible — Live WAV Recording + POST /v1/asr/transcribe) -->
         @if (_isVoicePanelOpen)
         {
             <div class="cg-voice-tray">
                 <div class="cg-voice-tray-header">
                     <div style="display: flex; align-items: center; gap: 0.45rem;">
                         <span class="cg-voice-mic-pulse" aria-hidden="true"></span>
-                        <strong style="font-size: 0.78rem;">Live Audio Stream · muse-voice-transcribe-1.0</strong>
+                        <strong style="font-size: 0.78rem;">@Loc.T("spark.voiceStreamTitle")</strong>
+                        <span class="cg-spark-badge-pill">muse-voice-transcribe-1.0</span>
                     </div>
-                    <button type="button" class="cg-btn-icon-xs" @onclick="ToggleVoicePanel" aria-label="Close voice panel">✕</button>
+                    <button type="button" class="cg-btn-icon-xs" @onclick="ToggleVoicePanel" aria-label="@Loc.T("spark.voiceCloseAria")">✕</button>
                 </div>
-                <p style="font-size: 0.72rem; color: var(--text-secondary); margin: 0 0 0.5rem 0;">
-                    Select an audio scenario preset or speak to transcribe directly into the agent instruction:
+                <p style="font-size: 0.72rem; color: var(--text-secondary); margin: 0 0 0.45rem 0;">
+                    @Loc.T("spark.voiceHint")
                 </p>
+
+                <!-- Live Browser Microphone WAV Recorder (16kHz PCM WAV -> POST /v1/asr/transcribe) -->
+                <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; flex-wrap: wrap;">
+                    @if (!_isRecordingMic)
+                    {
+                        <button type="button"
+                                class="cg-btn cg-btn-xs cg-btn-ai"
+                                disabled="@_isTranscribingVoice"
+                                @onclick="StartLiveMicrophoneRecordingAsync">
+                            🎙 @StatusTextOrFallback("mic.startRecording", "Record Microphone (WAV)")
+                        </button>
+                    }
+                    else
+                    {
+                        <button type="button"
+                                class="cg-btn cg-btn-xs cg-btn-primary"
+                                style="background: var(--color-danger); border-color: var(--color-danger);"
+                                @onclick="StopAndTranscribeMicrophoneAsync">
+                            ⏹ @StatusTextOrFallback("mic.stopAndTranscribe", "Stop & Transcribe") (@($"{_recordingElapsedSec:0.0}s"))
+                        </button>
+                        <div style="flex: 1; min-width: 90px; height: 6px; background: var(--bg-elevated); border-radius: 999px; overflow: hidden;">
+                            <div style="height: 100%; width: @($"{Math.Clamp(_recordingRmsLevel, 4, 100)}%"); background: var(--accent-primary); transition: width 0.15s ease;"></div>
+                        </div>
+                    }
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(_liveInterimTranscript))
+                {
+                    <div class="mono cg-text-xs" style="color: var(--text-secondary); margin-bottom: 0.4rem;">
+                        @StatusTextOrFallback("mic.livePreview", "Live speech preview:") "@_liveInterimTranscript"
+                    </div>
+                }
+
                 <div class="cg-voice-presets-row">
                     <button type="button"
                             class="cg-btn cg-btn-xs cg-btn-outline"
-                            disabled="@_isTranscribingVoice"
+                            disabled="@(_isTranscribingVoice || _isRecordingMic)"
                             @onclick='() => TranscribeVoicePresetAsync("Ceiling Leak", "There is a water leak on the ceiling in my bathroom, the stain is growing since yesterday.")'>
-                        Ceiling Leak (EN)
+                        @Loc.T("spark.presetCeilingLeak")
                     </button>
                     <button type="button"
                             class="cg-btn cg-btn-xs cg-btn-outline"
-                            disabled="@_isTranscribingVoice"
+                            disabled="@(_isTranscribingVoice || _isRecordingMic)"
                             @onclick='() => TranscribeVoicePresetAsync("No Hot Water", "There is no hot water in the whole stairwell since this morning.")'>
-                        Stairwell Heating (EN)
+                        @Loc.T("spark.presetStairwellHeating")
                     </button>
                     <button type="button"
                             class="cg-btn cg-btn-xs cg-btn-outline"
-                            disabled="@_isTranscribingVoice"
+                            disabled="@(_isTranscribingVoice || _isRecordingMic)"
                             @onclick='() => TranscribeVoicePresetAsync("Meeting Notes", "Annual general meeting discussion on resolution 01/2026 and financial reserve audit.")'>
-                        Meeting Audio (EN)
+                        @Loc.T("spark.presetMeetingAudio")
                     </button>
                 </div>
                 @if (!string.IsNullOrWhiteSpace(_voiceStatusMessage))
@@ -432,7 +545,7 @@ else
                           @bind="_inputGoal"
                           @bind:event="oninput"
                           rows="2"
-                          placeholder="Instruct Spark Agent (e.g. 'Query units, create unit 305, and settle utilities')..."
+                          placeholder="@Loc.T("spark.textareaPlaceholder")"
                           disabled="@(_isRunning || _awaitingClarification)"
                           @onkeydown="OnTextareaKeyDown"></textarea>
 
@@ -440,19 +553,34 @@ else
                     <div style="display: flex; align-items: center; gap: 0.35rem;">
                         <!-- Microphone Live Audio Toggle -->
                         <button type="button"
-                                class="cg-btn cg-btn-icon-sm @(_isVoicePanelOpen ? "cg-mic-active" : "")"
+                                class="cg-btn cg-btn-icon-sm @(_isVoicePanelOpen || _isRecordingMic ? "cg-mic-active" : "")"
                                 @onclick="ToggleVoicePanel"
                                 disabled="@(_isRunning || _awaitingClarification)"
-                                title="Live Voice Transcription (muse-voice-transcribe-1.0)"
-                                aria-label="Toggle voice transcription">
+                                title="@Loc.T("spark.micTitle")"
+                                aria-label="@Loc.T("spark.micAria")">
                             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path>
                                 <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
                                 <line x1="12" y1="19" x2="12" y2="22"></line>
                             </svg>
                         </button>
+
+                        <!-- Custom Image Generator Studio Toggle (muse-image-1.0) -->
+                        <button type="button"
+                                class="cg-btn cg-btn-icon-sm @(_isImageStudioOpen ? "cg-mic-active" : "")"
+                                @onclick="ToggleImageStudio"
+                                disabled="@(_isRunning || _awaitingClarification)"
+                                title="@StatusTextOrFallback("image.studioBtnTitle", "Generate custom image with specific info (muse-image-1.0)")"
+                                aria-label="@StatusTextOrFallback("image.studioBtnTitle", "Generate custom image with specific info (muse-image-1.0)")">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                                <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                                <polyline points="21 15 16 10 5 21"></polyline>
+                            </svg>
+                        </button>
+
                         <span class="cg-text-xs mono" style="color: var(--text-muted);">
-                            @(_stepByStepMode ? "Interactive" : "Autonomous")
+                            @(_stepByStepMode ? Loc.T("spark.badgeInteractive") : Loc.T("spark.badgeAutonomous"))
                         </span>
                     </div>
 
@@ -464,7 +592,7 @@ else
                             @if (_isRunning)
                             {
                                 <span class="cg-spark-pulse-inline" aria-hidden="true"></span>
-                                <span>Running...</span>
+                                <span>@Loc.T("spark.runningLabel")</span>
                             }
                             else
                             {
@@ -472,7 +600,7 @@ else
                                     <line x1="22" y1="2" x2="11" y2="13"></line>
                                     <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
                                 </svg>
-                                <span>Run Agent</span>
+                                <span>@Loc.T("spark.runAgent")</span>
                             }
                         </button>
                     </div>
@@ -485,13 +613,15 @@ else
 @code {
     private ElementReference _bodyElement;
     private Action? _stateHandler;
+    private Action? _locHandler;
     private CancellationTokenSource _cts = new();
+    private DotNetObjectReference<SparkAutomationChatBubble>? _dotNetRef;
 
     private string _inputGoal = string.Empty;
     private string _currentGoal = string.Empty;
     private bool _isRunning;
     private bool _stepByStepMode;
-    private string _statusText = "Ready";
+    private string _statusText = string.Empty;
 
     private List<SparkAgentLiveStepEvent> _steps = new();
     private AgentRunResult? _lastResult;
@@ -505,15 +635,29 @@ else
     // Voice state
     private bool _isVoicePanelOpen;
     private bool _isTranscribingVoice;
+    private bool _isRecordingMic;
+    private double _recordingElapsedSec;
+    private int _recordingRmsLevel;
+    private string _liveInterimTranscript = string.Empty;
     private string? _voiceStatusMessage;
 
-    // UI state
-    private HashSet<int> _collapsedObservations = new();
+    // Custom Image Studio state
+    private bool _isImageStudioOpen;
+    private bool _isGeneratingCustomImage;
+    private string _customImageTitle = "Building Inspection & Notice";
+    private string _customImageSubtitle = "Stairwell A • Riser STACK-A1";
+    private string _customImageLinesRaw = "Shutoff Valve V-A1-01 verified\nContractor access code: #9021*\nEmergency 24/7 dispatch active";
+    private string _customImageQrUrl = "https://commonground.local/notice";
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
+        _dotNetRef = DotNetObjectReference.Create(this);
         _stateHandler = () => InvokeAsync(StateHasChanged);
         UiState.OnChange += _stateHandler;
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+        _statusText = Loc.T("spark.status.ready");
     }
 
     private void OnOpenChat()
@@ -525,6 +669,26 @@ else
     {
         UiState.SetSparkAgentChatOpen(false);
     }
+
+    private string StatusTextOrFallback(string key, string englishFallback)
+    {
+        var value = Loc.T(key);
+        return string.Equals(value, key, StringComparison.Ordinal) ? englishFallback : value;
+    }
+
+    private string StatusReady => StatusTextOrFallback("spark.status.ready", "Ready");
+    private string StatusAnalyzing => StatusTextOrFallback("spark.status.analyzing", "Analyzing goal...");
+    private string StatusThinking => StatusTextOrFallback("spark.status.thinking", "Thinking...");
+    private string StatusVerifying => StatusTextOrFallback("spark.status.verifying", "Verifying Permission...");
+    private string StatusRunningTool => StatusTextOrFallback("spark.status.runningTool", "Running Tool...");
+    private string StatusObservation => StatusTextOrFallback("spark.status.observation", "Received Observation");
+    private string StatusClarification => StatusTextOrFallback("spark.status.clarification", "Clarification Needed");
+    private string StatusCompleted => StatusTextOrFallback("spark.status.completed", "Completed");
+    private string StatusNeedsClarification => StatusTextOrFallback("spark.status.needsClarification", "Needs Clarification");
+    private string StatusStepPaused => StatusTextOrFallback("spark.status.stepPaused", "Step Paused");
+    private string StatusCancelled => StatusTextOrFallback("spark.status.cancelled", "Cancelled");
+    private string StatusCancelledByOperator => StatusTextOrFallback("spark.status.cancelledByOperator", "Cancelled by Operator");
+    private string StatusError => StatusTextOrFallback("spark.status.error", "Error");
 
     private void OnToggleExpanded()
     {
@@ -540,18 +704,19 @@ else
     private void ToggleVoicePanel()
     {
         _isVoicePanelOpen = !_isVoicePanelOpen;
+        if (_isVoicePanelOpen)
+        {
+            _isImageStudioOpen = false;
+        }
         _voiceStatusMessage = null;
     }
 
-    private void ToggleObservationCollapse(int stepNumber)
+    private void ToggleImageStudio()
     {
-        if (_collapsedObservations.Contains(stepNumber))
+        _isImageStudioOpen = !_isImageStudioOpen;
+        if (_isImageStudioOpen)
         {
-            _collapsedObservations.Remove(stepNumber);
-        }
-        else
-        {
-            _collapsedObservations.Add(stepNumber);
+            _isVoicePanelOpen = false;
         }
     }
 
@@ -568,8 +733,7 @@ else
         _clarificationOptions = null;
         _clarificationCustomAnswer = string.Empty;
         _isRunning = false;
-        _statusText = "Ready";
-        _collapsedObservations.Clear();
+        _statusText = StatusReady;
         StateHasChanged();
     }
 
@@ -589,7 +753,7 @@ else
         _isRunning = true;
         _currentGoal = goal;
         _inputGoal = string.Empty;
-        _statusText = "Analyzing goal...";
+        _statusText = StatusAnalyzing;
         StateHasChanged();
 
         try
@@ -610,12 +774,12 @@ else
                         _steps.Add(evt);
                     }
 
-                    if (evt.Phase == "Thinking") _statusText = "Thinking...";
-                    else if (evt.Phase == "PermissionCheck") _statusText = "Verifying Permission...";
-                    else if (evt.Phase == "ToolExecution") _statusText = "Running Tool...";
-                    else if (evt.Phase == "Observation") _statusText = "Received Observation";
-                    else if (evt.Phase == "AwaitingClarification") _statusText = "Clarification Needed";
-                    else if (evt.Phase == "FinalAnswer") _statusText = "Completed";
+                    if (evt.Phase == "Thinking") _statusText = StatusThinking;
+                    else if (evt.Phase == "PermissionCheck") _statusText = StatusVerifying;
+                    else if (evt.Phase == "ToolExecution") _statusText = StatusRunningTool;
+                    else if (evt.Phase == "Observation") _statusText = StatusObservation;
+                    else if (evt.Phase == "AwaitingClarification") _statusText = StatusClarification;
+                    else if (evt.Phase == "FinalAnswer") _statusText = StatusCompleted;
 
                     StateHasChanged();
                 });
@@ -628,7 +792,8 @@ else
                 stepByStepMode: _stepByStepMode,
                 progress: progressReporter,
                 userClarificationResponse: clarificationResponse,
-                ct: _cts.Token);
+                ct: _cts.Token,
+                uiLocale: Loc.ActiveLocale);
 
             _lastResult = result;
             _awaitingClarification = result.IsAwaitingClarification;
@@ -638,37 +803,38 @@ else
 
             if (result.IsCompleted)
             {
-                _statusText = "Completed";
+                _statusText = StatusCompleted;
             }
             else if (result.IsAwaitingClarification)
             {
-                _statusText = "Needs Clarification";
+                _statusText = StatusNeedsClarification;
             }
             else if (_stepByStepMode)
             {
-                _statusText = "Step Paused";
+                _statusText = StatusStepPaused;
             }
         }
         catch (OperationCanceledException)
         {
-            _statusText = "Cancelled";
+            _statusText = StatusCancelled;
         }
         catch (Exception ex)
         {
-            _statusText = "Error";
+            _statusText = StatusError;
             _steps.Add(new SparkAgentLiveStepEvent(
                 RunId: Guid.NewGuid(),
                 StepNumber: _steps.Count + 1,
                 Phase: "Observation",
-                Thought: "Execution encountered an error.",
+                Thought: StatusTextOrFallback("spark.thoughtError", "Execution encountered an error."),
                 ToolName: "system_error",
                 ToolArgumentsJson: null,
                 PermissionGranted: false,
                 PermissionBadgeText: "ERROR",
-                ObservationJson: JsonSerializer.Serialize(new { error = ex.Message, details = ex.ToString() }),
+                ObservationJson: null,
                 FinalMarkdown: null,
                 DeepLinkUrl: null,
-                LatencyMs: 0));
+                LatencyMs: 0,
+                ObservationSummary: ex.Message));
         }
         finally
         {
@@ -688,7 +854,7 @@ else
 
     private void CancelStepAsync()
     {
-        _statusText = "Cancelled by Operator";
+        _statusText = StatusCancelledByOperator;
         _awaitingClarification = false;
         _lastResult = null;
         StateHasChanged();
@@ -720,27 +886,209 @@ else
         }
     }
 
-    private async Task TranscribeVoicePresetAsync(string presetName, string scenarioContent)
+    private sealed record JsVoiceStartResult(bool Ok, string? ErrorMessage);
+    private sealed record JsVoiceStopResult(bool Ok, string WavBase64, int DurationMs, int ByteLength, string? LiveTranscript, string? ErrorMessage);
+
+    [JSInvokable]
+    public void OnVoiceRecorderProgress(double elapsedSec, int rmsLevel, string? liveTranscript)
     {
-        _isTranscribingVoice = true;
-        _voiceStatusMessage = $"Transcribing '{presetName}' via muse-voice-transcribe-1.0...";
+        _recordingElapsedSec = elapsedSec;
+        _recordingRmsLevel = rmsLevel;
+        if (!string.IsNullOrWhiteSpace(liveTranscript))
+        {
+            _liveInterimTranscript = liveTranscript;
+        }
+        InvokeAsync(StateHasChanged);
+    }
+
+    private async Task StartLiveMicrophoneRecordingAsync()
+    {
+        _voiceStatusMessage = StatusTextOrFallback("mic.requestingAccess", "Requesting microphone access (16kHz PCM WAV)...");
+        _recordingElapsedSec = 0;
+        _recordingRmsLevel = 0;
+        _liveInterimTranscript = string.Empty;
         StateHasChanged();
 
         try
         {
-            var (transcript, detectedLang, latencyMs) = await VoiceTranscriber.TranscribeVoiceNoteAsync(scenarioContent, _cts.Token);
-            _inputGoal = transcript;
-            _voiceStatusMessage = $"Transcribed: \"{transcript}\" ({detectedLang}, {latencyMs}ms)";
+            var startRes = await JS.InvokeAsync<JsVoiceStartResult>("cgVoiceRecorder.startRecording", _dotNetRef, Loc.ActiveLocale);
+            if (startRes.Ok)
+            {
+                _isRecordingMic = true;
+                _voiceStatusMessage = StatusTextOrFallback("mic.recordingActive", "Recording live WAV audio... Speak now and click Stop & Transcribe.");
+            }
+            else
+            {
+                _isRecordingMic = false;
+                _voiceStatusMessage = startRes.ErrorMessage ?? StatusTextOrFallback("mic.errorStart", "Could not start microphone.");
+            }
         }
         catch (Exception ex)
         {
-            _voiceStatusMessage = $"Voice error: {ex.Message}";
+            _isRecordingMic = false;
+            _voiceStatusMessage = string.Format(StatusTextOrFallback("spark.voiceError", "Voice error: {0}"), ex.Message);
+        }
+        StateHasChanged();
+    }
+
+    private async Task StopAndTranscribeMicrophoneAsync()
+    {
+        if (!_isRecordingMic)
+        {
+            return;
+        }
+
+        _isRecordingMic = false;
+        _isTranscribingVoice = true;
+        _voiceStatusMessage = StatusTextOrFallback("mic.uploadingWav", "Encoding 16-bit PCM WAV & sending multipart/form-data to POST /v1/asr/transcribe (muse-voice-transcribe-1.0)...");
+        StateHasChanged();
+
+        try
+        {
+            var stopRes = await JS.InvokeAsync<JsVoiceStopResult>("cgVoiceRecorder.stopRecording");
+            if (!stopRes.Ok || string.IsNullOrWhiteSpace(stopRes.WavBase64))
+            {
+                _voiceStatusMessage = stopRes.ErrorMessage ?? StatusTextOrFallback("mic.noAudioCaptured", "No audio captured from microphone.");
+                return;
+            }
+
+            var (transcript, detectedLang, latencyMs) = await Workspace.TranscribeLiveMicrophoneAudioAsync(
+                UiState.SelectedCommunityId,
+                stopRes.WavBase64,
+                stopRes.LiveTranscript,
+                Loc.ActiveLocale,
+                _cts.Token);
+
+            _inputGoal = transcript;
+            _voiceStatusMessage = string.Format(
+                StatusTextOrFallback("spark.voiceTranscribed", "Transcribed ({0} KB WAV): \"{1}\" ({2}, {3}ms)"),
+                Math.Max(1, stopRes.ByteLength / 1024),
+                transcript,
+                detectedLang,
+                latencyMs);
+        }
+        catch (Exception ex)
+        {
+            _voiceStatusMessage = string.Format(StatusTextOrFallback("spark.voiceError", "Voice error: {0}"), ex.Message);
         }
         finally
         {
             _isTranscribingVoice = false;
             StateHasChanged();
         }
+    }
+
+    private async Task TranscribeVoicePresetAsync(string presetName, string scenarioContent)
+    {
+        _isTranscribingVoice = true;
+        _voiceStatusMessage = string.Format(StatusTextOrFallback("spark.voiceTranscribing", "Transcribing '{0}' via muse-voice-transcribe-1.0 (POST /v1/asr/transcribe)..."), presetName);
+        StateHasChanged();
+
+        try
+        {
+            var (transcript, detectedLang, latencyMs) = await Workspace.TranscribeLiveMicrophoneAudioAsync(
+                UiState.SelectedCommunityId,
+                wavBase64OrDataUrl: null,
+                browserTranscriptHint: scenarioContent,
+                uiLocale: Loc.ActiveLocale,
+                ct: _cts.Token);
+            _inputGoal = transcript;
+            _voiceStatusMessage = string.Format(StatusTextOrFallback("spark.voiceTranscribedPreset", "Transcribed: \"{0}\" ({1}, {2}ms)"), transcript, detectedLang, latencyMs);
+        }
+        catch (Exception ex)
+        {
+            _voiceStatusMessage = string.Format(StatusTextOrFallback("spark.voiceError", "Voice error: {0}"), ex.Message);
+        }
+        finally
+        {
+            _isTranscribingVoice = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task GenerateCustomImageInChatAsync()
+    {
+        if (_isGeneratingCustomImage)
+        {
+            return;
+        }
+
+        _isGeneratingCustomImage = true;
+        StateHasChanged();
+
+        try
+        {
+            var lines = (_customImageLinesRaw ?? string.Empty)
+                .Split(new[] { '\r', '\n', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .ToList();
+
+            var artifact = await Workspace.GenerateCustomPropertyImageAsync(
+                UiState.SelectedCommunityId,
+                _customImageTitle,
+                _customImageSubtitle,
+                lines,
+                "muse-image-1.0",
+                string.IsNullOrWhiteSpace(_customImageQrUrl) ? null : _customImageQrUrl,
+                Loc.ActiveLocale,
+                _cts.Token);
+
+            if (string.IsNullOrWhiteSpace(_currentGoal))
+            {
+                _currentGoal = $"{StatusTextOrFallback("image.generateBtn", "Generate Image with Info")}: {_customImageTitle}";
+            }
+
+            var metaSummary = $"{artifact.ModelName} • {artifact.Resolution} • {artifact.LatencyMs} ms";
+            _steps.Add(new SparkAgentLiveStepEvent(
+                RunId: Guid.NewGuid(),
+                StepNumber: _steps.Count + 1,
+                Phase: "Observation",
+                Thought: $"{StatusTextOrFallback("image.renderedThought", "Rendered custom annotated visual via")} {artifact.ModelName}.",
+                ToolName: "generate_custom_info_image",
+                ToolArgumentsJson: null,
+                PermissionGranted: true,
+                PermissionBadgeText: "PERMITTED",
+                ObservationJson: null,
+                FinalMarkdown: null,
+                DeepLinkUrl: null,
+                LatencyMs: artifact.LatencyMs,
+                HumanInputSummary: $"{artifact.Title} — {artifact.Subtitle}",
+                ObservationSummary: $"{artifact.Title} ({artifact.Resolution})",
+                GeneratedImageDataUrl: artifact.ImageDataUrl,
+                GeneratedImageMetaSummary: metaSummary,
+                Highlights: artifact.RenderedInfoLines));
+
+            _isImageStudioOpen = false;
+            _statusText = StatusCompleted;
+        }
+        catch (Exception ex)
+        {
+            _statusText = StatusError;
+            _steps.Add(new SparkAgentLiveStepEvent(
+                RunId: Guid.NewGuid(),
+                StepNumber: _steps.Count + 1,
+                Phase: "Observation",
+                Thought: ex.Message,
+                ToolName: "generate_custom_info_image",
+                ToolArgumentsJson: null,
+                PermissionGranted: false,
+                PermissionBadgeText: "ERROR",
+                ObservationJson: null,
+                FinalMarkdown: null,
+                DeepLinkUrl: null,
+                LatencyMs: 0,
+                ObservationSummary: ex.Message));
+        }
+        finally
+        {
+            _isGeneratingCustomImage = false;
+            StateHasChanged();
+        }
+    }
+
+    private static string FormatToolDisplayName(string toolName)
+    {
+        return toolName.Replace('_', ' ');
     }
 
     private void NavigateToDeepLink(string url)
@@ -753,6 +1101,12 @@ else
 
     private string GetStatusChipCssClass()
     {
+        if (string.Equals(_statusText, StatusThinking, StringComparison.Ordinal)) return "cg-status-thinking";
+        if (string.Equals(_statusText, StatusRunningTool, StringComparison.Ordinal)) return "cg-status-tool";
+        if (string.Equals(_statusText, StatusVerifying, StringComparison.Ordinal)) return "cg-status-tool";
+        if (string.Equals(_statusText, StatusNeedsClarification, StringComparison.Ordinal) || string.Equals(_statusText, StatusClarification, StringComparison.Ordinal)) return "cg-status-clarification";
+        if (string.Equals(_statusText, StatusCompleted, StringComparison.Ordinal)) return "cg-status-completed";
+        if (string.Equals(_statusText, StatusError, StringComparison.Ordinal)) return "cg-status-error";
         return _statusText switch
         {
             "Thinking..." => "cg-status-thinking",
@@ -772,19 +1126,6 @@ else
         if (step.PermissionGranted == false) return "cg-card-denied";
         if (step.Phase == "AwaitingClarification") return "cg-card-clarification";
         return "cg-card-standard";
-    }
-
-    private static string FormatJsonPretty(string json)
-    {
-        try
-        {
-            using var doc = JsonDocument.Parse(json);
-            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
-        }
-        catch
-        {
-            return json;
-        }
     }
 
     private static MarkupString FormatMarkdownToHtml(string markdown)
@@ -829,14 +1170,56 @@ else
     private static string FormatInlineSpans(string text)
     {
         var encoded = System.Net.WebUtility.HtmlEncode(text);
-        // Replace bold **text**
         encoded = System.Text.RegularExpressions.Regex.Replace(encoded, @"\*\*(.+?)\*\*", "<strong>$1</strong>");
-        // Replace backtick code `code`
         encoded = System.Text.RegularExpressions.Regex.Replace(encoded, @"`(.+?)`", "<code class=\"mono cg-code-inline\">$1</code>");
         return encoded;
     }
 
-    private sealed record RecipeItem(string Title, string Goal);
+    private sealed record RecipeItem(string TitleKey, string GoalKey, string TitleFallback, string GoalFallback);
+
+    private static class RecipeText
+    {
+        public const string FirmCreateSettleTitle = "Multi-Turn Create & Settle";
+        public const string FirmCreateSettleGoal = "Query vacant units and create new units in Amber Park.";
+        public const string FirmReserveAuditTitle = "Reserve & Arrears Audit";
+        public const string FirmReserveAuditGoal = "Audit reserve fund cashflow, arrears over 90 days, and utility reconciliation.";
+        public const string FirmQuorumCheckTitle = "Quorum & Statutory Check";
+        public const string FirmQuorumCheckGoal = "Check open resolutions, quorum thresholds, and statutory compliance.";
+        public const string FirmRegisterResidentTitle = "Register New Resident";
+        public const string FirmRegisterResidentGoal = "Register new resident and issue zero-disclosure invitation link.";
+        public const string MgrSettlementRunTitle = "Utility Settlement Run";
+        public const string MgrSettlementRunGoal = "Run bulk utility reconciliation and anomaly detector for heating and water.";
+        public const string MgrLeakTriageTitle = "Leak Triage & SAM 3.1";
+        public const string MgrLeakTriageGoal = "Triage resident leak report with vertical riser check and SAM 3.1.";
+        public const string MgrPowerAuditTitle = "Contracted Power Audit";
+        public const string MgrPowerAuditGoal = "Audit contracted thermal and electrical power tariffs against peak demand.";
+        public const string MgrFifoMatchTitle = "Bank FIFO Arrears Match";
+        public const string MgrFifoMatchGoal = "Match incoming bank transfers and allocate FIFO arrears.";
+        public const string ResReportLeakTitle = "Report Bathroom Leak";
+        public const string ResReportLeakGoal = "Report bathroom ceiling water leak and check riser stack.";
+        public const string ResLedgerCheckTitle = "Ledger & Assessment Check";
+        public const string ResLedgerCheckGoal = "Check my unit ledger balance, monthly assessment, and payment status.";
+        public const string ResOutageBoardTitle = "Municipal Outage Board";
+        public const string ResOutageBoardGoal = "View community notice board and active municipal utility outages.";
+        public const string ResBalconyRequestTitle = "Balcony Modification Request";
+        public const string ResBalconyRequestGoal = "Submit architectural modification request for balcony glazing.";
+        public const string DefaultPortfolioTitle = "Portfolio Overview";
+        public const string DefaultPortfolioGoal = "Summarize active work orders, riser leaks, and warranty coverage.";
+        public const string DefaultComplianceTitle = "Compliance Audit";
+        public const string DefaultComplianceGoal = "Audit statutory resolutions and reserve fund projections.";
+    }
+
+    private string RecipeTitle(string key, string fallback)
+    {
+        var value = Loc.T(key);
+        return string.Equals(value, key, StringComparison.Ordinal) ? fallback : value;
+    }
+
+    private string RecipeGoal(string key, string fallback)
+    {
+        var value = Loc.T(key);
+        return string.Equals(value, key, StringComparison.Ordinal) ? fallback : value;
+    }
 
     private IReadOnlyList<RecipeItem> GetRoleRecipes()
     {
@@ -844,32 +1227,36 @@ else
         {
             WorkspaceSecurityRole.FirmManager => new[]
             {
-                new RecipeItem("Multi-Turn Create & Settle", "Query vacant units and create new units in Amber Park."),
-                new RecipeItem("Reserve & Arrears Audit", "Audit reserve fund cashflow, arrears over 90 days, and utility reconciliation."),
-                new RecipeItem("Quorum & Statutory Check", "Check open resolutions, quorum thresholds, and statutory compliance."),
-                new RecipeItem("Register New Resident", "Register new resident and issue zero-disclosure invitation link.")
+                new RecipeItem("spark.recipe.firmCreateSettleTitle", "spark.recipe.firmCreateSettleGoal", RecipeText.FirmCreateSettleTitle, RecipeText.FirmCreateSettleGoal),
+                new RecipeItem("spark.recipe.firmReserveAuditTitle", "spark.recipe.firmReserveAuditGoal", RecipeText.FirmReserveAuditTitle, RecipeText.FirmReserveAuditGoal),
+                new RecipeItem("spark.recipe.firmQuorumCheckTitle", "spark.recipe.firmQuorumCheckGoal", RecipeText.FirmQuorumCheckTitle, RecipeText.FirmQuorumCheckGoal),
+                new RecipeItem("spark.recipe.firmRegisterResidentTitle", "spark.recipe.firmRegisterResidentGoal", RecipeText.FirmRegisterResidentTitle, RecipeText.FirmRegisterResidentGoal)
             },
             WorkspaceSecurityRole.PropertyManager => new[]
             {
-                new RecipeItem("Utility Settlement Run", "Run bulk utility reconciliation and anomaly detector for heating & water."),
-                new RecipeItem("Leak Triage & SAM 3.1", "Triage resident leak report with vertical riser check and SAM 3.1."),
-                new RecipeItem("Contracted Power Audit", "Audit contracted thermal and electrical power tariffs against peak demand."),
-                new RecipeItem("Bank FIFO Arrears Match", "Match incoming bank transfers and allocate FIFO arrears.")
+                new RecipeItem("spark.recipe.mgrSettlementRunTitle", "spark.recipe.mgrSettlementRunGoal", RecipeText.MgrSettlementRunTitle, RecipeText.MgrSettlementRunGoal),
+                new RecipeItem("spark.recipe.mgrLeakTriageTitle", "spark.recipe.mgrLeakTriageGoal", RecipeText.MgrLeakTriageTitle, RecipeText.MgrLeakTriageGoal),
+                new RecipeItem("spark.recipe.mgrPowerAuditTitle", "spark.recipe.mgrPowerAuditGoal", RecipeText.MgrPowerAuditTitle, RecipeText.MgrPowerAuditGoal),
+                new RecipeItem("spark.recipe.mgrFifoMatchTitle", "spark.recipe.mgrFifoMatchGoal", RecipeText.MgrFifoMatchTitle, RecipeText.MgrFifoMatchGoal)
             },
             WorkspaceSecurityRole.Resident => new[]
             {
-                new RecipeItem("Report Bathroom Leak", "Report bathroom ceiling water leak and check riser stack."),
-                new RecipeItem("Ledger & Assessment Check", "Check my unit ledger balance, monthly assessment, and payment status."),
-                new RecipeItem("Municipal Outage Board", "View community notice board & active municipal utility outages."),
-                new RecipeItem("Balcony Modification Request", "Submit architectural modification request for balcony glazing.")
+                new RecipeItem("spark.recipe.resReportLeakTitle", "spark.recipe.resReportLeakGoal", RecipeText.ResReportLeakTitle, RecipeText.ResReportLeakGoal),
+                new RecipeItem("spark.recipe.resLedgerCheckTitle", "spark.recipe.resLedgerCheckGoal", RecipeText.ResLedgerCheckTitle, RecipeText.ResLedgerCheckGoal),
+                new RecipeItem("spark.recipe.resOutageBoardTitle", "spark.recipe.resOutageBoardGoal", RecipeText.ResOutageBoardTitle, RecipeText.ResOutageBoardGoal),
+                new RecipeItem("spark.recipe.resBalconyRequestTitle", "spark.recipe.resBalconyRequestGoal", RecipeText.ResBalconyRequestTitle, RecipeText.ResBalconyRequestGoal)
             },
             _ => new[]
             {
-                new RecipeItem("Portfolio Overview", "Summarize active work orders, riser leaks, and warranty coverage."),
-                new RecipeItem("Compliance Audit", "Audit statutory resolutions and reserve fund projections.")
+                new RecipeItem("spark.recipe.defaultPortfolioTitle", "spark.recipe.defaultPortfolioGoal", RecipeText.DefaultPortfolioTitle, RecipeText.DefaultPortfolioGoal),
+                new RecipeItem("spark.recipe.defaultComplianceTitle", "spark.recipe.defaultComplianceGoal", RecipeText.DefaultComplianceTitle, RecipeText.DefaultComplianceGoal)
             }
         };
     }
+
+    private string ResolveRecipeTitle(RecipeItem recipe) => RecipeTitle(recipe.TitleKey, recipe.TitleFallback);
+
+    private string ResolveRecipeGoal(RecipeItem recipe) => RecipeGoal(recipe.GoalKey, recipe.GoalFallback);
 
     public void Dispose()
     {
@@ -877,8 +1264,12 @@ else
         {
             UiState.OnChange -= _stateHandler;
         }
+        if (_locHandler is not null)
+        {
+            Loc.OnChange -= _locHandler;
+        }
+        _dotNetRef?.Dispose();
         _cts.Cancel();
         _cts.Dispose();
     }
 }
-

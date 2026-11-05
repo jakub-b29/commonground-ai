@@ -4,36 +4,38 @@
 @inject WorkspaceAccessService Access
 @inject IAppDbContextFactory DbFactory
 @inject NavigationManager Nav
+@inject WorkspaceLocalization Loc
+@implements IDisposable
 
-<PageTitle>Security audit trail — CommonGround</PageTitle>
+<PageTitle>@Loc.T("page.adminAuditTitle") — CommonGround</PageTitle>
 
-<PageHeader Category="Firm Administration · Governance & Security"
-            Title="Security audit trail & execution log"
-            Subtitle="Tamper-evident SHA-256 hash-chained security events and Meta AI service execution telemetry across the firm portfolio.">
+<PageHeader Category="@Loc.T("admin.audit.category")"
+            Title="@Loc.T("page.adminAuditTitle")"
+            Subtitle="@Loc.T("page.adminAuditLead")">
     <Badges>
-        <StatusBadge Text="SHA-256 Verified Chain" Variant="ok" />
+        <StatusBadge Text="@Loc.T("admin.audit.verifiedChain")" Variant="ok" />
         <AIBadge Label="APM Telemetry" Model="Meta Models" />
     </Badges>
     <Actions>
-        <a class="cg-btn" href="/admin">Back to overview</a>
+        <a class="cg-btn" href="/admin">@Loc.T("action.backToOverview")</a>
     </Actions>
 </PageHeader>
 
 @if (!_loaded)
 {
-    <p role="status" aria-live="polite">Loading audit trail.</p>
+    <p role="status" aria-live="polite">@Loc.T("msg.loadingAudit")</p>
 }
 else if (!_isAuthorized)
 {
-    <div class="cg-card"><p class="cg-empty-text">Access denied. Firm manager permission is required.</p></div>
+    <div class="cg-card"><p class="cg-empty-text">@Loc.T("msg.accessDeniedFirm")</p></div>
 }
 else
 {
     <div class="bento-card" style="margin-bottom: 1rem;">
         <div class="bento-card-header">
             <div class="cg-panel-title">
-                <span>SHA-256 security audit events</span>
-                <span class="cg-badge cg-badge-ok">@_events.Count shown</span>
+                <span>@Loc.T("admin.audit.securityTitle")</span>
+                <span class="cg-badge cg-badge-ok">@_events.Count @Loc.T("admin.audit.shown")</span>
             </div>
         </div>
         <div class="bento-card-body" style="padding: 0;">
@@ -41,17 +43,17 @@ else
                 <table class="cg-table">
                     <thead>
                         <tr>
-                            <th>Occurred (UTC)</th>
-                            <th>Category</th>
-                            <th>Severity</th>
-                            <th>Summary</th>
-                            <th>Chain hash</th>
+                            <th>@Loc.T("table.occurredUtc")</th>
+                            <th>@Loc.T("table.category")</th>
+                            <th>@Loc.T("table.severity")</th>
+                            <th>@Loc.T("table.summary")</th>
+                            <th>@Loc.T("table.chainHash")</th>
                         </tr>
                     </thead>
                     <tbody>
                         @if (_events.Count == 0)
                         {
-                            <tr><td colspan="5" style="color: var(--text-secondary);">No audit events recorded yet.</td></tr>
+                            <tr><td colspan="5" style="color: var(--text-secondary);">@Loc.T("admin.audit.noEvents")</td></tr>
                         }
                         @foreach (var audit in _events)
                         {
@@ -73,8 +75,8 @@ else
         <div class="bento-card-header">
             <div class="cg-panel-title">
                 <span class="ai-dot" aria-hidden="true"></span>
-                <span>Service execution log</span>
-                <span class="cg-badge cg-badge-ai">@_runs.Count runs</span>
+                <span>@Loc.T("admin.audit.executionTitle")</span>
+                <span class="cg-badge cg-badge-ai">@_runs.Count @Loc.T("admin.audit.runs")</span>
             </div>
         </div>
         <div class="bento-card-body" style="padding: 0;">
@@ -82,18 +84,18 @@ else
                 <table class="cg-table">
                     <thead>
                         <tr>
-                            <th>Started (UTC)</th>
-                            <th>Agent</th>
-                            <th>Model provenance</th>
-                            <th class="num">Latency</th>
-                            <th class="num">Tokens</th>
-                            <th>Trigger</th>
+                            <th>@Loc.T("table.startedUtc")</th>
+                            <th>@Loc.T("table.agent")</th>
+                            <th>@Loc.T("table.modelProvenance")</th>
+                            <th class="num">@Loc.T("table.latency")</th>
+                            <th class="num">@Loc.T("table.tokens")</th>
+                            <th>@Loc.T("table.trigger")</th>
                         </tr>
                     </thead>
                     <tbody>
                         @if (_runs.Count == 0)
                         {
-                            <tr><td colspan="6" style="color: var(--text-secondary);">No agent runs recorded yet.</td></tr>
+                            <tr><td colspan="6" style="color: var(--text-secondary);">@Loc.T("admin.audit.noRuns")</td></tr>
                         }
                         @foreach (var run in _runs)
                         {
@@ -125,9 +127,13 @@ else
     private List<SecurityAuditEvent> _events = new();
     private List<AgentRun> _runs = new();
     private string _message = string.Empty;
+    private Action? _locHandler;
 
     protected override async Task OnInitializedAsync()
     {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
         try
         {
             var firmId = await Access.GetFirmIdAsync();
@@ -179,5 +185,10 @@ else
         }
         var trimmed = hash.Trim();
         return trimmed.Length <= 16 ? trimmed : trimmed.Substring(0, 16);
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
     }
 }

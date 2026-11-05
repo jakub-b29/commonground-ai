@@ -1,12 +1,14 @@
 @using CommonGround.Application.Services
+@inject WorkspaceLocalization Loc
 @inject CommonGroundWorkspaceService Workspace
 @inject WorkspaceAccessService Access
+@implements IDisposable
 
 <div class="cg-card" style="border: 1px solid var(--accent-primary); margin-block-end: 1rem;">
     <div class="cg-section-header">
         <div>
-            <span class="cg-badge cg-badge-info mono">5-STEP UNIT WIZARD · STEP @_step OF 5</span>
-            <h2 style="margin-top: 0.25rem;">Create Unit in Community</h2>
+            <span class="cg-badge cg-badge-info mono">@Loc.T("units.wizardTitle") · @Loc.T("unit.wizard.stepLabel") @_step @Loc.T("unit.wizard.ofLabel") 5</span>
+            <h2 style="margin-top: 0.25rem;">@Loc.T("unit.wizard.createTitle")</h2>
         </div>
         <div style="display: flex; gap: 0.4rem;">
             @for (var s = 1; s <= 5; s++)
@@ -18,7 +20,7 @@
                     @stepNum. @GetStepTitle(stepNum)
                 </button>
             }
-            <button type="button" class="cg-btn cg-btn-sm" @onclick="OnCancel">Close</button>
+            <button type="button" class="cg-btn cg-btn-sm" @onclick="OnCancel">@Loc.T("action.close")</button>
         </div>
     </div>
 
@@ -32,21 +34,21 @@
         <div role="status" aria-live="polite" class="cg-subcard" style="border-color: var(--color-success); margin-block: 0.75rem;">
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
                 <div>
-                    <span class="cg-badge cg-badge-ok">UNIT CREATED</span>
-                    <strong style="margin-left: 0.45rem;">Unit @_createdResult.Unit.UnitNumber (@_createdResult.Building.Name)</strong>
+                    <span class="cg-badge cg-badge-ok">@Loc.T("unit.wizard.createdBadge")</span>
+                    <strong style="margin-left: 0.45rem;">@Loc.T("unit.dossier.unitLabel") @_createdResult.Unit.UnitNumber (@_createdResult.Building.Name)</strong>
                     @if (_createdResult.Resident is not null)
                     {
-                        <span class="cg-badge cg-badge-info mono num" style="margin-left: 0.45rem;">Assigned: @_createdResult.Resident.FullName (@_createdResult.Resident.ResidentAccountNumber)</span>
+                        <span class="cg-badge cg-badge-info mono num" style="margin-left: 0.45rem;">@Loc.T("unit.wizard.assignedLabel"): @_createdResult.Resident.FullName (@_createdResult.Resident.ResidentAccountNumber)</span>
                     }
                 </div>
                 <div style="display: flex; gap: 0.4rem;">
-                    <button type="button" class="cg-btn cg-btn-sm cg-btn-primary" @onclick="FinishAfterCreationAsync">Done &amp; View Units</button>
+                    <button type="button" class="cg-btn cg-btn-sm cg-btn-primary" @onclick="FinishAfterCreationAsync">@Loc.T("unit.wizard.doneView")</button>
                 </div>
             </div>
             @if (!string.IsNullOrWhiteSpace(_createdResult.GeneratedRegistrationTokenPlaintext))
             {
                 <div style="margin-top: 0.65rem; font-size: 0.8rem;">
-                    <strong>Zero-Disclosure Resident Registration Link (copy now — shown once):</strong>
+                    <strong>@Loc.T("unit.wizard.regLinkNote")</strong>
                     <div class="mono num" style="padding: 0.45rem 0.65rem; background: var(--bg-canvas); border-radius: 6px; margin-top: 0.25rem; word-break: break-all;">
                         @($"/register-resident/{_createdResult.GeneratedRegistrationTokenPlaintext}")
                     </div>
@@ -57,10 +59,10 @@
     else if (_step == 1)
     {
         <div class="cg-subcard">
-            <strong>Step 1 — Select Community &amp; Building</strong>
+            <strong>@Loc.T("unit.wizard.step1")</strong>
             <div class="cg-grid-3" style="margin-top: 0.65rem;">
                 <div>
-                    <label for="wiz-comm">Community</label>
+                    <label for="wiz-comm">@Loc.T("unit.wizard.community")</label>
                     <select id="wiz-comm" value="@_communityId" @onchange="OnCommunityChanged" disabled="@LockCommunity">
                         @foreach (var c in Communities)
                         {
@@ -69,20 +71,20 @@
                     </select>
                 </div>
                 <div>
-                    <label for="wiz-bld">Building</label>
+                    <label for="wiz-bld">@Loc.T("unit.wizard.building")</label>
                     <select id="wiz-bld" @bind="_buildingId">
                         @foreach (var b in CurrentCommunityBuildings)
                         {
-                            <option value="@b.Id" @key="b.Id">@b.Name (@b.FloorsCount floors, @b.StairwellsCount stairwells)</option>
+                            <option value="@b.Id" @key="b.Id">@b.Name (@b.FloorsCount @Loc.T("unit.wizard.floorsAbbr"), @b.StairwellsCount @Loc.T("unit.wizard.stairwellsAbbr"))</option>
                         }
-                        <option value="@Guid.Empty">+ Create new building...</option>
+                        <option value="@Guid.Empty">@Loc.T("unit.wizard.newBuildingOpt")</option>
                     </select>
                 </div>
                 @if (_buildingId == Guid.Empty)
                 {
                     <div>
-                        <label for="wiz-new-bld">New Building Name</label>
-                        <input id="wiz-new-bld" @bind="_newBuildingName" placeholder="e.g. Building B" />
+                        <label for="wiz-new-bld">@Loc.T("unit.wizard.newBuildingName")</label>
+                        <input id="wiz-new-bld" @bind="_newBuildingName" placeholder="@Loc.T("unit.wizard.newBuildingPh")" />
                     </div>
                 }
             </div>
@@ -91,88 +93,88 @@
     else if (_step == 2)
     {
         <div class="cg-subcard">
-            <strong>Step 2 — Unit Specifications &amp; Engineering</strong>
+            <strong>@Loc.T("unit.wizard.step2")</strong>
             <div class="cg-grid-4" style="margin-top: 0.65rem;">
-                <div><label for="wiz-num">Unit Number *</label><input id="wiz-num" @bind="_unitNumber" placeholder="e.g. A-304" /></div>
+                <div><label for="wiz-num">@Loc.T("unit.wizard.unitNumber") *</label><input id="wiz-num" @bind="_unitNumber" placeholder="@Loc.T("unit.wizard.unitNumberPh")" /></div>
                 <div>
-                    <label for="wiz-kind">Unit Type</label>
+                    <label for="wiz-kind">@Loc.T("unit.wizard.unitType")</label>
                     <select id="wiz-kind" @bind="_kind">
-                        <option value="@UnitKind.Apartment">Residential Apartment</option>
-                        <option value="@UnitKind.CommercialPremise">Commercial Premise</option>
-                        <option value="@UnitKind.GarageBay">Garage Bay</option>
-                        <option value="@UnitKind.StorageCell">Storage Cell</option>
+                        <option value="@UnitKind.Apartment">@Loc.T("unit.wizard.kindApartment")</option>
+                        <option value="@UnitKind.CommercialPremise">@Loc.T("unit.wizard.kindCommercial")</option>
+                        <option value="@UnitKind.GarageBay">@Loc.T("unit.wizard.kindGarage")</option>
+                        <option value="@UnitKind.StorageCell">@Loc.T("unit.wizard.kindStorage")</option>
                     </select>
                 </div>
-                <div><label for="wiz-floor">Floor Number</label><input id="wiz-floor" type="number" min="0" max="100" @bind="_floorNumber" /></div>
-                <div><label for="wiz-stair">Stairwell / Entrance</label><input id="wiz-stair" type="number" min="1" max="20" @bind="_stairwellNumber" /></div>
-                <div><label for="wiz-stack">Vertical Riser Stack</label><input id="wiz-stack" class="mono" @bind="_stackCode" placeholder="STACK-A1" /></div>
-                <div><label for="wiz-area">Floor Area (m²) *</label><input id="wiz-area" type="number" step="0.1" min="1" @bind="_floorAreaM2" /></div>
-                <div><label for="wiz-storage">Storage Area (m²)</label><input id="wiz-storage" type="number" step="0.1" min="0" @bind="_storageAreaM2" /></div>
-                <div><label for="wiz-rooms">Rooms Count</label><input id="wiz-rooms" type="number" min="0" max="30" @bind="_roomsCount" /></div>
-                <div><label for="wiz-bath">Bathrooms Count</label><input id="wiz-bath" type="number" min="0" max="15" @bind="_bathroomsCount" /></div>
-                <div><label for="wiz-cap">Occupancy Capacity</label><input id="wiz-cap" type="number" min="1" max="30" @bind="_occupancyCapacity" /></div>
-                <div><label for="wiz-sh-num">Share Numerator</label><input id="wiz-sh-num" type="number" min="1" @bind="_shareNumerator" /></div>
-                <div><label for="wiz-sh-den">Share Denominator</label><input id="wiz-sh-den" type="number" min="1" @bind="_shareDenominator" /></div>
-                <div><label for="wiz-park">Parking Bay Number</label><input id="wiz-park" @bind="_parkingBay" placeholder="P-12" /></div>
-                <div><label for="wiz-fob">Access Fob Code</label><input id="wiz-fob" class="mono" @bind="_accessFob" placeholder="FOB-304" /></div>
-                <div><label for="wiz-iban">Virtual IBAN / Lockbox</label><input id="wiz-iban" class="mono" @bind="_virtualIban" placeholder="Auto-generated if blank" /></div>
-                <div><label for="wiz-notes">Unit Notes</label><input id="wiz-notes" @bind="_notes" placeholder="Optional engineering or layout notes" /></div>
+                <div><label for="wiz-floor">@Loc.T("unit.wizard.floorNo")</label><input id="wiz-floor" type="number" min="0" max="100" @bind="_floorNumber" /></div>
+                <div><label for="wiz-stair">@Loc.T("unit.wizard.stairwell")</label><input id="wiz-stair" type="number" min="1" max="20" @bind="_stairwellNumber" /></div>
+                <div><label for="wiz-stack">@Loc.T("unit.wizard.riserStack")</label><input id="wiz-stack" class="mono" @bind="_stackCode" placeholder="STACK-A1" /></div>
+                <div><label for="wiz-area">@Loc.T("unit.wizard.floorArea") *</label><input id="wiz-area" type="number" step="0.1" min="1" @bind="_floorAreaM2" /></div>
+                <div><label for="wiz-storage">@Loc.T("unit.wizard.storageArea")</label><input id="wiz-storage" type="number" step="0.1" min="0" @bind="_storageAreaM2" /></div>
+                <div><label for="wiz-rooms">@Loc.T("unit.wizard.rooms")</label><input id="wiz-rooms" type="number" min="0" max="30" @bind="_roomsCount" /></div>
+                <div><label for="wiz-bath">@Loc.T("unit.wizard.bathrooms")</label><input id="wiz-bath" type="number" min="0" max="15" @bind="_bathroomsCount" /></div>
+                <div><label for="wiz-cap">@Loc.T("unit.wizard.capacity")</label><input id="wiz-cap" type="number" min="1" max="30" @bind="_occupancyCapacity" /></div>
+                <div><label for="wiz-sh-num">@Loc.T("unit.dossier.shareNum")</label><input id="wiz-sh-num" type="number" min="1" @bind="_shareNumerator" /></div>
+                <div><label for="wiz-sh-den">@Loc.T("unit.dossier.shareDen")</label><input id="wiz-sh-den" type="number" min="1" @bind="_shareDenominator" /></div>
+                <div><label for="wiz-park">@Loc.T("unit.dossier.parking")</label><input id="wiz-park" @bind="_parkingBay" placeholder="@Loc.T("unit.wizard.parkingPh")" /></div>
+                <div><label for="wiz-fob">@Loc.T("unit.dossier.fob")</label><input id="wiz-fob" class="mono" @bind="_accessFob" placeholder="@Loc.T("unit.wizard.fobPh")" /></div>
+                <div><label for="wiz-iban">@Loc.T("unit.iban")</label><input id="wiz-iban" class="mono" @bind="_virtualIban" placeholder="@Loc.T("unit.wizard.ibanPh")" /></div>
+                <div><label for="wiz-notes">@Loc.T("unit.wizard.notes")</label><input id="wiz-notes" @bind="_notes" placeholder="@Loc.T("unit.wizard.notesPh")" /></div>
             </div>
         </div>
     }
     else if (_step == 3)
     {
         <div class="cg-subcard">
-            <strong>Step 3 — Legal Ownership Information</strong>
+            <strong>@Loc.T("unit.wizard.step3")</strong>
             <p style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 0.2rem;">
-                Legal ownership is tracked separately from apartment residency/tenancy. Leave blank if ownership will be recorded later.
+                @Loc.T("unit.wizard.step3Hint")
             </p>
             <div class="cg-grid-3" style="margin-top: 0.65rem;">
-                <div><label for="wiz-own-name">Primary Owner Full Name</label><input id="wiz-own-name" @bind="_ownerFullName" placeholder="e.g. Marek Kowalski" /></div>
-                <div><label for="wiz-own-email">Primary Owner Email</label><input id="wiz-own-email" type="email" @bind="_ownerEmail" placeholder="owner@example.com" /></div>
-                <div><label for="wiz-own-phone">Primary Owner Phone</label><input id="wiz-own-phone" type="tel" @bind="_ownerPhone" placeholder="+48 600 100 200" /></div>
+                <div><label for="wiz-own-name">@Loc.T("unit.wizard.ownerName")</label><input id="wiz-own-name" @bind="_ownerFullName" placeholder="@Loc.T("unit.wizard.ownerNamePh")" /></div>
+                <div><label for="wiz-own-email">@Loc.T("unit.wizard.ownerEmail")</label><input id="wiz-own-email" type="email" @bind="_ownerEmail" placeholder="@Loc.T("form.emailEx")" /></div>
+                <div><label for="wiz-own-phone">@Loc.T("unit.wizard.ownerPhone")</label><input id="wiz-own-phone" type="tel" @bind="_ownerPhone" placeholder="@Loc.T("form.phoneEx")" /></div>
                 <div>
-                    <label for="wiz-own-role">Ownership Role</label>
+                    <label for="wiz-own-role">@Loc.T("unit.wizard.ownershipRole")</label>
                     <select id="wiz-own-role" @bind="_ownershipRole">
-                        <option value="@UnitOwnershipRole.PrimaryOwner">Primary Owner</option>
-                        <option value="@UnitOwnershipRole.CoOwner">Co-Owner</option>
-                        <option value="@UnitOwnershipRole.CorporateOwner">Corporate / Institutional Owner</option>
-                        <option value="@UnitOwnershipRole.AuthorizedRepresentative">Authorized Representative</option>
+                        <option value="@UnitOwnershipRole.PrimaryOwner">@Loc.T("unit.wizard.rolePrimaryOwner")</option>
+                        <option value="@UnitOwnershipRole.CoOwner">@Loc.T("unit.wizard.roleCoOwner")</option>
+                        <option value="@UnitOwnershipRole.CorporateOwner">@Loc.T("unit.wizard.roleCorporate")</option>
+                        <option value="@UnitOwnershipRole.AuthorizedRepresentative">@Loc.T("unit.wizard.roleRepresentative")</option>
                     </select>
                 </div>
-                <div><label for="wiz-own-pct">Ownership Percentage (%)</label><input id="wiz-own-pct" type="number" step="0.01" min="1" max="100" @bind="_ownershipPercentage" /></div>
-                <div><label for="wiz-coowner">Co-Owner Name (Optional)</label><input id="wiz-coowner" @bind="_coOwnerName" /></div>
-                <div><label for="wiz-proxy">Voting Proxy Name (Optional)</label><input id="wiz-proxy" @bind="_votingProxyName" /></div>
+                <div><label for="wiz-own-pct">@Loc.T("unit.wizard.ownershipPct")</label><input id="wiz-own-pct" type="number" step="0.01" min="1" max="100" @bind="_ownershipPercentage" /></div>
+                <div><label for="wiz-coowner">@Loc.T("unit.wizard.coOwnerOpt")</label><input id="wiz-coowner" @bind="_coOwnerName" /></div>
+                <div><label for="wiz-proxy">@Loc.T("unit.wizard.proxyOpt")</label><input id="wiz-proxy" @bind="_votingProxyName" /></div>
             </div>
         </div>
     }
     else if (_step == 4)
     {
         <div class="cg-subcard">
-            <strong>Step 4 — Initial Resident Assignment &amp; Registration Link</strong>
+            <strong>@Loc.T("unit.wizard.step4")</strong>
             <div class="cg-grid-3" style="margin-top: 0.65rem;">
                 <div>
-                    <label for="wiz-res-opt">Resident Assignment Mode</label>
+                    <label for="wiz-res-opt">@Loc.T("unit.wizard.assignMode")</label>
                     <select id="wiz-res-opt" @bind="_residentOption">
-                        <option value="@WizardResidentAssignmentOption.None">Leave Unit Vacant (No Resident Assigned Yet)</option>
-                        <option value="@WizardResidentAssignmentOption.AssignExistingResident">Assign Existing Resident Profile (RES-XXXXXXXX)</option>
-                        <option value="@WizardResidentAssignmentOption.CreateAndAssignNewResident">Create &amp; Assign New Resident Profile</option>
+                        <option value="@WizardResidentAssignmentOption.None">@Loc.T("unit.wizard.modeVacant")</option>
+                        <option value="@WizardResidentAssignmentOption.AssignExistingResident">@Loc.T("unit.wizard.modeExisting")</option>
+                        <option value="@WizardResidentAssignmentOption.CreateAndAssignNewResident">@Loc.T("unit.wizard.modeCreate")</option>
                     </select>
                 </div>
                 @if (_residentOption != WizardResidentAssignmentOption.None)
                 {
                     <div>
-                        <label for="wiz-res-type">Occupancy / Assignment Type</label>
+                        <label for="wiz-res-type">@Loc.T("unit.wizard.assignType")</label>
                         <select id="wiz-res-type" @bind="_assignmentType">
-                            <option value="@ResidentAssignmentType.OwnerResident">Owner-Resident</option>
-                            <option value="@ResidentAssignmentType.PrimaryResident">Primary Resident</option>
-                            <option value="@ResidentAssignmentType.Tenant">Tenant</option>
-                            <option value="@ResidentAssignmentType.CoResident">Co-Resident</option>
-                            <option value="@ResidentAssignmentType.AuthorizedOccupant">Authorized Occupant</option>
+                            <option value="@ResidentAssignmentType.OwnerResident">@Loc.T("unit.dossier.roleOwnerResident")</option>
+                            <option value="@ResidentAssignmentType.PrimaryResident">@Loc.T("unit.dossier.rolePrimary")</option>
+                            <option value="@ResidentAssignmentType.Tenant">@Loc.T("unit.dossier.roleTenant")</option>
+                            <option value="@ResidentAssignmentType.CoResident">@Loc.T("unit.dossier.roleCoResident")</option>
+                            <option value="@ResidentAssignmentType.AuthorizedOccupant">@Loc.T("unit.dossier.roleOccupant")</option>
                         </select>
                     </div>
                     <div>
-                        <label for="wiz-movein">Move-In Date</label>
+                        <label for="wiz-movein">@Loc.T("unit.dossier.moveIn")</label>
                         <input id="wiz-movein" type="date" @bind="_moveInDate" />
                     </div>
                 }
@@ -182,9 +184,9 @@
             {
                 <div class="cg-grid-2" style="margin-top: 0.65rem;">
                     <div>
-                        <label for="wiz-existing-res">Select Existing Resident (by Name or RES-XXXXXXXX)</label>
+                        <label for="wiz-existing-res">@Loc.T("unit.wizard.selectExisting")</label>
                         <select id="wiz-existing-res" @bind="_existingResidentId">
-                            <option value="@Guid.Empty">-- Select Resident Profile --</option>
+                            <option value="@Guid.Empty">@Loc.T("unit.dossier.selectResident")</option>
                             @foreach (var r in ExistingResidents)
                             {
                                 <option value="@r.Profile.Id" @key="r.Profile.Id">@r.Profile.FullName · @r.Profile.ResidentAccountNumber (@r.Profile.PrimaryEmail)</option>
@@ -196,12 +198,12 @@
             else if (_residentOption == WizardResidentAssignmentOption.CreateAndAssignNewResident)
             {
                 <div class="cg-grid-3" style="margin-top: 0.65rem;">
-                    <div><label for="wiz-nr-fn">Resident First Name *</label><input id="wiz-nr-fn" @bind="_newResidentFirstName" placeholder="Jan" /></div>
-                    <div><label for="wiz-nr-ln">Resident Last Name *</label><input id="wiz-nr-ln" @bind="_newResidentLastName" placeholder="Nowak" /></div>
-                    <div><label for="wiz-nr-em">Resident Email *</label><input id="wiz-nr-em" type="email" @bind="_newResidentEmail" placeholder="resident@example.com" /></div>
-                    <div><label for="wiz-nr-ph">Resident Phone</label><input id="wiz-nr-ph" type="tel" @bind="_newResidentPhone" placeholder="+48 500 200 300" /></div>
+                    <div><label for="wiz-nr-fn">@Loc.T("unit.wizard.firstName") *</label><input id="wiz-nr-fn" @bind="_newResidentFirstName" placeholder="@Loc.T("unit.wizard.firstNamePh")" /></div>
+                    <div><label for="wiz-nr-ln">@Loc.T("unit.wizard.lastName") *</label><input id="wiz-nr-ln" @bind="_newResidentLastName" placeholder="@Loc.T("unit.wizard.lastNamePh")" /></div>
+                    <div><label for="wiz-nr-em">@Loc.T("unit.wizard.email") *</label><input id="wiz-nr-em" type="email" @bind="_newResidentEmail" placeholder="@Loc.T("form.emailEx")" /></div>
+                    <div><label for="wiz-nr-ph">@Loc.T("unit.wizard.phone")</label><input id="wiz-nr-ph" type="tel" @bind="_newResidentPhone" placeholder="@Loc.T("form.phoneEx")" /></div>
                     <div>
-                        <label for="wiz-nr-lang">Preferred Language</label>
+                        <label for="wiz-nr-lang">@Loc.T("unit.wizard.prefLang")</label>
                         <select id="wiz-nr-lang" @bind="_newResidentLang">
                             <option value="EN">English (EN)</option>
                             <option value="PL">Polski (PL)</option>
@@ -216,15 +218,15 @@
             <div class="cg-subcard" style="margin-top: 0.75rem;">
                 <label class="cg-check-row">
                     <input type="checkbox" @bind="_generateRegistrationLink" />
-                    <span>Also generate a Zero-Disclosure Resident Registration Link for this unit</span>
+                    <span>@Loc.T("unit.wizard.genLink")</span>
                 </label>
                 @if (_generateRegistrationLink)
                 {
                     <div style="margin-top: 0.45rem; max-width: 420px;">
-                        <label for="wiz-reg-mode">Registration Approval Policy</label>
+                        <label for="wiz-reg-mode">@Loc.T("unit.dossier.approvalPolicy")</label>
                         <select id="wiz-reg-mode" @bind="_registrationApprovalMode">
-                            <option value="@RegistrationApprovalMode.ManualFirmApproval">Mode B — Manual Firm Approval Queue</option>
-                            <option value="@RegistrationApprovalMode.AutomaticAuthorized">Mode A — Automatic Authorized Activation</option>
+                            <option value="@RegistrationApprovalMode.ManualFirmApproval">@Loc.T("property.settings.regManual")</option>
+                            <option value="@RegistrationApprovalMode.AutomaticAuthorized">@Loc.T("property.settings.regAuto")</option>
                         </select>
                     </div>
                 }
@@ -236,32 +238,32 @@
         var selectedComm = Communities.FirstOrDefault(c => c.Id == _communityId);
         var selectedBld = CurrentCommunityBuildings.FirstOrDefault(b => b.Id == _buildingId);
         <div class="cg-subcard">
-            <strong>Step 5 — Review &amp; Confirm Unit Creation</strong>
+            <strong>@Loc.T("unit.wizard.step5")</strong>
             <div class="cg-grid-3" style="margin-top: 0.65rem; font-size: 0.82rem;">
                 <div>
-                    <div style="color: var(--text-muted);">Community</div>
-                    <strong>@(selectedComm?.Name ?? "Selected Community")</strong>
+                    <div style="color: var(--text-muted);">@Loc.T("unit.wizard.community")</div>
+                    <strong>@(selectedComm?.Name ?? Loc.T("unit.wizard.selectedCommunity"))</strong>
                     <span class="mono num">(@(selectedComm?.CommunityAccountNumber ?? "COM"))</span>
                 </div>
                 <div>
-                    <div style="color: var(--text-muted);">Building &amp; Riser Stack</div>
-                    <strong>@(selectedBld?.Name ?? (string.IsNullOrWhiteSpace(_newBuildingName) ? "Building A" : _newBuildingName)) · Floor @_floorNumber · Stairwell @_stairwellNumber · @_stackCode</strong>
+                    <div style="color: var(--text-muted);">@Loc.T("unit.wizard.buildingRiser")</div>
+                    <strong>@(selectedBld?.Name ?? (string.IsNullOrWhiteSpace(_newBuildingName) ? Loc.T("unit.wizard.buildingAFallback") : _newBuildingName)) · @Loc.T("unit.dossier.floor") @_floorNumber · @Loc.T("unit.dossier.stairwell") @_stairwellNumber · @_stackCode</strong>
                 </div>
                 <div>
-                    <div style="color: var(--text-muted);">Unit Number &amp; Type</div>
+                    <div style="color: var(--text-muted);">@Loc.T("unit.wizard.unitTypeLabel")</div>
                     <strong class="mono num">@_unitNumber (@_kind)</strong>
                 </div>
                 <div>
-                    <div style="color: var(--text-muted);">Area &amp; Layout</div>
-                    <strong class="mono num">@_floorAreaM2.ToString("N1") m² + @_storageAreaM2.ToString("N1") m² storage · @_roomsCount rooms · Capacity @_occupancyCapacity</strong>
+                    <div style="color: var(--text-muted);">@Loc.T("unit.wizard.areaLayout")</div>
+                    <strong class="mono num">@_floorAreaM2.ToString("N1") m² + @_storageAreaM2.ToString("N1") m² @Loc.T("unit.wizard.storageAbbr") · @_roomsCount @Loc.T("unit.wizard.roomsAbbr") · @Loc.T("unit.wizard.capacityLabel") @_occupancyCapacity</strong>
                 </div>
                 <div>
-                    <div style="color: var(--text-muted);">Ownership Share</div>
-                    <strong class="mono num">@_shareNumerator / @_shareDenominator (@(string.IsNullOrWhiteSpace(_ownerFullName) ? "No owner specified" : _ownerFullName))</strong>
+                    <div style="color: var(--text-muted);">@Loc.T("unit.wizard.shareLabel")</div>
+                    <strong class="mono num">@_shareNumerator / @_shareDenominator (@(string.IsNullOrWhiteSpace(_ownerFullName) ? Loc.T("unit.wizard.noOwner") : _ownerFullName))</strong>
                 </div>
                 <div>
-                    <div style="color: var(--text-muted);">Resident Assignment</div>
-                    <strong>@_residentOption (@(_residentOption == WizardResidentAssignmentOption.None ? "Vacant" : _assignmentType.ToString()))</strong>
+                    <div style="color: var(--text-muted);">@Loc.T("unit.wizard.residentLabel")</div>
+                    <strong>@_residentOption (@(_residentOption == WizardResidentAssignmentOption.None ? Loc.T("unit.wizard.vacantLabel") : _assignmentType.ToString()))</strong>
                 </div>
             </div>
         </div>
@@ -273,16 +275,16 @@
             <div>
                 @if (_step > 1)
                 {
-                    <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="PrevStep">Previous step</button>
+                    <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="PrevStep">@Loc.T("unit.wizard.prevStep")</button>
                 }
             </div>
             <div style="display: flex; gap: 0.5rem;">
                 @if (_step < 5)
                 {
-                    <button type="button" class="cg-btn cg-btn-primary" @onclick="NextStep">Continue to Step @(_step + 1)</button>
+                    <button type="button" class="cg-btn cg-btn-primary" @onclick="NextStep">@Loc.T("unit.wizard.nextStep") @(_step + 1)</button>
                 }
                 <button type="button" class="cg-btn cg-btn-ai" disabled="@_isBusy" @onclick="SubmitUnitAsync">
-                    @(_isBusy ? "Creating unit..." : "Create Unit & Save")
+                    @(_isBusy ? Loc.T("unit.wizard.creating") : Loc.T("unit.wizard.submit"))
                 </button>
             </div>
         </div>
@@ -302,6 +304,7 @@
     private bool _isBusy;
     private string _error = string.Empty;
     private UnitCreationWizardResult? _createdResult;
+    private Action? _locHandler;
 
     private Guid _communityId;
     private Guid _buildingId;
@@ -346,6 +349,13 @@
     private IReadOnlyList<Building> CurrentCommunityBuildings =>
         Buildings.Where(b => b.CommunityId == _communityId).OrderBy(b => b.Name).ToList();
 
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+    }
+
     protected override void OnParametersSet()
     {
         if (_communityId == Guid.Empty)
@@ -369,14 +379,14 @@
         }
     }
 
-    private static string GetStepTitle(int step) => step switch
+    private string GetStepTitle(int step) => step switch
     {
-        1 => "Community & Building",
-        2 => "Unit Specs",
-        3 => "Ownership",
-        4 => "Resident & Link",
-        5 => "Confirm",
-        _ => "Step"
+        1 => Loc.T("unit.wizard.s1title"),
+        2 => Loc.T("unit.wizard.s2title"),
+        3 => Loc.T("unit.wizard.s3title"),
+        4 => Loc.T("unit.wizard.s4title"),
+        5 => Loc.T("unit.wizard.s5title"),
+        _ => Loc.T("unit.wizard.sGeneric")
     };
 
     private void GoToStep(int step)
@@ -390,7 +400,7 @@
         _error = string.Empty;
         if (_step == 2 && string.IsNullOrWhiteSpace(_unitNumber))
         {
-            _error = "Please enter a Unit Number (e.g. A-101) before continuing.";
+            _error = Loc.T("unit.wizard.unitRequired");
             return;
         }
         if (_step < 5) _step++;
@@ -407,7 +417,7 @@
         _error = string.Empty;
         if (string.IsNullOrWhiteSpace(_unitNumber))
         {
-            _error = "Unit Number is required (Step 2).";
+            _error = Loc.T("unit.wizard.unitRequiredStep2");
             _step = 2;
             return;
         }
@@ -478,5 +488,10 @@
         {
             await OnUnitCreated.InvokeAsync(_createdResult);
         }
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
     }
 }

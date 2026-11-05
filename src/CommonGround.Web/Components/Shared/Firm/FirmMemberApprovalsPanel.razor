@@ -7,13 +7,13 @@
 
 <div class="cg-card">
     <div class="cg-section-header">
-        <h2>Pending member approvals</h2>
-        <span class="cg-badge">@_queue.Count pending</span>
+        <h2>@Loc.T("admin.firmApprovals.title")</h2>
+        <span class="cg-badge">@_queue.Count @Loc.T("admin.firmApprovals.pendingBadge")</span>
     </div>
-    <p style="color: var(--color-text-secondary); font-size: 0.78125rem;">Review join requests for this firm. Approve or reject each member.</p>
+    <p style="color: var(--color-text-secondary); font-size: 0.78125rem;">@Loc.T("admin.firmApprovals.lead")</p>
     @if (!_isManager)
     {
-        <p class="cg-empty-text">Only a firm manager or property manager may review approvals.</p>
+        <p class="cg-empty-text">@Loc.T("admin.firmApprovals.managerOnly")</p>
     }
     else
     {
@@ -21,18 +21,18 @@
             <table class="cg-table">
                 <thead>
                     <tr>
-                        <th>Name and email</th>
-                        <th>Role</th>
-                        <th>Properties</th>
-                        <th>Permissions</th>
-                        <th>Status</th>
-                        <th>Actions</th>
+                        <th>@Loc.T("admin.firmApprovals.nameEmail")</th>
+                        <th>@Loc.T("table.role")</th>
+                        <th>@Loc.T("table.properties")</th>
+                        <th>@Loc.T("table.permissions")</th>
+                        <th>@Loc.T("table.status")</th>
+                        <th>@Loc.T("table.actions")</th>
                     </tr>
                 </thead>
                 <tbody>
                     @if (_queue.Count == 0)
                     {
-                        <tr><td colspan="6" style="color: var(--color-text-secondary);">No pending approvals.</td></tr>
+                        <tr><td colspan="6" style="color: var(--color-text-secondary);">@Loc.T("admin.firmApprovals.empty")</td></tr>
                     }
                     @foreach (var m in _queue)
                     {
@@ -41,23 +41,23 @@
                             <td>
                                 <strong>@GetMemberName(m)</strong>
                                 <div class="mono num" style="font-size: 0.72rem; color: var(--color-text-secondary); font-variant-numeric: tabular-nums;">@GetMemberEmail(m) · @m.UserAccountId.ToString("N").AsSpan(0, 8).ToString()</div>
-                                <div style="font-size: 0.72rem; color: var(--color-text-secondary);">Trade: @(string.IsNullOrWhiteSpace(editor.Trade) ? "None" : editor.Trade) · Units: @(string.IsNullOrWhiteSpace(editor.Units) ? "None" : editor.Units)</div>
+                                <div style="font-size: 0.72rem; color: var(--color-text-secondary);">@Loc.T("admin.firmApprovals.trade"): @(string.IsNullOrWhiteSpace(editor.Trade) ? Loc.T("admin.firmApprovals.none") : editor.Trade) · @Loc.T("admin.firmApprovals.units"): @(string.IsNullOrWhiteSpace(editor.Units) ? Loc.T("admin.firmApprovals.none") : editor.Units)</div>
                             </td>
                             <td><span class="cg-badge">@m.Role</span></td>
                             <td>
                                 <div style="font-size: 0.75rem; max-inline-size: 14rem;">@GetPropertyScopeText(m)</div>
                                 <div style="margin-block-start: 0.375rem;">
-                                    <label style="display: block; font-weight: 500; font-size: 0.75rem;" for="ap-prop-@m.Id">Property scope</label>
-                                    <input id="ap-prop-@m.Id" @bind="editor.AllowedIdsCsv" placeholder="Comma separated property ids or blank for all" style="inline-size: 100%;" />
+                                    <label style="display: block; font-weight: 500; font-size: 0.75rem;" for="ap-prop-@m.Id">@Loc.T("admin.firmApprovals.scope")</label>
+                                    <input id="ap-prop-@m.Id" @bind="editor.AllowedIdsCsv" placeholder="@Loc.T("admin.firmApprovals.scopePh")" style="inline-size: 100%;" />
                                 </div>
                                 <div style="margin-block-start: 0.25rem; display: flex; gap: 0.375rem; flex-wrap: wrap;">
-                                    <input style="inline-size: 6rem;" placeholder="Unit csv" aria-label="Linked units" @bind="editor.Units" />
-                                    <input style="inline-size: 8rem;" placeholder="Company or trade" aria-label="Company or trade" @bind="editor.Trade" />
+                                    <input style="inline-size: 6rem;" placeholder="@Loc.T("admin.firmApprovals.unitsPh")" aria-label="@Loc.T("admin.firmApprovals.units")" @bind="editor.Units" />
+                                    <input style="inline-size: 8rem;" placeholder="@Loc.T("form.companyTrade")" aria-label="@Loc.T("form.companyTrade")" @bind="editor.Trade" />
                                 </div>
                             </td>
                             <td>
                                 <fieldset style="border: 0; padding: 0; margin: 0;">
-                                    <legend style="font-size: 0.75rem; font-weight: 500;">Permissions</legend>
+                                    <legend style="font-size: 0.75rem; font-weight: 500;">@Loc.T("table.permissions")</legend>
                                     @foreach (var flag in RelevantFlags(m.Role))
                                     {
                                         <label style="display: flex; align-items: center; gap: 0.375rem; font-weight: 400; font-size: 0.75rem; margin-block-end: 0.125rem;">
@@ -73,8 +73,8 @@
                             </td>
                             <td>
                                 <div style="display: flex; gap: 0.375rem; flex-wrap: wrap;">
-                                    <button type="button" class="cg-btn cg-btn-primary" disabled="@(_isBusy || !_isManager)" @onclick="() => OnDecide(m.Id, true)">Approve</button>
-                                    <button type="button" class="cg-btn" disabled="@(_isBusy || !_isManager)" @onclick="() => OnDecide(m.Id, false)">Reject</button>
+                                    <button type="button" class="cg-btn cg-btn-primary" disabled="@(_isBusy || !_isManager)" @onclick="() => OnDecide(m.Id, true)">@Loc.T("action.approve")</button>
+                                    <button type="button" class="cg-btn" disabled="@(_isBusy || !_isManager)" @onclick="() => OnDecide(m.Id, false)">@Loc.T("action.reject")</button>
                                 </div>
                             </td>
                         </tr>
@@ -103,7 +103,7 @@
     private bool _isManager;
     private bool _isBusy;
     private string _message = string.Empty;
-    private string _statusLine = "Approval queue loaded.";
+    private string _statusLine = string.Empty;
     private WorkspaceSecurityRole _actorRole = WorkspaceSecurityRole.PropertyManager;
     private Action? _locHandler;
 
@@ -139,7 +139,7 @@
                     _accounts[m.UserAccountId] = await Workspace.GetWorkspaceAccountAsync(m.UserAccountId);
                 GetEditor(m.Id, m);
             }
-            _statusLine = $"Approval queue loaded. {_queue.Count} pending.";
+            _statusLine = $"{Loc.T("admin.firmApprovals.loaded")} {_queue.Count} {Loc.T("admin.firmApprovals.pendingBadge")}";
         }
         catch (Exception ex)
         {
@@ -189,7 +189,7 @@
     private string GetMemberName(WorkspaceAccountMembership membership) =>
         _accounts.TryGetValue(membership.UserAccountId, out var account) && account is not null && !string.IsNullOrWhiteSpace(account.FullName)
             ? account.FullName
-            : membership.UserAccount?.FullName ?? "Member";
+            : membership.UserAccount?.FullName ?? Loc.T("admin.members.memberFallback");
 
     private string GetMemberEmail(WorkspaceAccountMembership membership) =>
         _accounts.TryGetValue(membership.UserAccountId, out var account) && account is not null && !string.IsNullOrWhiteSpace(account.Email)
@@ -199,7 +199,7 @@
     private string GetPropertyScopeText(WorkspaceAccountMembership membership)
     {
         if (string.IsNullOrWhiteSpace(membership.AllowedCommunityIdsCsv))
-            return "All firm properties";
+            return Loc.T("admin.members.firmScope");
         var names = new List<string>();
         foreach (var part in membership.AllowedCommunityIdsCsv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
@@ -207,7 +207,7 @@
             var match = _firmProperties.FirstOrDefault(p => p.Id == id);
             names.Add(match?.Name ?? id.ToString("N").Substring(0, 8));
         }
-        return names.Count == 0 ? "All firm properties" : string.Join(", ", names);
+        return names.Count == 0 ? Loc.T("admin.members.firmScope") : string.Join(", ", names);
     }
 
     private static void OnPermissionToggled(ApprovalEditor editor, WorkspacePermissionFlags flag, bool isChecked)
@@ -236,7 +236,7 @@
                 string.IsNullOrWhiteSpace(editor.Trade) ? null : editor.Trade.Trim(),
                 _actorRole);
             _editors.Remove(membershipId);
-            _message = approve ? "Membership approved." : "Membership rejected.";
+            _message = approve ? Loc.T("msg.membershipApproved") : Loc.T("msg.membershipRevoked");
             _statusLine = _message;
             await ReloadAsync();
         }
@@ -273,5 +273,8 @@
     public void Dispose()
     {
         if (_locHandler is not null) Loc.OnChange -= _locHandler;
+    }
+}
+er;
     }
 }

@@ -2,16 +2,31 @@
 @layout Layout.AuthLayout
 @attribute [AllowAnonymous]
 @inject NavigationManager Nav
+@inject WorkspaceLocalization Loc
+@implements IDisposable
+
+<PageTitle>@Loc.T("register.title") - CommonGround</PageTitle>
+
+<p role="status" aria-live="polite">@Loc.T("page.moved.register")</p>
 
 @code {
     [SupplyParameterFromQuery(Name = "token")] public string? Token { get; set; }
     [SupplyParameterFromQuery(Name = "code")] public string? Code { get; set; }
+    private Action? _locHandler;
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
         if (!string.IsNullOrWhiteSpace(Token))
             Nav.NavigateTo($"/accept-invite?token={Uri.EscapeDataString(Token)}&code={Uri.EscapeDataString(Code ?? string.Empty)}", forceLoad: true);
         else
             Nav.NavigateTo("/register-firm", forceLoad: true);
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
     }
 }

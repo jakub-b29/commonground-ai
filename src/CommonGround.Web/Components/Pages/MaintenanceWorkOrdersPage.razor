@@ -2,16 +2,28 @@
 @attribute [Authorize(Policy = "WorkspaceMember")]
 @inject NavigationManager Nav
 @inject WorkspaceAccessService Access
+@inject WorkspaceLocalization Loc
+@implements IDisposable
 
-<PageTitle>Moved - CommonGround</PageTitle>
+<PageTitle>@Loc.T("page.moved.title") - CommonGround</PageTitle>
 
-<p role="status" aria-live="polite">Maintenance has moved to the property workspace. Redirecting.</p>
+<p role="status" aria-live="polite">@Loc.T("page.moved.maintenance")</p>
 
 @code {
+    private Action? _locHandler;
+
     protected override async Task OnInitializedAsync()
     {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
         var communities = await Access.GetAllowedCommunitiesAsync();
         var first = communities.FirstOrDefault();
         Nav.NavigateTo(first is null ? "/admin" : $"/properties/{first.Id}/maintenance", forceLoad: false);
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
     }
 }

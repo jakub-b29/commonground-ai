@@ -7,11 +7,11 @@
 <div class="cg-card" style="margin-block-end: 1rem; padding: 0.75rem 1rem; border-color: var(--status-danger-border); background: var(--status-danger-bg);" role="region" aria-label="@Loc.T("shell.emergencyContacts")">
     <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;">
         <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
-            <span class="cg-badge cg-badge-err">24/7 Dispatch</span>
+            <span class="cg-badge cg-badge-err">@Loc.T("shell.dispatch247")</span>
             <strong style="font-size: 0.82rem; color: var(--text-primary);">@Loc.T("shell.emergencyContacts")</strong>
             <span style="font-size: 0.76rem; color: var(--text-secondary);">@_summary</span>
         </div>
-        <button type="button" class="cg-btn cg-btn-sm" @onclick="() => UiState.ToggleEmergencyDrawer()">Dismiss</button>
+        <button type="button" class="cg-btn cg-btn-sm" @onclick="() => UiState.ToggleEmergencyDrawer()">@Loc.T("shell.dismiss")</button>
     </div>
     <div style="display: flex; flex-wrap: wrap; gap: 0.45rem; margin-block-start: 0.55rem;">
         @foreach (var contact in _contacts)
@@ -55,7 +55,7 @@
         else
         {
             var first = allowed.OrderBy(c => c.Name).First();
-            UiState.SelectCommunity(first.Id, first.OperatingMode == SystemOperatingMode.UsHoa ? "US HOA & Condo Mode" : "Housing Association Mode");
+            UiState.SelectCommunity(first.Id, first.OperatingMode == SystemOperatingMode.UsHoa ? Loc.T("shell.modeUsHoa") : Loc.T("shell.modeHousing"));
             targetId = first.Id;
         }
         if (!await Access.CanAccessCommunityAsync(targetId))

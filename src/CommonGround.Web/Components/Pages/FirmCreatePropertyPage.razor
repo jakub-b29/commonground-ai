@@ -1,14 +1,26 @@
 @page "/firm/properties/new"
 @attribute [Authorize(Policy = "FirmManagerOnly")]
 @inject NavigationManager Nav
+@inject WorkspaceLocalization Loc
+@implements IDisposable
 
-<PageTitle>Moved - CommonGround</PageTitle>
+<PageTitle>@Loc.T("page.moved.title") - CommonGround</PageTitle>
 
-<p role="status" aria-live="polite">Property creation has moved to firm administration. Redirecting.</p>
+<p role="status" aria-live="polite">@Loc.T("page.moved.propertyCreate")</p>
 
 @code {
-    protected override void OnInitialized()
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
     {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
         Nav.NavigateTo("/admin/properties/new", forceLoad: false);
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
     }
 }

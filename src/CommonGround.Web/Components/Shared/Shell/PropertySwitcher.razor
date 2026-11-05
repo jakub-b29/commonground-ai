@@ -1,13 +1,14 @@
 @inject WorkspaceUiState UiState
 @inject WorkspaceAccessService Access
+@inject WorkspaceLocalization Loc
 @implements IDisposable
 
 @if (_properties.Count > 0)
 {
     <div class="cg-topbar-field">
-        <label for="property-select">Property</label>
+        <label for="property-select">@Loc.T("shell.propertyLabel")</label>
         <select id="property-select" value="@UiState.SelectedPropertyId" @onchange="OnPropertyChanged">
-            <option value="">Select property</option>
+            <option value="">@Loc.T("firm.selectProperty")</option>
             @foreach (var property in _properties)
             {
                 <option value="@property.Id" selected="@(UiState.SelectedPropertyId == property.Id)" @key="property.Id">@property.Name</option>
@@ -18,14 +19,22 @@
 
 @code {
     private Action? _stateHandler;
+    private Action? _locHandler;
     private List<Community> _properties = new();
 
     protected override async Task OnInitializedAsync()
     {
         _stateHandler = () => InvokeAsync(ReloadAsync);
         UiState.OnChange += _stateHandler;
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
         await ReloadAsync();
     }
+
+    private string GetTerminology(SystemOperatingMode mode) => mode == SystemOperatingMode.UsHoa
+        ? Loc.T("shell.termUsHoa")
+        : Loc.T("shell.termHousing");
 
     private async Task ReloadAsync()
     {
@@ -52,7 +61,7 @@
             var selected = _properties.FirstOrDefault(p => p.Id == propertyId);
             if (selected is not null)
             {
-                UiState.SelectCommunity(propertyId, selected.OperatingMode == SystemOperatingMode.UsHoa ? "US HOA & Condo Mode" : "Housing Association Mode");
+                UiState.SelectCommunity(propertyId, GetTerminology(selected.OperatingMode));
             }
         }
         else
@@ -68,6 +77,10 @@
         if (_stateHandler is not null)
         {
             UiState.OnChange -= _stateHandler;
+        }
+        if (_locHandler is not null)
+        {
+            Loc.OnChange -= _locHandler;
         }
     }
 }

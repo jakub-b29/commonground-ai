@@ -30,7 +30,7 @@ else if (_preview is null)
     <form class="cg-form-stack" @onsubmit="OnLookupAsync" @onsubmit:preventDefault="true">
         <div>
             <label for="ai-token">@Loc.T("register.token")</label>
-            <input id="ai-token" @bind="_tokenInput" autocomplete="off" placeholder="INV-..." />
+            <input id="ai-token" @bind="_tokenInput" autocomplete="off" placeholder="@Loc.T("acceptInvite.joinByCode.tokenPlaceholder")" />
         </div>
         <div>
             <label for="ai-code-manual">@Loc.T("firm.groupCode")</label>
@@ -41,30 +41,30 @@ else if (_preview is null)
     @if (string.IsNullOrWhiteSpace(Token) && string.IsNullOrWhiteSpace(_effectiveToken))
     {
         <div class="cg-auth-note" role="status" aria-live="polite">
-            <p>Join with firm code</p>
+            <p>@Loc.T("acceptInvite.joinByCode.heading")</p>
         </div>
         <form method="post" action="/auth/accept-invite" class="cg-form-stack">
             <div>
-                <label for="ai-join-code">Firm code</label>
+                <label for="ai-join-code">@Loc.T("firm.groupCode")</label>
                 <input id="ai-join-code" name="firmCode" value="@FirmCode" required autocomplete="off" />
             </div>
             <div>
-                <label for="ai-join-name">Full name</label>
+                <label for="ai-join-name">@Loc.T("form.name")</label>
                 <input id="ai-join-name" name="fullName" required autocomplete="name" />
             </div>
             <div>
-                <label for="ai-join-email">Work email</label>
+                <label for="ai-join-email">@Loc.T("form.workEmail")</label>
                 <input id="ai-join-email" name="email" type="email" required autocomplete="username" />
             </div>
             <div>
-                <label for="ai-join-phone">Phone number</label>
+                <label for="ai-join-phone">@Loc.T("form.phone")</label>
                 <input id="ai-join-phone" name="phone" type="tel" autocomplete="tel" />
             </div>
             <div>
-                <label for="ai-join-pass">Password</label>
+                <label for="ai-join-pass">@Loc.T("form.password")</label>
                 <input id="ai-join-pass" name="password" type="password" required minlength="8" autocomplete="new-password" />
             </div>
-            <button type="submit" class="cg-btn cg-btn-primary cg-btn-block">Join with firm code</button>
+            <button type="submit" class="cg-btn cg-btn-primary cg-btn-block">@Loc.T("acceptInvite.joinByCode.submit")</button>
         </form>
     }
     <div class="cg-auth-links">

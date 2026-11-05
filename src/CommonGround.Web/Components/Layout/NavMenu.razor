@@ -3,7 +3,7 @@
 @implements IDisposable
 
 <div class="cg-brand-row">
-    <a class="cg-brand" href="/" title="CommonGround — Unified Property & Community Platform">
+    <a class="cg-brand" href="/" title="@Loc.T("shell.brandHint")">
         <span class="brand-mark">CG</span>
         @if (!UiState.IsSidebarCollapsed)
         {
@@ -15,8 +15,8 @@
     </a>
     <button type="button"
             class="sidebar-collapse-btn"
-            title="@(UiState.IsSidebarCollapsed ? "Expand navigation sidebar" : "Collapse navigation sidebar")"
-            aria-label="@(UiState.IsSidebarCollapsed ? "Expand navigation sidebar" : "Collapse navigation sidebar")"
+            title="@Loc.T(UiState.IsSidebarCollapsed ? "shell.expandSidebar" : "shell.collapseSidebar")"
+            aria-label="@Loc.T(UiState.IsSidebarCollapsed ? "shell.expandSidebar" : "shell.collapseSidebar")"
             @onclick="ToggleCollapse">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             @if (UiState.IsSidebarCollapsed)
@@ -31,7 +31,7 @@
     </button>
 </div>
 
-<input type="checkbox" title="Navigation menu" class="navbar-toggler" aria-label="Navigation menu" />
+<input type="checkbox" title="@Loc.T("shell.navMenuToggle")" class="navbar-toggler" aria-label="@Loc.T("shell.navMenuToggle")" />
 
 <div class="nav-scrollable @(UiState.IsSidebarCollapsed ? "nav-scrollable-collapsed" : "")">
     <AuthorizeView>

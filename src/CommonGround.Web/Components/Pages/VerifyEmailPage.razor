@@ -4,33 +4,33 @@
 @inject WorkspaceLocalization Loc
 @implements IDisposable
 
-<PageTitle>Verify email - CommonGround</PageTitle>
+<PageTitle>@Loc.T("verifyEmail.title") - CommonGround</PageTitle>
 
 <div class="cg-auth-heading">
-    <h1>Verify email</h1>
-    <p>Enter the confirmation token sent to your email to activate the account.</p>
+    <h1>@Loc.T("verifyEmail.heading")</h1>
+    <p>@Loc.T("verifyEmail.lead")</p>
 </div>
 
 @if (!string.IsNullOrWhiteSpace(ErrorCode))
 {
-    <div role="alert" class="cg-auth-error">Verification failed. Check the token and try again.</div>
+    <div role="alert" class="cg-auth-error">@Loc.T("verifyEmail.failed")</div>
 }
 
 <form method="post" action="/auth/verify-email" class="cg-form-stack">
     <div>
-        <label for="ve-email">Work email</label>
+        <label for="ve-email">@Loc.T("form.workEmail")</label>
         <input id="ve-email" name="email" type="email" value="@Email" required autocomplete="username" />
     </div>
     <div>
-        <label for="ve-token">Confirmation token</label>
-        <input id="ve-token" name="token" required autocomplete="off" placeholder="Paste confirmation token" />
+        <label for="ve-token">@Loc.T("verifyEmail.tokenLabel")</label>
+        <input id="ve-token" name="token" required autocomplete="off" placeholder="@Loc.T("verifyEmail.tokenPlaceholder")" />
     </div>
-    <button type="submit" class="cg-btn cg-btn-primary cg-btn-block">Verify email</button>
+    <button type="submit" class="cg-btn cg-btn-primary cg-btn-block">@Loc.T("verifyEmail.submit")</button>
 </form>
 
 <div class="cg-auth-links">
-    <a href="/login">Sign in</a>
-    <a href="/register-firm">Register a new firm</a>
+    <a href="/login">@Loc.T("nav.signin")</a>
+    <a href="/register-firm">@Loc.T("auth.createFirmLink")</a>
 </div>
 
 @code {

@@ -1,29 +1,46 @@
 @using CommonGround.Domain.Enums
+@inject WorkspaceLocalization Loc
+@implements IDisposable
 
 <div class="cg-card">
-    <div class="cg-section-header"><h2>Step 1 – Unified Community Identity</h2><span class="cg-badge mono">Auto-Assigns COM-XXXXXXXX</span></div>
-    <p style="color: var(--color-text-secondary); font-size: 0.78125rem;">Create a unified Community with automatic Building A &amp; Riser Stack provisioning, permanent Community Account Number, HOA governance, share-weighted voting, and optional AI discovery.</p>
+    <div class="cg-section-header"><h2>@Loc.T("admin.manual.stepTitle")</h2><span class="cg-badge mono">@Loc.T("admin.manual.autoAssign")</span></div>
+    <p style="color: var(--color-text-secondary); font-size: 0.78125rem;">@Loc.T("admin.manual.lead")</p>
     <div class="cg-grid-3">
-        <div><label for="manual-name">Community / property name</label><input id="manual-name" @bind="Model.Name" autocomplete="off" placeholder="Riverside Community" /></div>
-        <div><label for="manual-street">Street address</label><input id="manual-street" @bind="Model.Street" autocomplete="street-address" placeholder="Riverside 12" /></div>
-        <div><label for="manual-postal">Postal or ZIP code</label><input id="manual-postal" @bind="Model.Postal" autocomplete="postal-code" placeholder="00-002" /></div>
-        <div><label for="manual-city">City</label><input id="manual-city" @bind="Model.City" autocomplete="address-level2" placeholder="Warsaw / Miami" /></div>
-        <div><label for="manual-country">Country / State</label><input id="manual-country" @bind="Model.Country" autocomplete="country-name" placeholder="Poland / US-FL" /></div>
+        <div><label for="manual-name">@Loc.T("admin.manual.name")</label><input id="manual-name" @bind="Model.Name" autocomplete="off" placeholder="@Loc.T("admin.manual.namePh")"/></div>
+        <div><label for="manual-street">@Loc.T("admin.manual.street")</label><input id="manual-street" @bind="Model.Street" autocomplete="street-address" placeholder="@Loc.T("admin.manual.streetPh")"/></div>
+        <div><label for="manual-postal">@Loc.T("admin.manual.postal")</label><input id="manual-postal" @bind="Model.Postal" autocomplete="postal-code" placeholder="@Loc.T("admin.manual.postalPh")"/></div>
+        <div><label for="manual-city">@Loc.T("form.city")</label><input id="manual-city" @bind="Model.City" autocomplete="address-level-2" placeholder="@Loc.T("admin.manual.cityPh")"/></div>
+        <div><label for="manual-country">@Loc.T("admin.manual.country")</label><input id="manual-country" @bind="Model.Country" autocomplete="country-name" placeholder="@Loc.T("admin.manual.countryPh")"/></div>
         <div>
-            <label for="manual-mode">Statutory jurisdiction profile</label>
+            <label for="manual-mode">@Loc.T("admin.manual.jurisdiction")</label>
             <select id="manual-mode" @bind="Model.Mode">
-                <option value="@SystemOperatingMode.HousingAssociation">European Condominium &amp; HOA Statute</option>
-                <option value="@SystemOperatingMode.UsHoa">North American HOA &amp; Condominium Statute</option>
+                <option value="@SystemOperatingMode.HousingAssociation">@Loc.T("admin.manual.euStatute")</option>
+                <option value="@SystemOperatingMode.UsHoa">@Loc.T("admin.manual.usStatute")</option>
             </select>
         </div>
     </div>
-    <div class="cg-toolbar"><button type="button" class="cg-btn cg-btn-primary" disabled="@IsBusy" @onclick="OnSubmit">Create unified community</button></div>
+    <div class="cg-toolbar"><button type="button" class="cg-btn cg-btn-primary" disabled="@IsBusy" @onclick="OnSubmit">@Loc.T("admin.manual.create")</button></div>
 </div>
 
 @code {
     [Parameter, EditorRequired] public ManualPropertyModel Model { get; set; } = default!;
     [Parameter] public bool IsBusy { get; set; }
     [Parameter, EditorRequired] public EventCallback OnSubmit { get; set; }
+
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+    }
+
     public sealed class ManualPropertyModel
     {
         public string Name { get; set; } = string.Empty;

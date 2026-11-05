@@ -5,27 +5,27 @@
 @inject NavigationManager Nav
 @implements IDisposable
 
-<PageTitle>Choose membership - CommonGround</PageTitle>
+<PageTitle>@Loc.T("chooseMembership.title") - CommonGround</PageTitle>
 
 <div class="cg-page-header">
     <div>
-        <h1>Choose membership</h1>
-        <p class="cg-page-lead">Select the active firm membership for this session.</p>
+        <h1>@Loc.T("chooseMembership.heading")</h1>
+        <p class="cg-page-lead">@Loc.T("chooseMembership.lead")</p>
     </div>
 </div>
 
 @if (!_loaded)
 {
-    <p role="status" aria-live="polite">Loading.</p>
+    <p role="status" aria-live="polite">@Loc.T("msg.loading")</p>
 }
 else if (_memberships.Count == 0)
 {
-    <div class="cg-card"><p class="cg-empty-text">No memberships found. <a href="/pending">View pending status</a></p></div>
+    <div class="cg-card"><p class="cg-empty-text">@Loc.T("chooseMembership.empty") <a href="/pending">@Loc.T("chooseMembership.viewPending")</a></p></div>
 }
 else
 {
     <div class="cg-card">
-        <div class="cg-table-wrap"><table class="cg-table"><thead><tr><th>Firm</th><th>Role</th><th>Status</th></tr></thead><tbody>
+        <div class="cg-table-wrap"><table class="cg-table"><thead><tr><th>@Loc.T("chooseMembership.firm")</th><th>@Loc.T("chooseMembership.role")</th><th>@Loc.T("table.status")</th></tr></thead><tbody>
         @foreach (var m in _memberships)
         {
             <tr @key="m.Id">

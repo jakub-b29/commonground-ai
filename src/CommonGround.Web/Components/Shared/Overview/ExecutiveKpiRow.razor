@@ -5,7 +5,7 @@
 <div class="cg-grid-4" style="margin-bottom: 1rem;">
     <MetricCard Label="@Loc.T("kpi.operatingCash")"
                 Value="@($"{Snapshot.OperatingCash:N2} {Snapshot.Community.CurrencyCode}")"
-                BadgeText="Ledger verified"
+                 BadgeText="@Loc.T("kpi.ledgerVerified")"
                 StatusVariant="ok">
         <SubContent>
             <span>@Loc.T("kpi.reserveFund"): <strong class="num" style="color: var(--text-primary);">@Snapshot.ReserveCash.ToString("N2") @Snapshot.Community.CurrencyCode</strong></span>
@@ -14,7 +14,7 @@
 
     <MetricCard Label="@Loc.T("kpi.delinquency")"
                 Value="@($"{Snapshot.DelinquencyRate:N2} %")"
-                BadgeText="@(Snapshot.DelinquencyRate > 5m ? "Monitor" : "Healthy")"
+                 BadgeText="@(Snapshot.DelinquencyRate > 5m ? Loc.T("kpi.monitor") : Loc.T("kpi.healthy"))"
                 StatusVariant="@(Snapshot.DelinquencyRate > 5m ? "warn" : "ok")">
         <SubContent>
             <span>@Loc.T("kpi.arrearsUnits"): <strong class="num" style="color: var(--text-primary);">@Snapshot.ArrearsUnits</strong> of <span class="num">@Snapshot.Community.Units.Count</span></span>
@@ -32,7 +32,7 @@
 
     <MetricCard Label="@Loc.T("kpi.pending")"
                 Value="@Snapshot.PendingApprovals.ToString()"
-                BadgeText="CommonGround Queue"
+                 BadgeText="@Loc.T("kpi.queueBadge")"
                 StatusVariant="ai"
                 IsAi="true">
         <SubContent>

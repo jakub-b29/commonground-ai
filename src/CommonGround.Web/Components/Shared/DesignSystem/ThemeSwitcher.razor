@@ -1,12 +1,13 @@
 @implements IAsyncDisposable
 @inject WorkspaceUiState UiState
+@inject WorkspaceLocalization Loc
 @inject IJSRuntime JS
 
-<div class="propai-theme-switcher" role="group" aria-label="Theme selector">
+<div class="propai-theme-switcher" role="group" aria-label="@Loc.T("shell.themeSelector")">
     <button type="button"
             class="cg-btn cg-btn-sm @(UiState.IsDarkTheme ? "cg-btn-ai" : "cg-btn-ghost")"
             style="padding: 0.25rem 0.52rem; gap: 0.32rem;"
-            title="Switch to Neo-Dark theme"
+            title="@Loc.T("shell.themeHintDark")"
             aria-pressed="@(UiState.IsDarkTheme ? "true" : "false")"
             @onclick='() => SelectThemeAsync("dark")'>
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -14,13 +15,13 @@
         </svg>
         @if (!Compact)
         {
-            <span>Dark</span>
+            <span>@Loc.T("shell.themeDark")</span>
         }
     </button>
     <button type="button"
             class="cg-btn cg-btn-sm @(!UiState.IsDarkTheme ? "cg-btn-ai" : "cg-btn-ghost")"
             style="padding: 0.25rem 0.52rem; gap: 0.32rem;"
-            title="Switch to Premium Light theme"
+            title="@Loc.T("shell.themeHintLight")"
             aria-pressed="@(!UiState.IsDarkTheme ? "true" : "false")"
             @onclick='() => SelectThemeAsync("light")'>
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -36,7 +37,7 @@
         </svg>
         @if (!Compact)
         {
-            <span>Light</span>
+            <span>@Loc.T("shell.themeLight")</span>
         }
     </button>
 </div>
@@ -46,11 +47,15 @@
 
     private IJSObjectReference? _module;
     private Action? _stateHandler;
+    private Action? _locHandler;
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
         _stateHandler = () => InvokeAsync(StateHasChanged);
         UiState.OnChange += _stateHandler;
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -96,6 +101,10 @@
         if (_stateHandler is not null)
         {
             UiState.OnChange -= _stateHandler;
+        }
+        if (_locHandler is not null)
+        {
+            Loc.OnChange -= _locHandler;
         }
         if (_module is not null)
         {

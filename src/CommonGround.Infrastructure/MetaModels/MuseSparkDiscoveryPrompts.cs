@@ -46,6 +46,20 @@ public static class MuseSparkDiscoveryPrompts
         return string.IsNullOrWhiteSpace(upper) ? "the official local language of the city and postal code" : $"the official local language of {countryOrState}";
     }
 
+    public static string ResolveLanguageName(string? uiLocale)
+    {
+        var code = (uiLocale ?? "EN").Trim().ToUpperInvariant();
+        return code switch
+        {
+            "PL" or "PL-PL" => "Polish (Polski, PL)",
+            "ES" or "ES-ES" => "Spanish (Español, ES)",
+            "FR" or "FR-FR" => "French (Français, FR)",
+            "DE" or "DE-DE" => "German (Deutsch, DE)",
+            "UA" or "UK" or "UK-UA" => "Ukrainian (Українська, UA)",
+            _ => "English (EN)"
+        };
+    }
+
     public static string BuildDossierPrompt(AddressLookupRequest normalized, bool isUsHint, string uiLocale = "EN")
     {
         var modeLabel = isUsHint ? "UsHoa (US condominium)" : "HousingAssociation (EU residential community)";
@@ -56,12 +70,13 @@ public static class MuseSparkDiscoveryPrompts
         var country = normalized.CountryOrState ?? string.Empty;
         var searchLang = ResolveCountrySearchLanguage(country, postal, isUsHint);
         var targetUiLang = string.IsNullOrWhiteSpace(uiLocale) ? "EN" : uiLocale.Trim().ToUpperInvariant();
+        var uiLangName = ResolveLanguageName(targetUiLang);
 
         return "You are an institutional property data and utility tariff researcher. "
             + $"Target address block: street '{street}', postal code '{postal}', city '{city}', country or state '{country}'. "
             + $"Operating mode hint: {modeLabel}. Report all monetary values in {currencyLabel}. "
-            + $"LANGUAGE & SEARCH STRATEGY: Execute all live web_search queries in {searchLang} so you hit official national energy/water regulator tables, municipal council fee resolutions, and local distribution system operator (DSO) tariff PDFs for '{city}' and postal code '{postal}'. "
-            + $"Write descriptive text fields (addressOrNotes, airQualityNote, summary) in interface language '{targetUiLang}', while keeping all JSON property keys and enum codes in strict English. "
+            + $"LANGUAGE & SEARCH STRATEGY: Search for data in {uiLangName} and in {searchLang} so you hit official national energy/water regulator tables, municipal council fee resolutions, and local distribution system operator (DSO) tariff PDFs for '{city}' and postal code '{postal}'. "
+            + $"Write all [THINKING] progress lines and descriptive text fields (addressOrNotes, airQualityNote, summary) in the selected interface language {uiLangName} ('{targetUiLang}'), while keeping all JSON property keys and enum codes in strict English. "
             + "CRITICAL ANTI-FABRICATION & PRICE HUNTING RULES: Do not fabricate operator names, institutional addresses, URLs, or tariff values. "
             + "1. NEVER append the target street address to operator, police, fire, or court names. Return the real institutional name and its actual street address found via web_search. "
             + "2. Dedicated Tariff Search: For every utility, run a dedicated web_search query in the local language for the operator's current 2025/2026 tariff schedule and municipal waste resolution. Report TOTAL GROSS unit prices in " + currencyLabel + " (including variable distribution + VAT/sales tax): "
@@ -153,15 +168,21 @@ public static class MuseSparkDiscoveryPrompts
             + $"Write the notice in interface language '{uiLocale}', keeping a calm, neutral institutional tone, stating no monetary fine has been applied, and offering a 7-day response window.";
     }
 
-    public static string BuildCopilotPrompt(Community community, string managerQuestion, string portfolioSnapshotSummary, string uiLocale = "EN")
+    public static string BuildPortfolioAssistantPrompt(Community community, string managerQuestion, string portfolioSnapshotSummary, string uiLocale = "EN")
     {
+        var targetUiLang = string.IsNullOrWhiteSpace(uiLocale) ? "EN" : uiLocale.Trim().ToUpperInvariant();
+        var uiLangName = ResolveLanguageName(targetUiLang);
         var tariffs = $"Operating={community.OperatingRatePerM2:N2}/m2, Repair={community.RepairFundRatePerM2:N2}/m2, Waste={community.WasteFeePerOccupant:N2}/person, ColdWater={community.ColdWaterTariffPerM3:N2}/m3, HotWater={community.HotWaterHeatingCostPerM3:N2}/m3, Heating={community.DistrictHeatingTariffPerGj:N2}/GJ, Electricity={community.CommonElectricityTariffPerKwh:N2}/kWh ({community.CurrencyCode})";
-        return $"Portfolio query for '{community.Name}' ({community.StreetAddress}, {community.City}, Mode: {community.OperatingMode}): <untrusted_input>{managerQuestion}</untrusted_input>. "
+        return $"Portfolio intelligence query for '{community.Name}' ({community.StreetAddress}, {community.City}, Mode: {community.OperatingMode}): <untrusted_input>{managerQuestion}</untrusted_input>. "
             + $"Deterministic portfolio snapshot: {portfolioSnapshotSummary}. "
             + $"Active community tariffs: {tariffs}. Governing corpus: {community.LegalDocuments.Count} documents. "
-            + $"Answer concisely in interface language '{uiLocale}' using the exact figures from the deterministic portfolio snapshot and active community tariffs. "
+            + $"LANGUAGE & DATA SEARCH DIRECTIVE: The user's selected interface language is {uiLangName} ('{targetUiLang}'). When looking for data or executing web_search queries, search for data in {uiLangName} (and local statutory registers where applicable). "
+            + $"Answer concisely and completely in {uiLangName} ('{targetUiLang}') using the exact figures from the deterministic portfolio snapshot and active community tariffs. Do NOT output raw JSON blocks. "
             + "All financial figures are computed by deterministic domain services; model output is advisory and state-changing proposals require approval in Pending Approvals.";
     }
+
+    public static string BuildCopilotPrompt(Community community, string managerQuestion, string portfolioSnapshotSummary, string uiLocale = "EN")
+        => BuildPortfolioAssistantPrompt(community, managerQuestion, portfolioSnapshotSummary, uiLocale);
 
     public static string BuildSparkAgenticTurnPrompt(
         string userPrompt,
@@ -171,36 +192,43 @@ public static class MuseSparkDiscoveryPrompts
         string scratchpadHistoryJson,
         string uiLocale = "EN")
     {
-        return "You are Muse Spark Contributor 1.3, an autonomous institutional property management and automation AI agent. "
+        var targetUiLang = string.IsNullOrWhiteSpace(uiLocale) ? "EN" : uiLocale.Trim().ToUpperInvariant();
+        var uiLangName = ResolveLanguageName(targetUiLang);
+
+        return "You are Muse Spark Contributor 1.3, the CommonGround Portfolio Intelligence & Automation Assistant. "
             + "You operate in a strict ReAct loop (Think -> Tool Call -> System Observation -> Next Decision -> Final Answer). "
-            + "You have access to a live system tool catalog to inspect state, perform calculations, and mutate records. "
+            + "You have access to a live system tool catalog to inspect state, perform calculations, generate annotated images/posters, and mutate records. "
+            + $"SELECTED LANGUAGE & DATA SEARCH RULE: The user has selected {uiLangName} (locale code '{targetUiLang}'). "
+            + $"1. Always search for data in {uiLangName} when formulating search queries, looking up records, or triggering web/registry discovery tools, while also matching exact property names and account codes. "
+            + $"2. Write all [THINKING] lines, every toolCall 'thought', every 'stepTitle', and the entire 'finalResponseMarkdown' in {uiLangName} ('{targetUiLang}'). "
+            + "3. Never print raw JSON inside 'finalResponseMarkdown'—format all findings as clean, human-readable Markdown in the selected language. Keep only the outer JSON envelope keys and exact toolName identifiers in English. "
             + "SYSTEM INVARIANTS & SECURITY RULES: "
             + "1. Never guess or hallucinate entity IDs, unit numbers, bank accounts, or financial balances. Always call query_system_entities or execute_database_query first to discover real IDs. "
-            + "2. Respect the user's permission envelope. If an action is not permitted for the user's role or granted flags, call check_account_permission or explain why in your final response. "
+            + "2. Respect the user's highest resolved permission envelope for the target property. If an action is not permitted for the user's role or granted flags, call check_account_permission or explain why in your final response. "
             + "3. Examine the scratchpad history: inspect real observations from prior steps (e.g., newly created UnitId, ResidentProfileId, or generated registration links) and pass those real values into subsequent tool arguments. "
-            + "4. When all user sub-goals are fulfilled, set isFinalAnswer to true and return a clear, structured markdown synthesis citing created records, account numbers, and deep links. "
-            + $"CURRENT USER PERMISSION ENVELOPE: {accountPermissionJson} "
+            + "4. When all user sub-goals are fulfilled, set isFinalAnswer to true and return a clear, structured markdown synthesis in " + uiLangName + " citing created records, account numbers, and deep links. "
+            + $"CURRENT USER PERMISSION ENVELOPE (HIGHEST ROLE FOR TARGET PROPERTY): {accountPermissionJson} "
             + $"ACTIVE WORKSPACE SNAPSHOT: {workspaceContextJson} "
             + $"AVAILABLE TOOL CATALOG: {toolCatalogJson} "
             + $"SCRATCHPAD HISTORY (PREVIOUS STEPS IN THIS SESSION): {scratchpadHistoryJson} "
             + $"USER GOAL / INSTRUCTION: <untrusted_input>{userPrompt}</untrusted_input>. "
             + "FORMATTING INSTRUCTIONS: "
-            + "First, emit one or more lines starting with [THINKING] detailing your step-by-step reasoning about the current state, what was achieved in prior steps, and what tool needs to be called next. "
+            + $"First, emit one or more lines starting with [THINKING] in {uiLangName} detailing your step-by-step reasoning about the current state, what was achieved in prior steps, and what tool needs to be called next. "
             + "Then, emit a line [JSON-BEGIN], followed by a STRICT JSON object, followed by a line [JSON-END]. "
             + "The JSON object MUST have the following structure: "
             + "{"
             + "  \"isFinalAnswer\": false,"
-            + "  \"finalResponseMarkdown\": \"\","
+            + $"  \"finalResponseMarkdown\": \"Clean human-readable Markdown in {uiLangName} (never raw JSON)\","
             + "  \"toolCalls\": ["
             + "    {"
-            + "      \"thought\": \"Brief explanation of why this tool is being invoked\","
+            + $"      \"thought\": \"Brief explanation in {uiLangName} of why this tool is being invoked\","
             + "      \"toolName\": \"exact_tool_name\","
             + "      \"arguments\": { \"paramKey\": \"paramValue\" },"
-            + "      \"stepTitle\": \"Human readable title for the step card\""
+            + $"      \"stepTitle\": \"Human readable title in {uiLangName} for the step card\""
             + "    }"
             + "  ]"
             + "}"
-            + "When finishing, set \"isFinalAnswer\": true, \"toolCalls\": [], and provide the full response in \"finalResponseMarkdown\".";
+            + "When finishing, set \"isFinalAnswer\": true, \"toolCalls\": [], and provide the full human-readable response in \"finalResponseMarkdown\".";
     }
 }
 

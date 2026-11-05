@@ -96,20 +96,34 @@ public sealed record AddressLookupRequest(
 
 public sealed record DiscoveryProgressStep(string Stage, string Detail, int Percent, string? Thinking = null);
 
+public sealed record GeneratedImageArtifactResult(
+    string ImageDataUrl,
+    string ModelName,
+    string Resolution,
+    int LatencyMs,
+    string Title,
+    string Subtitle,
+    IReadOnlyList<string> RenderedInfoLines,
+    string PromptSummary,
+    DateTimeOffset GeneratedAtUtc,
+    bool UsedLiveApi);
+
 public interface IMuseSparkClient
 {
     // Chosen host for structured AI web discovery per plan 3.1 and 6.2:
     // muse-spark-1.3 with web_search grounding returns the typed PropertyAiDiscoveryDossier.
     // IMuseWonderClient keeps the legacy coarser WebEnrichmentDiscoveryResult for compat.
-    Task<PropertyAiDiscoveryDossier> DiscoverPropertyDossierFromAddressAsync(AddressLookupRequest request, CancellationToken ct = default, IProgress<DiscoveryProgressStep>? progress = null);
+    Task<PropertyAiDiscoveryDossier> DiscoverPropertyDossierFromAddressAsync(AddressLookupRequest request, CancellationToken ct = default, IProgress<DiscoveryProgressStep>? progress = null, string uiLocale = "EN");
     Task<TriageModelResult> TriageResidentRequestAsync(Community community, Unit? unit, string messageText, string languageHint, CancellationToken ct = default);
     Task<StatuteComplianceModelResult> VerifyFullCorpusComplianceAsync(Community community, Resolution draftResolution, CancellationToken ct = default);
     Task<MeterOcrModelResult> ReadSubMeterFromPhotoAsync(UtilityMeter meter, decimal? simulatedReadingOverride, CancellationToken ct = default);
     Task<PaperBallotOcrResult> ExtractPaperBallotRowsAsync(Community community, Resolution resolution, CancellationToken ct = default);
     Task<string> DraftNeighborDisputeMediationAsync(Community community, string unitReporter, string unitSubject, string issueDescription, CancellationToken ct = default);
     Task<string> EvaluateModificationOrArcRequestAsync(Community community, ModificationOrArcRequest request, CancellationToken ct = default);
-    Task<string> AskPortfolioCopilotAsync(Community community, string managerQuestion, string portfolioSnapshotSummary, CancellationToken ct = default);
-    Task<SparkAgentTurnModelResult> RunAgenticTurnAsync(string userPrompt, string accountPermissionJson, string workspaceContextJson, string toolCatalogJson, string scratchpadHistoryJson, CancellationToken ct = default);
+    Task<string> AskPortfolioAssistantAsync(Community community, string managerQuestion, string portfolioSnapshotSummary, CancellationToken ct = default, string uiLocale = "EN");
+    Task<string> AskPortfolioCopilotAsync(Community community, string managerQuestion, string portfolioSnapshotSummary, CancellationToken ct = default)
+        => AskPortfolioAssistantAsync(community, managerQuestion, portfolioSnapshotSummary, ct, "EN");
+    Task<SparkAgentTurnModelResult> RunAgenticTurnAsync(string userPrompt, string accountPermissionJson, string workspaceContextJson, string toolCatalogJson, string scratchpadHistoryJson, CancellationToken ct = default, string uiLocale = "EN");
 }
 
 public sealed record SparkAgentToolCallDecision(
@@ -139,7 +153,12 @@ public sealed record SparkAgentLiveStepEvent(
     string? FinalMarkdown,
     string? DeepLinkUrl,
     int LatencyMs,
-    IReadOnlyList<string>? ClarificationOptions = null
+    IReadOnlyList<string>? ClarificationOptions = null,
+    string? HumanInputSummary = null,
+    string? ObservationSummary = null,
+    string? GeneratedImageDataUrl = null,
+    string? GeneratedImageMetaSummary = null,
+    IReadOnlyList<string>? Highlights = null
 );
 
 public sealed record AgentRunResult(
@@ -152,7 +171,9 @@ public sealed record AgentRunResult(
     bool UsedLiveApi,
     bool IsAwaitingClarification = false,
     string? ClarificationQuestion = null,
-    IReadOnlyList<string>? ClarificationOptions = null
+    IReadOnlyList<string>? ClarificationOptions = null,
+    string? EffectiveRole = null,
+    string? EffectivePropertyName = null
 );
 
 public interface IMuseSparkAutomationAgentService
@@ -164,7 +185,8 @@ public interface IMuseSparkAutomationAgentService
         bool stepByStepMode,
         IProgress<SparkAgentLiveStepEvent>? progress = null,
         string? userClarificationResponse = null,
-        CancellationToken ct = default
+        CancellationToken ct = default,
+        string uiLocale = "EN"
     );
 }
 
@@ -178,8 +200,29 @@ public interface IMuseWonderClient
 
 public interface IMuseVoiceTranscriber
 {
-    Task<(string Transcript, string DetectedLanguage, int LatencyMs)> TranscribeVoiceNoteAsync(string voiceScenarioPreset, CancellationToken ct = default);
-    Task<(string DiarizedTranscript, string FormalMinutesMarkdown, string ActionItemsSummary, int LatencyMs)> TranscribeAndSummarizeMeetingAsync(Community community, string rawMeetingNotesOrPreset, CancellationToken ct = default);
+    Task<(string Transcript, string DetectedLanguage, int LatencyMs)> TranscribeVoiceNoteAsync(
+        string voiceScenarioPreset,
+        CancellationToken ct = default);
+
+    Task<(string Transcript, string DetectedLanguage, int LatencyMs)> TranscribeVoiceNoteAsync(
+        string voiceScenarioPreset,
+        CancellationToken ct,
+        string? wavBase64OrDataUrl,
+        string? browserTranscriptHint = null,
+        string? preferredLanguageCode = null)
+        => TranscribeVoiceNoteAsync(voiceScenarioPreset, ct);
+
+    Task<(string DiarizedTranscript, string FormalMinutesMarkdown, string ActionItemsSummary, int LatencyMs)> TranscribeAndSummarizeMeetingAsync(
+        Community community,
+        string rawMeetingNotesOrPreset,
+        CancellationToken ct = default);
+
+    Task<(string DiarizedTranscript, string FormalMinutesMarkdown, string ActionItemsSummary, int LatencyMs)> TranscribeAndSummarizeMeetingAsync(
+        Community community,
+        string rawMeetingNotesOrPreset,
+        CancellationToken ct,
+        string? wavBase64OrDataUrl)
+        => TranscribeAndSummarizeMeetingAsync(community, rawMeetingNotesOrPreset, ct);
 }
 
 public interface ISam31Client
@@ -191,7 +234,16 @@ public interface ISam31Client
 
 public interface IMuseImageClient
 {
-    Task<(string OptionADataUrl, string OptionBDataUrl)> GenerateRenovationBallotPreviewsAsync(string resolutionTitle, string optionALabel, string optionBLabel, CancellationToken ct = default);
-    Task<string> GenerateQrStairwellNoticePosterAsync(string communityName, string headline, string bodySummary, string qrUrl, CancellationToken ct = default);
-    Task<string> GenerateMultilingualWasteSegregationPosterAsync(string communityName, CancellationToken ct = default);
+    Task<(string OptionADataUrl, string OptionBDataUrl)> GenerateRenovationBallotPreviewsAsync(string resolutionTitle, string optionALabel, string optionBLabel, CancellationToken ct = default, IReadOnlyList<string>? customInfoLines = null);
+    Task<string> GenerateQrStairwellNoticePosterAsync(string communityName, string headline, string bodySummary, string qrUrl, CancellationToken ct = default, IReadOnlyList<string>? customInfoLines = null);
+    Task<string> GenerateMultilingualWasteSegregationPosterAsync(string communityName, CancellationToken ct = default, IReadOnlyList<string>? customInfoLines = null);
+    Task<GeneratedImageArtifactResult> GenerateCustomInfoImageAsync(
+        string title,
+        string subtitle,
+        IReadOnlyList<string> infoLines,
+        string badgeText,
+        string? qrUrl = null,
+        string? accentHex = null,
+        CancellationToken ct = default,
+        string uiLocale = "EN");
 }

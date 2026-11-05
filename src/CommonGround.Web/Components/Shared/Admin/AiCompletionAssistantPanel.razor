@@ -1,17 +1,19 @@
 @using CommonGround.Application.Interfaces
+@inject WorkspaceLocalization Loc
+@implements IDisposable
 
 <div class="bento-card bento-card-ai">
     <div class="bento-card-header">
         <div class="cg-panel-title">
             <span class="ai-dot" aria-hidden="true"></span>
-            <span>Step 2 – AI completion assistant</span>
+            <span>@Loc.T("admin.assistant.stepTitle")</span>
         </div>
         <AIBadge Label="Web Grounded" Model="muse-spark-1.3-contributor" ShowPulseDot="false" />
     </div>
     <div class="bento-card-body">
-        <p style="color: var(--text-secondary); font-size: 0.8rem; margin-bottom: 0.75rem;">Optional. Harvest missing operator, tariff and authority data. You may keep editing while the search runs; results merge on arrival.</p>
+        <p style="color: var(--text-secondary); font-size: 0.8rem; margin-bottom: 0.75rem;">@Loc.T("admin.assistant.lead")</p>
         <div class="cg-toolbar">
-            <button type="button" class="cg-btn cg-btn-primary" disabled="@(IsBusy || !CanRun)" @onclick="OnHarvest">Harvest missing data with AI</button>
+            <button type="button" class="cg-btn cg-btn-primary" disabled="@(IsBusy || !CanRun)" @onclick="OnHarvest">@Loc.T("admin.assistant.harvest")</button>
         </div>
         @if (IsRunning || ProgressPercent > 0)
         {
@@ -28,19 +30,19 @@
                 @if (IsRunning)
                 {
                     <ul style="font-size: 0.78rem; padding-inline-start: 1.1rem; color: var(--text-secondary); margin-top: 0.5rem;">
-                        <li><strong>Sanitizing input</strong></li>
-                        <li><strong>Contacting model</strong></li>
-                        <li><strong>Web search grounding — across 11 categories; may take several minutes. You may continue editing; the panel will merge results.</strong></li>
-                        <li>Parsing structured JSON</li>
-                        <li>Merging with defaults</li>
-                        <li>Dossier ready</li>
+                        <li><strong>@Loc.T("admin.assistant.stepSanitize")</strong></li>
+                        <li><strong>@Loc.T("admin.assistant.stepContact")</strong></li>
+                        <li><strong>@Loc.T("admin.assistant.stepSearch")</strong></li>
+                        <li>@Loc.T("admin.assistant.stepParse")</li>
+                        <li>@Loc.T("admin.assistant.stepMerge")</li>
+                        <li>@Loc.T("admin.assistant.stepReady")</li>
                     </ul>
                 }
             </div>
         }
         @if (IsOfflineFallback)
         {
-            <div role="status" aria-live="polite" class="cg-callout" style="margin-block-start: 0.65rem;">Live search timed out; offline defaults applied. Fill missing fields manually.</div>
+            <div role="status" aria-live="polite" class="cg-callout" style="margin-block-start: 0.65rem;">@Loc.T("admin.assistant.offlineFallback")</div>
         }
         @if (Dossier is not null && Editable is not null)
         {
@@ -48,7 +50,7 @@
                 <AddressAiDiscoveryReviewPanel Dossier="Dossier" Selected="Selected" SelectedChanged="SelectedChanged" Editable="Editable" />
             </div>
             <div class="cg-toolbar" style="margin-top: 0.75rem;">
-                <button type="button" class="cg-btn cg-btn-primary" disabled="@(IsBusy || Selected == DossierSectionFlags.None)" @onclick="OnApply">Apply selected to property</button>
+                <button type="button" class="cg-btn cg-btn-primary" disabled="@(IsBusy || Selected == DossierSectionFlags.None)" @onclick="OnApply">@Loc.T("admin.assistant.apply")</button>
             </div>
         }
     </div>
@@ -69,4 +71,18 @@
     [Parameter] public EventCallback<DossierSectionFlags> SelectedChanged { get; set; }
     [Parameter, EditorRequired] public EventCallback OnHarvest { get; set; }
     [Parameter, EditorRequired] public EventCallback OnApply { get; set; }
+
+    private Action? _locHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
+    }
 }

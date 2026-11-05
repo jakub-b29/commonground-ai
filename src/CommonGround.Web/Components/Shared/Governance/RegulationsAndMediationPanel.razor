@@ -37,7 +37,7 @@
 
         <div style="margin-block-start: 0.75rem;">
             <label for="legal-filter">@Loc.T("form.legalFilter")</label>
-            <input id="legal-filter" @bind="_filter" @bind:event="oninput" placeholder="Art. 12, Art. 23, 568, 718.112, warranty, riser, quorum" />
+            <input id="legal-filter" @bind="_filter" @bind:event="oninput" placeholder="@Loc.T("gov.legalFilterPh")" />
         </div>
 
         @if (_selected is not null)

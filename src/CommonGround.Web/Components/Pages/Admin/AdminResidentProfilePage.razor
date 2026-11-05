@@ -6,37 +6,37 @@
 @inject CommonGroundWorkspaceService Workspace
 @implements IDisposable
 
-<PageTitle>Resident Profile — CommonGround</PageTitle>
+<PageTitle>@Loc.T("page.adminProfileTitle") — CommonGround</PageTitle>
 
 @if (!_loaded)
 {
-    <p role="status" aria-live="polite">Loading resident profile...</p>
+    <p role="status" aria-live="polite">@Loc.T("msg.loadingProfile")</p>
 }
 else if (!_isAuthorized)
 {
-    <div class="cg-card"><p class="cg-empty-text">Access denied. Manager permission is required.</p></div>
+    <div class="cg-card"><p class="cg-empty-text">@Loc.T("msg.accessDeniedManager")</p></div>
 }
 else if (_dossier is null)
     {
         <div class="cg-card">
-            <p class="cg-empty-text">Resident profile not found.</p>
-            <div class="cg-toolbar"><a class="cg-btn" href="/admin/residents">Back to Residents Directory</a></div>
+            <p class="cg-empty-text">@Loc.T("admin.profile.notFound")</p>
+            <div class="cg-toolbar"><a class="cg-btn" href="/admin/residents">@Loc.T("admin.profile.backDirectory")</a></div>
         </div>
     }
     else
     {
-        <PageHeader Category="Firm Administration · Resident Identity &amp; Dossier"
+        <PageHeader Category="@Loc.T("admin.profile.category")"
                     ContextCode="@($"{_dossier.Profile.ResidentAccountNumber} · {_dossier.Profile.AccountStatus}")"
                     Title="@($"{_dossier.Profile.FullName} · {_dossier.Profile.ResidentAccountNumber}")"
-                    Subtitle="Complete 6-section Resident Profile: Personal Identity, Property &amp; Unit Relationships, Tenancy &amp; Household, Communications, Document Vault, and Audit Trail.">
+                    Subtitle="@Loc.T("page.adminProfileLead")">
             <Badges>
                 <StatusBadge Text="@_dossier.Profile.ResidentAccountNumber" Variant="info" />
                 <StatusBadge Text="@_dossier.Profile.AccountStatus.ToString()" Variant="@(_dossier.Profile.AccountStatus == ResidentAccountStatus.Active ? "ok" : "warn")" />
                 <StatusBadge Text="@_dossier.Profile.VerificationStatus.ToString()" Variant="neutral" />
             </Badges>
             <Actions>
-                <a class="cg-btn cg-btn-sm" href="/admin/residents">Back to Residents Directory</a>
-                <a class="cg-btn cg-btn-sm" href="/units">Global Units</a>
+                <a class="cg-btn cg-btn-sm" href="/admin/residents">@Loc.T("admin.profile.backDirectory")</a>
+                <a class="cg-btn cg-btn-sm" href="/units">@Loc.T("nav.globalUnits")</a>
             </Actions>
         </PageHeader>
 
@@ -50,46 +50,46 @@ else if (_dossier is null)
         }
 
         <div class="cg-grid-4" style="margin-bottom: 1rem;">
-            <MetricCard Label="Resident Account Number"
+            <MetricCard Label="@Loc.T("admin.profile.kpiAccount")"
                         Value="@_dossier.Profile.ResidentAccountNumber"
-                        Subtitle="Permanent, immutable across move-outs"
-                        BadgeText="Verified ID"
+                        Subtitle="@Loc.T("admin.profile.kpiAccountSub")"
+                        BadgeText="@Loc.T("admin.profile.verifiedId")"
                         StatusVariant="info" />
-            <MetricCard Label="Active Unit Assignments"
+            <MetricCard Label="@Loc.T("admin.profile.kpiActive")"
                         Value="@_dossier.ActiveAssignments.Count.ToString()"
-                        Subtitle="@($"{_dossier.PastAssignments.Count} historical assignments preserved")"
-                        BadgeText="@(_dossier.ActiveAssignments.Count > 0 ? "Occupied" : "Unassigned")"
+                        Subtitle="@($"{_dossier.PastAssignments.Count} {Loc.T("admin.profile.historicalPreserved")}")"
+                        BadgeText="@(_dossier.ActiveAssignments.Count > 0 ? Loc.T("admin.residents.occupied") : Loc.T("admin.residents.unassigned"))"
                         StatusVariant="@(_dossier.ActiveAssignments.Count > 0 ? "ok" : "neutral")" />
-            <MetricCard Label="Owned Units"
+            <MetricCard Label="@Loc.T("admin.profile.kpiOwned")"
                         Value="@_dossier.Ownerships.Count.ToString()"
-                        Subtitle="@($"{_dossier.HouseholdMembers.Count} household members")"
-                        BadgeText="Ownership"
+                        Subtitle="@($"{_dossier.HouseholdMembers.Count} {Loc.T("admin.profile.householdCount")}")"
+                        BadgeText="@Loc.T("admin.profile.ownership")"
                         StatusVariant="info" />
-            <MetricCard Label="Vault Documents"
+            <MetricCard Label="@Loc.T("admin.profile.kpiVault")"
                         Value="@_dossier.Documents.Count.ToString()"
-                        Subtitle="@($"{_dossier.AuditEvents.Count} security audit events")"
-                        BadgeText="Vault"
+                        Subtitle="@($"{_dossier.AuditEvents.Count} {Loc.T("admin.profile.auditCount")}")"
+                        BadgeText="@Loc.T("admin.profile.vault")"
                         StatusVariant="ok" />
         </div>
 
         <div style="display: flex; gap: 0.35rem; flex-wrap: wrap; margin-bottom: 1rem;">
             <button type="button" class="cg-btn cg-btn-sm @(_section == "identity" ? "cg-btn-primary" : "")" @onclick='() => _section = "identity"'>
-                1. Personal Identity (@_dossier.Profile.ResidentAccountNumber)
+                1. @Loc.T("admin.profile.sec1") (@_dossier.Profile.ResidentAccountNumber)
             </button>
             <button type="button" class="cg-btn cg-btn-sm @(_section == "units" ? "cg-btn-primary" : "")" @onclick='() => _section = "units"'>
-                2. Property &amp; Unit Relationships (@(_dossier.ActiveAssignments.Count + _dossier.PastAssignments.Count))
+                2. @Loc.T("admin.profile.sec2") (@(_dossier.ActiveAssignments.Count + _dossier.PastAssignments.Count))
             </button>
             <button type="button" class="cg-btn cg-btn-sm @(_section == "household" ? "cg-btn-primary" : "")" @onclick='() => _section = "household"'>
-                3. Tenancy &amp; Household (@_dossier.HouseholdMembers.Count)
+                3. @Loc.T("admin.profile.sec3") (@_dossier.HouseholdMembers.Count)
             </button>
             <button type="button" class="cg-btn cg-btn-sm @(_section == "comms" ? "cg-btn-primary" : "")" @onclick='() => _section = "comms"'>
-                4. Communications (@_dossier.DirectMessages.Count)
+                4. @Loc.T("admin.profile.sec4") (@_dossier.DirectMessages.Count)
             </button>
             <button type="button" class="cg-btn cg-btn-sm @(_section == "documents" ? "cg-btn-primary" : "")" @onclick='() => _section = "documents"'>
-                5. Document Vault (@_dossier.Documents.Count)
+                5. @Loc.T("admin.profile.sec5") (@_dossier.Documents.Count)
             </button>
             <button type="button" class="cg-btn cg-btn-sm @(_section == "audit" ? "cg-btn-primary" : "")" @onclick='() => _section = "audit"'>
-                6. Account &amp; Audit Trail (@_dossier.AuditEvents.Count)
+                6. @Loc.T("admin.profile.sec6") (@_dossier.AuditEvents.Count)
             </button>
         </div>
 
@@ -97,34 +97,34 @@ else if (_dossier is null)
         {
             <div class="cg-card">
                 <div class="cg-section-header">
-                    <h2>Section 1 · Personal Identity &amp; Emergency Contact</h2>
-                    <span class="cg-badge cg-badge-info mono">@_dossier.Profile.ResidentAccountNumber (Immutable)</span>
+                    <h2>@Loc.T("admin.profile.identityTitle")</h2>
+                    <span class="cg-badge cg-badge-info mono">@_dossier.Profile.ResidentAccountNumber (@Loc.T("admin.profile.immutable"))</span>
                 </div>
                 <div class="cg-grid-4">
                     <div>
-                        <label>Permanent Resident Account No.</label>
+                        <label>@Loc.T("admin.profile.permanentNo")</label>
                         <input value="@_dossier.Profile.ResidentAccountNumber" class="mono" disabled />
                     </div>
                     <div>
-                        <label>First Name</label>
+                        <label>@Loc.T("form.firstName")</label>
                         <input @bind="_firstName" />
                     </div>
                     <div>
-                        <label>Last Name</label>
+                        <label>@Loc.T("form.lastName")</label>
                         <input @bind="_lastName" />
                     </div>
                     <div>
-                        <label>Primary Email</label>
+                        <label>@Loc.T("admin.residents.primaryEmail")</label>
                         <input type="email" @bind="_email" />
                     </div>
                 </div>
                 <div class="cg-grid-4" style="margin-top: 0.65rem;">
                     <div>
-                        <label>Phone Number</label>
+                        <label>@Loc.T("form.phone")</label>
                         <input @bind="_phone" />
                     </div>
                     <div>
-                        <label>Preferred Language</label>
+                        <label>@Loc.T("admin.wizard.language")</label>
                         <select @bind="_preferredLanguage">
                             <option value="EN">EN</option>
                             <option value="PL">PL</option>
@@ -134,22 +134,22 @@ else if (_dossier is null)
                         </select>
                     </div>
                     <div>
-                        <label>Preferred Contact Method</label>
+                        <label>@Loc.T("admin.profile.contactMethod")</label>
                         <select @bind="_preferredContactMethod">
-                            <option value="Email">Email</option>
-                            <option value="Phone">Phone</option>
+                            <option value="Email">@Loc.T("contact.channelEmail")</option>
+                            <option value="Phone">@Loc.T("admin.profile.phoneOpt")</option>
                             <option value="SMS">SMS</option>
-                            <option value="Portal">Resident Portal</option>
+                            <option value="Portal">@Loc.T("admin.profile.portalOpt")</option>
                         </select>
                     </div>
                     <div>
-                        <label>Date of Birth (Optional)</label>
+                        <label>@Loc.T("admin.profile.dob")</label>
                         <input type="date" @bind="_dateOfBirth" />
                     </div>
                 </div>
                 <div class="cg-grid-4" style="margin-top: 0.65rem;">
                     <div>
-                        <label>Account Status</label>
+                        <label>@Loc.T("admin.profile.accountStatus")</label>
                         <select @bind="_accountStatus">
                             @foreach (var st in Enum.GetValues<ResidentAccountStatus>())
                             {
@@ -158,7 +158,7 @@ else if (_dossier is null)
                         </select>
                     </div>
                     <div>
-                        <label>Verification Status</label>
+                        <label>@Loc.T("admin.profile.verifyStatus")</label>
                         <select @bind="_verificationStatus">
                             @foreach (var vs in Enum.GetValues<ResidentVerificationStatus>())
                             {
@@ -167,27 +167,27 @@ else if (_dossier is null)
                         </select>
                     </div>
                     <div>
-                        <label>Emergency Contact Name</label>
+                        <label>@Loc.T("admin.wizard.emergencyName")</label>
                         <input @bind="_emergencyName" />
                     </div>
                     <div>
-                        <label>Emergency Contact Phone &amp; Relation</label>
-                        <input @bind="_emergencyPhone" placeholder="+48 500 000 000 (Spouse)" />
+                        <label>@Loc.T("admin.profile.emergencyPhone")</label>
+                        <input @bind="_emergencyPhone" placeholder="@Loc.T("admin.profile.emergencyPh")" />
                     </div>
                 </div>
                 <div class="cg-grid-2" style="margin-top: 0.65rem;">
                     <div>
-                        <label>Additional Contact Details</label>
-                        <input @bind="_additionalContact" placeholder="Secondary email or mailing address" />
+                        <label>@Loc.T("admin.profile.additionalContact")</label>
+                        <input @bind="_additionalContact" placeholder="@Loc.T("admin.profile.additionalPh")" />
                     </div>
                     <div>
-                        <label>Administrative Notes</label>
+                        <label>@Loc.T("admin.profile.adminNotes")</label>
                         <input @bind="_notes" />
                     </div>
                 </div>
                 <div class="cg-toolbar" style="margin-top: 0.75rem;">
                     <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="SaveIdentityAsync">
-                        Save Resident Identity
+                        @Loc.T("admin.profile.saveIdentity")
                     </button>
                 </div>
             </div>
@@ -196,11 +196,11 @@ else if (_dossier is null)
         {
             <div class="cg-card" style="margin-bottom: 1rem;">
                 <div class="cg-section-header">
-                    <h2>Section 2 · Active Unit Assignments (@_dossier.ActiveAssignments.Count)</h2>
+                    <h2>@Loc.T("admin.profile.activeAssign") (@_dossier.ActiveAssignments.Count)</h2>
                     @if (_dashboard is not null && _dashboard.Units.Count > 0)
                     {
                         <button type="button" class="cg-btn cg-btn-sm cg-btn-primary" @onclick="() => _showQuickAssign = !_showQuickAssign">
-                            @(_showQuickAssign ? "Cancel Assignment" : "+ Assign to Another Unit")
+                            @(_showQuickAssign ? Loc.T("admin.profile.cancelAssign") : Loc.T("admin.profile.assignAnother"))
                         </button>
                     }
                 </div>
@@ -208,10 +208,10 @@ else if (_dossier is null)
                 @if (_showQuickAssign && _dashboard is not null)
                 {
                     <div class="cg-subcard" style="margin-bottom: 0.85rem;">
-                        <h3>Assign @_dossier.Profile.FullName (@_dossier.Profile.ResidentAccountNumber) to Unit</h3>
+                        <h3>@Loc.T("admin.profile.assignTitle") @_dossier.Profile.FullName (@_dossier.Profile.ResidentAccountNumber) @Loc.T("admin.profile.toUnit")</h3>
                         <div class="cg-grid-4" style="margin-top: 0.5rem;">
                             <div>
-                                <label>Community</label>
+                                <label>@Loc.T("admin.residents.targetCommunity")</label>
                                 <select value="@_assignCommunityId" @onchange="OnQuickAssignCommunityChanged">
                                     @foreach (var c in _dashboard.Communities)
                                     {
@@ -220,16 +220,16 @@ else if (_dossier is null)
                                 </select>
                             </div>
                             <div>
-                                <label>Unit</label>
+                                <label>@Loc.T("admin.residents.targetUnit")</label>
                                 <select @bind="_assignUnitId">
                                     @foreach (var u in QuickAssignUnits)
                                     {
-                                        <option value="@u.UnitId" @key="u.UnitId">Unit @u.UnitNumber (@u.BuildingName · @u.OccupancyStatus)</option>
+                                        <option value="@u.UnitId" @key="u.UnitId">@Loc.T("admin.residents.unit") @u.UnitNumber (@u.BuildingName · @u.OccupancyStatus)</option>
                                     }
                                 </select>
                             </div>
                             <div>
-                                <label>Assignment Type</label>
+                                <label>@Loc.T("admin.residents.assignmentRole")</label>
                                 <select @bind="_assignType">
                                     @foreach (var t in Enum.GetValues<ResidentAssignmentType>())
                                     {
@@ -238,13 +238,13 @@ else if (_dossier is null)
                                 </select>
                             </div>
                             <div>
-                                <label>Conflict Override / Notes</label>
-                                <input @bind="_assignNotes" placeholder="Reason or override note" />
+                                <label>@Loc.T("admin.profile.overrideNotes")</label>
+                                <input @bind="_assignNotes" placeholder="@Loc.T("admin.profile.overridePh")" />
                             </div>
                         </div>
                         <div class="cg-toolbar" style="margin-top: 0.5rem;">
                             <button type="button" class="cg-btn cg-btn-sm cg-btn-primary" disabled="@_isBusy" @onclick="SubmitQuickAssignAsync">
-                                Confirm Unit Assignment
+                                @Loc.T("admin.profile.confirmAssign")
                             </button>
                         </div>
                     </div>
@@ -252,7 +252,7 @@ else if (_dossier is null)
 
                 @if (_dossier.ActiveAssignments.Count == 0)
                 {
-                    <p class="cg-empty-text">No active unit assignments. Resident identity (@_dossier.Profile.ResidentAccountNumber) remains active and can be assigned to any unit.</p>
+                    <p class="cg-empty-text">@Loc.T("admin.profile.noActive") (@_dossier.Profile.ResidentAccountNumber) @Loc.T("admin.profile.noActiveTail")</p>
                 }
                 else
                 {
@@ -260,12 +260,12 @@ else if (_dossier is null)
                         <table class="cg-table">
                             <thead>
                                 <tr>
-                                    <th>Community</th>
-                                    <th>Building &amp; Unit</th>
-                                    <th>Role &amp; Status</th>
-                                    <th>Move-In Date</th>
-                                    <th>Approved By</th>
-                                    <th>Actions</th>
+                                    <th>@Loc.T("admin.residents.targetCommunity")</th>
+                                    <th>@Loc.T("admin.profile.buildingUnit")</th>
+                                    <th>@Loc.T("admin.profile.roleStatus")</th>
+                                    <th>@Loc.T("admin.profile.moveIn")</th>
+                                    <th>@Loc.T("admin.profile.approvedBy")</th>
+                                    <th>@Loc.T("table.actions")</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -277,22 +277,22 @@ else if (_dossier is null)
                                             <div class="mono" style="font-size: 0.72rem; color: var(--accent-primary);">@item.CommunityAccountNumber</div>
                                         </td>
                                         <td>
-                                            <strong>Unit @item.UnitNumber</strong> · @item.BuildingName (<span class="num">@item.FloorAreaM2.ToString("F1") m²</span>)
+                                            <strong>@Loc.T("admin.residents.unit") @item.UnitNumber</strong> · @item.BuildingName (<span class="num">@item.FloorAreaM2.ToString("F1") m²</span>)
                                         </td>
                                         <td>
                                             <span class="cg-badge cg-badge-ok">@item.Assignment.AssignmentType</span>
                                             @if (item.Assignment.IsPrimaryResident)
                                             {
-                                                <span class="cg-badge cg-badge-info" style="margin-left: 0.25rem;">Primary</span>
+                                                <span class="cg-badge cg-badge-info" style="margin-left: 0.25rem;">@Loc.T("admin.wizard.primary")</span>
                                             }
                                         </td>
                                         <td class="mono">@item.Assignment.MoveInDateUtc.ToString("yyyy-MM-dd")</td>
                                         <td>@item.Assignment.ApprovedByName</td>
                                         <td>
                                             <div style="display: flex; gap: 0.35rem; flex-wrap: wrap;">
-                                                <a class="cg-btn cg-btn-sm" href="@($"/properties/{item.Assignment.CommunityId}/units/{item.Assignment.UnitId}")">Open Unit</a>
+                                                <a class="cg-btn cg-btn-sm" href="@($"/properties/{item.Assignment.CommunityId}/units/{item.Assignment.UnitId}")">@Loc.T("admin.profile.openUnit")</a>
                                                 <button type="button" class="cg-btn cg-btn-sm" disabled="@_isBusy" @onclick="() => MoveOutNowAsync(item.Assignment)">
-                                                    Execute Move-Out
+                                                    @Loc.T("admin.profile.moveOut")
                                                 </button>
                                             </div>
                                         </td>
@@ -307,11 +307,11 @@ else if (_dossier is null)
             <div class="cg-grid-2">
                 <div class="cg-card">
                     <div class="cg-section-header">
-                        <h2>Historical Unit Assignments (@_dossier.PastAssignments.Count)</h2>
+                        <h2>@Loc.T("admin.profile.historicalAssign") (@_dossier.PastAssignments.Count)</h2>
                     </div>
                     @if (_dossier.PastAssignments.Count == 0)
                     {
-                        <p class="cg-empty-text">No past unit assignments on file.</p>
+                        <p class="cg-empty-text">@Loc.T("admin.profile.noPast")</p>
                     }
                     else
                     {
@@ -319,10 +319,10 @@ else if (_dossier is null)
                             <table class="cg-table">
                                 <thead>
                                     <tr>
-                                        <th>Community &amp; Unit</th>
-                                        <th>Type</th>
-                                        <th>Move-In / Move-Out</th>
-                                        <th>Notes</th>
+                                        <th>@Loc.T("admin.profile.communityUnit")</th>
+                                        <th>@Loc.T("table.type")</th>
+                                        <th>@Loc.T("admin.profile.moveInOut")</th>
+                                        <th>@Loc.T("admin.profile.notes")</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -330,11 +330,11 @@ else if (_dossier is null)
                                     {
                                         <tr @key="past.Assignment.Id">
                                             <td>
-                                                <strong>Unit @past.UnitNumber</strong> · @past.CommunityName
+                                                <strong>@Loc.T("admin.residents.unit") @past.UnitNumber</strong> · @past.CommunityName
                                                 <span class="mono" style="font-size: 0.72rem; color: var(--accent-primary);">@past.CommunityAccountNumber</span>
                                             </td>
                                             <td><span class="cg-badge">@past.Assignment.AssignmentType</span></td>
-                                            <td class="mono">@past.Assignment.MoveInDateUtc.ToString("yyyy-MM-dd") → @(past.Assignment.MoveOutDateUtc?.ToString("yyyy-MM-dd") ?? "Ended")</td>
+                                            <td class="mono">@past.Assignment.MoveInDateUtc.ToString("yyyy-MM-dd") → @(past.Assignment.MoveOutDateUtc?.ToString("yyyy-MM-dd") ?? Loc.T("admin.profile.ended"))</td>
                                             <td>@past.Assignment.AssignmentReasonOrNotes</td>
                                         </tr>
                                     }
@@ -346,11 +346,11 @@ else if (_dossier is null)
 
                 <div class="cg-card">
                     <div class="cg-section-header">
-                        <h2>Legal Ownership Records (@_dossier.Ownerships.Count)</h2>
+                        <h2>@Loc.T("admin.profile.ownershipTitle") (@_dossier.Ownerships.Count)</h2>
                     </div>
                     @if (_dossier.Ownerships.Count == 0)
                     {
-                        <p class="cg-empty-text">No legal ownership records linked to this resident.</p>
+                        <p class="cg-empty-text">@Loc.T("admin.profile.noOwnership")</p>
                     }
                     else
                     {
@@ -358,10 +358,10 @@ else if (_dossier is null)
                             <table class="cg-table">
                                 <thead>
                                     <tr>
-                                        <th>Community &amp; Unit</th>
-                                        <th>Role</th>
-                                        <th class="num">Share</th>
-                                        <th>Status</th>
+                                        <th>@Loc.T("admin.profile.communityUnit")</th>
+                                        <th>@Loc.T("table.role")</th>
+                                        <th class="num">@Loc.T("admin.profile.share")</th>
+                                        <th>@Loc.T("table.status")</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -369,12 +369,12 @@ else if (_dossier is null)
                                     {
                                         <tr @key="own.Ownership.Id">
                                             <td>
-                                                <strong>Unit @own.UnitNumber</strong> · @own.CommunityName
+                                                <strong>@Loc.T("admin.residents.unit") @own.UnitNumber</strong> · @own.CommunityName
                                                 <span class="mono" style="font-size: 0.72rem; color: var(--accent-primary);">@own.CommunityAccountNumber</span>
                                             </td>
                                             <td><span class="cg-badge">@own.Ownership.OwnershipRole</span></td>
                                             <td class="num mono">@own.Ownership.ShareNumerator / @own.Ownership.ShareDenominator (@own.Ownership.OwnershipPercentage.ToString("F1")%)</td>
-                                            <td><span class="cg-badge @(own.Ownership.IsActive ? "cg-badge-ok" : "")">@(own.Ownership.IsActive ? "Active" : "Historical")</span></td>
+                                            <td><span class="cg-badge @(own.Ownership.IsActive ? "cg-badge-ok" : "")">@(own.Ownership.IsActive ? Loc.T("status.active") : Loc.T("admin.residents.historical"))</span></td>
                                         </tr>
                                     }
                                 </tbody>
@@ -388,25 +388,25 @@ else if (_dossier is null)
         {
             <div class="cg-card">
                 <div class="cg-section-header">
-                    <h2>Section 3 · Tenancy, Occupancy &amp; Household Members (@_dossier.HouseholdMembers.Count)</h2>
+                    <h2>@Loc.T("admin.profile.householdTitle") (@_dossier.HouseholdMembers.Count)</h2>
                 </div>
                 @if (_dossier.ActiveAssignments.Count > 0)
                 {
                     <div class="cg-grid-4" style="margin-bottom: 0.75rem;">
-                        <div><label>Full Name</label><input @bind="_hhName" placeholder="Zofia Kowalska" /></div>
-                        <div><label>Relationship</label><input @bind="_hhRelation" placeholder="Spouse / Child / Co-Occupant" /></div>
-                        <div><label>Phone</label><input @bind="_hhPhone" /></div>
-                        <div><label>Email</label><input @bind="_hhEmail" /></div>
+                        <div><label>@Loc.T("admin.profile.fullName")</label><input @bind="_hhName" placeholder="@Loc.T("admin.profile.hhNamePh")" /></div>
+                        <div><label>@Loc.T("admin.profile.relationship")</label><input @bind="_hhRelation" placeholder="@Loc.T("admin.profile.relationPh")" /></div>
+                        <div><label>@Loc.T("form.phone")</label><input @bind="_hhPhone" /></div>
+                        <div><label>@Loc.T("admin.residents.email")</label><input @bind="_hhEmail" /></div>
                     </div>
                     <div class="cg-toolbar" style="margin-bottom: 0.75rem;">
                         <button type="button" class="cg-btn cg-btn-sm cg-btn-primary" disabled="@_isBusy" @onclick="AddHouseholdMemberAsync">
-                            + Add Household Member to Primary Unit
+                            @Loc.T("admin.profile.addHousehold")
                         </button>
                     </div>
                 }
                 @if (_dossier.HouseholdMembers.Count == 0)
                 {
-                    <p class="cg-empty-text">No household members recorded.</p>
+                    <p class="cg-empty-text">@Loc.T("admin.profile.noHousehold")</p>
                 }
                 else
                 {
@@ -414,11 +414,11 @@ else if (_dossier is null)
                         <table class="cg-table">
                             <thead>
                                 <tr>
-                                    <th>Name</th>
-                                    <th>Relationship</th>
-                                    <th>Contact</th>
-                                    <th>Status</th>
-                                    <th>Actions</th>
+                                    <th>@Loc.T("admin.profile.fullName")</th>
+                                    <th>@Loc.T("admin.profile.relationship")</th>
+                                    <th>@Loc.T("admin.profile.contact")</th>
+                                    <th>@Loc.T("table.status")</th>
+                                    <th>@Loc.T("table.actions")</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -428,11 +428,11 @@ else if (_dossier is null)
                                         <td><strong>@h.FullName</strong></td>
                                         <td><span class="cg-badge">@h.RelationshipToPrimary</span></td>
                                         <td class="mono">@h.Email · @h.Phone</td>
-                                        <td><span class="cg-badge @(h.IsActive ? "cg-badge-ok" : "")">@(h.IsActive ? "Active" : "Ended")</span></td>
+                                        <td><span class="cg-badge @(h.IsActive ? "cg-badge-ok" : "")">@(h.IsActive ? Loc.T("status.active") : Loc.T("admin.profile.ended"))</span></td>
                                         <td>
                                             @if (h.IsActive)
                                             {
-                                                <button type="button" class="cg-btn cg-btn-sm" disabled="@_isBusy" @onclick="() => RemoveHouseholdMemberAsync(h)">Remove</button>
+                                                <button type="button" class="cg-btn cg-btn-sm" disabled="@_isBusy" @onclick="() => RemoveHouseholdMemberAsync(h)">@Loc.T("admin.profile.remove")</button>
                                             }
                                         </td>
                                     </tr>
@@ -447,23 +447,23 @@ else if (_dossier is null)
         {
             <div class="cg-card">
                 <div class="cg-section-header">
-                    <h2>Section 4 · Resident Communication History (@_dossier.DirectMessages.Count)</h2>
+                    <h2>@Loc.T("admin.profile.commsTitle") (@_dossier.DirectMessages.Count)</h2>
                 </div>
                 @if (_dossier.ActiveAssignments.Count > 0 && !string.IsNullOrWhiteSpace(_dossier.Profile.PrimaryEmail))
                 {
                     <div class="cg-grid-2" style="margin-bottom: 0.75rem;">
-                        <div><label>Subject</label><input @bind="_msgSubject" placeholder="Notice regarding Unit occupancy / lease..." /></div>
-                        <div><label>Message Body</label><input @bind="_msgBody" placeholder="Write direct message to resident..." /></div>
+                        <div><label>@Loc.T("admin.profile.subject")</label><input @bind="_msgSubject" placeholder="@Loc.T("admin.profile.subjectPh")" /></div>
+                        <div><label>@Loc.T("admin.profile.msgBody")</label><input @bind="_msgBody" placeholder="@Loc.T("admin.profile.msgBodyPh")" /></div>
                     </div>
                     <div class="cg-toolbar" style="margin-bottom: 0.75rem;">
                         <button type="button" class="cg-btn cg-btn-sm cg-btn-primary" disabled="@_isBusy" @onclick="SendMessageToResidentAsync">
-                            Send Direct Message
+                            @Loc.T("admin.profile.sendMsg")
                         </button>
                     </div>
                 }
                 @if (_dossier.DirectMessages.Count == 0)
                 {
-                    <p class="cg-empty-text">No direct messages recorded for this resident yet.</p>
+                    <p class="cg-empty-text">@Loc.T("admin.profile.noMessages")</p>
                 }
                 else
                 {
@@ -476,7 +476,7 @@ else if (_dossier is null)
                             </div>
                             <div style="font-size: 0.8rem; margin-top: 0.25rem;">@m.Body</div>
                             <div style="font-size: 0.72rem; color: var(--text-secondary); margin-top: 0.2rem;">
-                                From: @m.SenderName (@m.SenderRole) → @m.RecipientName
+                                @Loc.T("admin.profile.from"): @m.SenderName (@m.SenderRole) → @m.RecipientName
                             </div>
                         </div>
                     }
@@ -487,11 +487,11 @@ else if (_dossier is null)
         {
             <div class="cg-card">
                 <div class="cg-section-header">
-                    <h2>Section 5 · Resident Document Vault (@_dossier.Documents.Count)</h2>
+                    <h2>@Loc.T("admin.profile.vaultTitle") (@_dossier.Documents.Count)</h2>
                 </div>
                 <div class="cg-grid-4" style="margin-bottom: 0.75rem;">
                     <div>
-                        <label>Category</label>
+                        <label>@Loc.T("admin.profile.category")</label>
                         <select @bind="_docCategory">
                             @foreach (var cat in Enum.GetValues<ResidentDocumentCategory>())
                             {
@@ -499,19 +499,19 @@ else if (_dossier is null)
                             }
                         </select>
                     </div>
-                    <div><label>Document Title</label><input @bind="_docTitle" placeholder="Signed Lease Agreement 2026" /></div>
-                    <div><label>File Name</label><input @bind="_docFileName" placeholder="lease-2026.pdf" /></div>
-                    <div><label>Summary / Notes</label><input @bind="_docNotes" placeholder="Verified by property manager" /></div>
+                    <div><label>@Loc.T("admin.profile.docTitle")</label><input @bind="_docTitle" placeholder="@Loc.T("admin.profile.docTitlePh")" /></div>
+                    <div><label>@Loc.T("admin.profile.fileName")</label><input @bind="_docFileName" placeholder="@Loc.T("admin.profile.fileNamePh")" /></div>
+                    <div><label>@Loc.T("admin.profile.summaryNotes")</label><input @bind="_docNotes" placeholder="@Loc.T("admin.profile.summaryPh")" /></div>
                 </div>
                 <div class="cg-toolbar" style="margin-bottom: 0.75rem;">
                     <button type="button" class="cg-btn cg-btn-sm cg-btn-primary" disabled="@_isBusy" @onclick="AddDocumentAsync">
-                        + Add Document to Resident Vault
+                        @Loc.T("admin.profile.addDoc")
                     </button>
                 </div>
 
                 @if (_dossier.Documents.Count == 0)
                 {
-                    <p class="cg-empty-text">No documents stored in this resident's vault yet.</p>
+                    <p class="cg-empty-text">@Loc.T("admin.profile.noDocs")</p>
                 }
                 else
                 {
@@ -519,11 +519,11 @@ else if (_dossier is null)
                         <table class="cg-table">
                             <thead>
                                 <tr>
-                                    <th>Category</th>
-                                    <th>Title &amp; File</th>
-                                    <th>Summary</th>
-                                    <th>Uploaded By</th>
-                                    <th>Uploaded At</th>
+                                    <th>@Loc.T("admin.profile.category")</th>
+                                    <th>@Loc.T("admin.profile.titleFile")</th>
+                                    <th>@Loc.T("admin.profile.summaryNotes")</th>
+                                    <th>@Loc.T("admin.profile.uploadedBy")</th>
+                                    <th>@Loc.T("admin.profile.uploadedAt")</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -550,17 +550,17 @@ else if (_dossier is null)
         {
             <div class="cg-card">
                 <div class="cg-section-header">
-                    <h2>Section 6 · Account Security &amp; Tamper-Evident Audit Trail (@_dossier.AuditEvents.Count)</h2>
-                    <span class="cg-badge mono">SHA-256 Chained</span>
+                    <h2>@Loc.T("admin.profile.auditTitle") (@_dossier.AuditEvents.Count)</h2>
+                    <span class="cg-badge mono">@Loc.T("admin.audit.verifiedChain")</span>
                 </div>
                 <div class="cg-subcard" style="margin-bottom: 0.75rem; font-size: 0.8rem;">
-                    <strong>Resident Account Number:</strong> <span class="mono">@_dossier.Profile.ResidentAccountNumber</span> ·
-                    <strong>Registered:</strong> <span class="mono">@_dossier.Profile.RegistrationDateUtc.ToString("yyyy-MM-dd HH:mm")</span> ·
-                    <strong>Linked User ID:</strong> <span class="mono">@(_dossier.Profile.UserId?.ToString() ?? "Not linked to portal login yet")</span>
+                    <strong>@Loc.T("admin.profile.kpiAccount"):</strong> <span class="mono">@_dossier.Profile.ResidentAccountNumber</span> ·
+                    <strong>@Loc.T("admin.profile.registered"):</strong> <span class="mono">@_dossier.Profile.RegistrationDateUtc.ToString("yyyy-MM-dd HH:mm")</span> ·
+                    <strong>@Loc.T("admin.profile.linkedUser"):</strong> <span class="mono">@(_dossier.Profile.UserId?.ToString() ?? Loc.T("admin.profile.notLinked"))</span>
                 </div>
                 @if (_dossier.AuditEvents.Count == 0)
                 {
-                    <p class="cg-empty-text">No security audit events recorded for this resident yet.</p>
+                    <p class="cg-empty-text">@Loc.T("admin.profile.noAudit")</p>
                 }
                 else
                 {
@@ -568,11 +568,11 @@ else if (_dossier is null)
                         <table class="cg-table">
                             <thead>
                                 <tr>
-                                    <th>Timestamp (UTC)</th>
-                                    <th>Category</th>
-                                    <th>Actor Role</th>
-                                    <th>Summary</th>
-                                    <th>SHA-256 Chain Hash</th>
+                                    <th>@Loc.T("table.occurredUtc")</th>
+                                    <th>@Loc.T("table.category")</th>
+                                    <th>@Loc.T("admin.profile.actorRole")</th>
+                                    <th>@Loc.T("table.summary")</th>
+                                    <th>@Loc.T("table.chainHash")</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -753,7 +753,7 @@ else if (_dossier is null)
                 _emergencyRelation,
                 _notes);
             var updated = await Workspace.UpdateResidentFullProfileAsync(_dossier.Profile.Id, input, _role, _actorUserId);
-            _message = $"Resident profile {updated.FullName} ({updated.ResidentAccountNumber}) saved.";
+            _message = $"{Loc.T("admin.profile.saved")} {updated.FullName} ({updated.ResidentAccountNumber}).";
             await ReloadAsync();
         }
         catch (Exception ex)
@@ -808,7 +808,7 @@ else if (_dossier is null)
                 string.IsNullOrWhiteSpace(_assignNotes) ? "Administrator assignment from Resident Profile" : _assignNotes);
             await Workspace.AssignResidentToUnitManualAsync(req, _role, _actorName, _membershipId);
             _showQuickAssign = false;
-            _message = $"Resident {_dossier.Profile.FullName} ({_dossier.Profile.ResidentAccountNumber}) assigned to Unit {targetUnit?.UnitNumber}.";
+            _message = $"{Loc.T("admin.profile.assigned")} {_dossier.Profile.FullName} ({_dossier.Profile.ResidentAccountNumber}) {Loc.T("admin.residents.toUnit")} {targetUnit?.UnitNumber}.";
             await ReloadAsync();
         }
         catch (Exception ex)
@@ -835,7 +835,7 @@ else if (_dossier is null)
                 "Move-out executed from Resident Profile",
                 _role,
                 _actorName);
-            _message = $"Move-out recorded. Resident Account Number {_dossier?.Profile.ResidentAccountNumber} and historical assignment preserved.";
+            _message = $"{Loc.T("admin.profile.movedOut")} {_dossier?.Profile.ResidentAccountNumber} {Loc.T("admin.profile.movedOutTail")}";
             await ReloadAsync();
         }
         catch (Exception ex)
@@ -871,7 +871,7 @@ else if (_dossier is null)
             _hhName = string.Empty;
             _hhPhone = string.Empty;
             _hhEmail = string.Empty;
-            _message = "Household member added.";
+            _message = Loc.T("msg.householdAdded");
             await ReloadAsync();
         }
         catch (Exception ex)
@@ -890,7 +890,7 @@ else if (_dossier is null)
         try
         {
             await Workspace.RemoveHouseholdMemberAsync(member.CommunityId, member.Id, _role);
-            _message = $"Household member {member.FullName} marked as ended.";
+            _message = $"{Loc.T("admin.profile.hhRemoved")} {member.FullName} {Loc.T("admin.profile.endedMark")}";
             await ReloadAsync();
         }
         catch (Exception ex)
@@ -923,7 +923,7 @@ else if (_dossier is null)
                 _msgBody);
             _msgSubject = string.Empty;
             _msgBody = string.Empty;
-            _message = "Direct message sent to resident.";
+            _message = Loc.T("msg.directSent");
             await ReloadAsync();
         }
         catch (Exception ex)
@@ -949,7 +949,7 @@ else if (_dossier is null)
             var unitId = _dossier.ActiveAssignments.FirstOrDefault()?.Assignment.UnitId;
             if (commId == Guid.Empty)
             {
-                _error = "Select or create a community before uploading documents.";
+                _error = Loc.T("msg.selectCommunityFirst");
                 return;
             }
             await Workspace.AddResidentDocumentAsync(
@@ -966,7 +966,7 @@ else if (_dossier is null)
             _docTitle = string.Empty;
             _docFileName = string.Empty;
             _docNotes = string.Empty;
-            _message = "Document added to Resident Vault.";
+            _message = Loc.T("msg.docAddedVault");
             await ReloadAsync();
         }
         catch (Exception ex)

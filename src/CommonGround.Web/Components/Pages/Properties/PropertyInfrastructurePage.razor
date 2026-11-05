@@ -5,30 +5,30 @@
 @inject CommonGroundWorkspaceService Workspace
 @implements IDisposable
 
-<PageTitle>Property infrastructure — CommonGround</PageTitle>
+<PageTitle>@Loc.T("property.infra.pageTitle")</PageTitle>
 
 <RequirePropertyAccess PropertyId="Id">
     @if (!_loaded)
     {
-        <p role="status" aria-live="polite">Loading.</p>
+        <p role="status" aria-live="polite">@Loc.T("msg.loading")</p>
     }
     else if (_snapshot is null)
     {
-        <div class="cg-card"><p class="cg-empty-text">Property not found.</p></div>
+        <div class="cg-card"><p class="cg-empty-text">@Loc.T("property.common.notFound")</p></div>
     }
     else
     {
-        <PageHeader Category="Infrastructure & Permits"
-                    ContextCode="@($"{_snapshot.Community.InfrastructurePhotos.Count} atlas nodes")"
-                    Title="@($"{_snapshot.Community.Name} · Infrastructure & statutory inspections")"
-                    Subtitle="SAM 3.1 annotated shutoff valve & manifold atlas, role-gated access code vault, statutory building inspections, and architectural renovation permits.">
+        <PageHeader Category="@Loc.T("property.infra.category")"
+                    ContextCode="@($"{_snapshot.Community.InfrastructurePhotos.Count} {Loc.T("property.infra.atlasNodes")}")"
+                    Title="@($"{_snapshot.Community.Name} · {Loc.T("property.infra.titleSuffix")}")"
+                    Subtitle="@Loc.T("property.infra.subtitle")">
             <Badges>
-                <AIBadge Label="Atlas Annotation" Model="sam-3.1" />
-                <StatusBadge Text="Role-Gated PIN Vault" Variant="ok" />
+                <AIBadge Label="@Loc.T("property.infra.atlasBadge")" Model="sam-3.1" />
+                <StatusBadge Text="@Loc.T("property.infra.vaultBadge")" Variant="ok" />
             </Badges>
             <Actions>
-                <a class="cg-btn cg-btn-sm" href="@($"/properties/{Id}/units")">Units & riser matrix</a>
-                <a class="cg-btn cg-btn-sm" href="@($"/properties/{Id}/overview")">Back to overview</a>
+                <a class="cg-btn cg-btn-sm" href="@($"/properties/{Id}/units")">@Loc.T("property.infra.unitsMatrix")</a>
+                <a class="cg-btn cg-btn-sm" href="@($"/properties/{Id}/overview")">@Loc.T("property.common.backToOverview")</a>
             </Actions>
         </PageHeader>
 

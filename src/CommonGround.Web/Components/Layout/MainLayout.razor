@@ -25,7 +25,7 @@
                             <span class="ai-dot" aria-hidden="true"></span>
                             <span>@UiState.StatusBannerMessage</span>
                         </div>
-                        <button type="button" class="cg-btn cg-btn-sm cg-btn-ghost" @onclick="ClearBanner" aria-label="Dismiss notification">Dismiss</button>
+                        <button type="button" class="cg-btn cg-btn-sm cg-btn-ghost" @onclick="ClearBanner" aria-label="@Loc.T("action.dismiss")">@Loc.T("action.dismiss")</button>
                     </div>
                     <main id="main-content" tabindex="-1">
                         @Body

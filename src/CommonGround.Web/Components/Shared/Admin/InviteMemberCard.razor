@@ -4,24 +4,26 @@
 @inject IInvitationService InvitationService
 @inject IAppDbContextFactory DbFactory
 @inject WorkspaceAccessService Access
+@inject WorkspaceLocalization Loc
+@implements IDisposable
 
 <div class="cg-card">
     <div class="cg-section-header">
-        <h2>Invite member</h2>
+        <h2>@Loc.T("admin.invite.title")</h2>
         <span class="cg-badge mono">@FirmId.ToString("N").Substring(0, 8)</span>
     </div>
-    <p style="color: var(--text-secondary); font-size: 0.8rem; margin-bottom: 0.85rem;">Send an invitation link or share the firm join code. New members enter the approval queue when approval is required.</p>
+    <p style="color: var(--text-secondary); font-size: 0.8rem; margin-bottom: 0.85rem;">@Loc.T("admin.invite.lead")</p>
     <div class="cg-grid-3">
         <div>
-            <label for="inv-email-@FirmId">Work email</label>
-            <input id="inv-email-@FirmId" @bind="_email" type="email" autocomplete="off" placeholder="member@example.com" />
+            <label for="inv-email-@FirmId">@Loc.T("form.workEmail")</label>
+            <input id="inv-email-@FirmId" @bind="_email" type="email" autocomplete="off" placeholder="@Loc.T("admin.invite.emailPh")" />
         </div>
         <div>
-            <label for="inv-name-@FirmId">Full name</label>
-            <input id="inv-name-@FirmId" @bind="_name" autocomplete="off" placeholder="Anna Kowalska" />
+            <label for="inv-name-@FirmId">@Loc.T("form.name")</label>
+            <input id="inv-name-@FirmId" @bind="_name" autocomplete="off" placeholder="@Loc.T("admin.invite.namePh")" />
         </div>
         <div>
-            <label for="inv-role-@FirmId">Target role</label>
+            <label for="inv-role-@FirmId">@Loc.T("form.requestedRole")</label>
             <select id="inv-role-@FirmId" value="@_role" @onchange="OnRoleChanged">
                 @foreach (var role in AvailableRoles)
                 {
@@ -31,7 +33,7 @@
         </div>
     </div>
     <div style="margin-block-start: 0.85rem;">
-        <label id="inv-perm-label-@FirmId">Permission flags for selected role</label>
+        <label id="inv-perm-label-@FirmId">@Loc.T("admin.invite.permFlags")</label>
         <fieldset aria-labelledby="inv-perm-label-@FirmId" style="border: 1px solid var(--border-default); background: var(--surface-secondary); border-radius: var(--radius-control); padding: 0.65rem 0.85rem; margin: 0;">
             @foreach (var flag in RelevantFlags)
             {
@@ -41,14 +43,14 @@
                 </label>
             }
         </fieldset>
-        <p style="color: var(--text-secondary); font-size: 0.75rem; margin-block-start: 0.375rem;">Defaults follow the preset for the chosen role. Uncheck to restrict.</p>
+        <p style="color: var(--text-secondary); font-size: 0.75rem; margin-block-start: 0.375rem;">@Loc.T("admin.invite.presetHint")</p>
     </div>
     <div style="margin-block-start: 0.85rem;">
-        <label id="inv-prop-label-@FirmId">Property scope (select one or more)</label>
+        <label id="inv-prop-label-@FirmId">@Loc.T("admin.invite.propertyScope")</label>
         <fieldset aria-labelledby="inv-prop-label-@FirmId" style="border: 1px solid var(--border-default); background: var(--surface-secondary); border-radius: var(--radius-control); padding: 0.65rem 0.85rem; margin: 0;">
             @if (_properties.Count == 0)
             {
-                <p style="color: var(--text-secondary); font-size: 0.78125rem; margin: 0;">No properties available yet.</p>
+                <p style="color: var(--text-secondary); font-size: 0.78125rem; margin: 0;">@Loc.T("admin.invite.noProperties")</p>
             }
             @foreach (var property in _properties)
             {
@@ -62,9 +64,9 @@
     </div>
     <div class="cg-grid-3" style="margin-block-start: 0.85rem;">
         <div>
-            <label for="inv-unit-@FirmId">Linked unit (optional)</label>
+            <label for="inv-unit-@FirmId">@Loc.T("admin.invite.linkedUnit")</label>
             <select id="inv-unit-@FirmId" @bind="_unitIdString">
-                <option value="">No unit link</option>
+                <option value="">@Loc.T("admin.invite.noUnit")</option>
                 @foreach (var unit in FilteredUnits)
                 {
                     <option value="@unit.Id" @key="unit.Id">@unit.CommunityName – @unit.UnitNumber</option>
@@ -72,23 +74,23 @@
             </select>
         </div>
         <div>
-            <label for="inv-exp-@FirmId">Link expiry (days)</label>
+            <label for="inv-exp-@FirmId">@Loc.T("admin.invite.expiryDays")</label>
             <input id="inv-exp-@FirmId" type="number" min="1" max="30" @bind="_expiresDays" />
         </div>
         <div style="align-self: end;">
             <label class="cg-check-row" for="inv-approval-@FirmId">
                 <input id="inv-approval-@FirmId" type="checkbox" @bind="_requiresApproval" />
-                <span>Require manager approval</span>
+                <span>@Loc.T("admin.invite.requireApproval")</span>
             </label>
         </div>
     </div>
     <div class="cg-toolbar" style="margin-top: 0.85rem;">
-        <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="OnInviteAsync">Send invitation link</button>
+        <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="OnInviteAsync">@Loc.T("admin.invite.send")</button>
     </div>
     @if (!string.IsNullOrWhiteSpace(_lastInviteLink))
     {
         <div role="status" aria-live="polite" class="ai-callout" style="overflow-wrap: anywhere; margin-top: 0.65rem;">
-            Invitation created. Share this link: <a href="@_lastInviteLink">@_lastInviteLink</a>
+            @Loc.T("admin.invite.created") <a href="@_lastInviteLink">@_lastInviteLink</a>
         </div>
     }
     @if (!string.IsNullOrWhiteSpace(_message))
@@ -126,6 +128,7 @@
     private string _message = string.Empty;
     private string _lastInviteLink = string.Empty;
     private bool _isBusy;
+    private Action? _locHandler;
 
     private IReadOnlyList<WorkspacePermissionFlags> RelevantFlags =>
         Enum.GetValues<WorkspacePermissionFlags>()
@@ -139,6 +142,9 @@
 
     protected override async Task OnInitializedAsync()
     {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
         await LoadLookupsAsync();
     }
 
@@ -243,7 +249,7 @@
     {
         if (string.IsNullOrWhiteSpace(_email))
         {
-            _message = "Recipient email is required.";
+            _message = Loc.T("msg.recipientEmailRequired");
             return;
         }
         _isBusy = true;
@@ -265,7 +271,7 @@
                 unitId,
                 expires);
             _lastInviteLink = $"/accept-invite?token={Uri.EscapeDataString(result.PlainToken)}";
-            _message = $"Invitation issued to {_email.Trim()} for role {_role}.";
+            _message = $"{Loc.T("admin.invite.issued")} {_email.Trim()} ({_role}).";
             _email = string.Empty;
             _name = string.Empty;
             _unitIdString = string.Empty;
@@ -279,6 +285,11 @@
         {
             _isBusy = false;
         }
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
     }
 
     private sealed class UnitOption

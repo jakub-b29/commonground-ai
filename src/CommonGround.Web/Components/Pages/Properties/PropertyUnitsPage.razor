@@ -9,41 +9,41 @@
 @inject NavigationManager Nav
 @implements IDisposable
 
-<PageTitle>Community units &amp; occupancy — CommonGround</PageTitle>
+<PageTitle>@Loc.T("property.units.pageTitle")</PageTitle>
 
 <RequirePropertyAccess PropertyId="Id">
     @if (!_loaded)
     {
-        <p role="status" aria-live="polite">Loading community units...</p>
+        <p role="status" aria-live="polite">@Loc.T("property.units.loading")</p>
     }
     else if (_snapshot is null || _dashboard is null)
     {
-        <div class="cg-card"><p class="cg-empty-text">Property not found.</p></div>
+        <div class="cg-card"><p class="cg-empty-text">@Loc.T("property.common.notFound")</p></div>
     }
     else
     {
-        <PageHeader Category="Community Units, Ownership &amp; Occupancy"
-                    ContextCode="@($"{_snapshot.Community.CommunityAccountNumber} · {_dashboard.TotalUnits} units")"
-                    Title="@($"{_snapshot.Community.Name} · Units & Occupancy")"
-                    Subtitle="Complete apartment, commercial, garage, and storage registry with 5-step Unit Creation Wizard, ownership &amp; residency separation, zero-disclosure registration links, and vertical riser matrix.">
+        <PageHeader Category="@Loc.T("property.units.category")"
+                    ContextCode="@($"{_snapshot.Community.CommunityAccountNumber} · {_dashboard.TotalUnits} {Loc.T("property.units.unitsSuffix")}")"
+                    Title="@($"{_snapshot.Community.Name} · {Loc.T("property.units.titleSuffix")}")"
+                    Subtitle="@Loc.T("property.units.subtitle")">
             <Badges>
                 <StatusBadge Text="@_snapshot.Community.CommunityAccountNumber" Variant="info" />
-                <AIBadge Label="Meter Dial OCR &amp; Riser Telemetry" Model="sam-3.1 + muse-spark-1.3" />
+                <AIBadge Label="@Loc.T("property.units.meterBadge")" Model="sam-3.1 + muse-spark-1.3" />
             </Badges>
             <Actions>
                 @if (_isManager)
                 {
                     <button type="button" class="cg-btn cg-btn-sm cg-btn-primary" @onclick="() => _showWizard = !_showWizard">
-                        @(_showWizard ? "Close Unit Wizard" : "+ Add Unit (5-Step Wizard)")
+                        @(_showWizard ? Loc.T("property.units.closeWizard") : Loc.T("property.units.addWizard"))
                     </button>
                     <button type="button" class="cg-btn cg-btn-sm" @onclick="() => _showAddBuilding = !_showAddBuilding">
-                        + Add Building
+                        @Loc.T("builder.addBuilding")
                     </button>
                 }
                 <button type="button" class="cg-btn cg-btn-sm @(_showMatrix ? "cg-btn-ai" : "")" @onclick="() => _showMatrix = !_showMatrix">
-                    @(_showMatrix ? "Hide Riser Matrix" : "Riser Stack Matrix")
+                    @(_showMatrix ? Loc.T("property.units.hideMatrix") : Loc.T("property.units.showMatrix"))
                 </button>
-                <a class="cg-btn cg-btn-sm" href="@($"/properties/{Id}/overview")">Back to overview</a>
+                <a class="cg-btn cg-btn-sm" href="@($"/properties/{Id}/overview")">@Loc.T("property.common.backToOverview")</a>
             </Actions>
         </PageHeader>
 
@@ -53,25 +53,25 @@
         }
 
         <div class="cg-grid-4" style="margin-bottom: 1rem;">
-            <MetricCard Label="Total Units"
+            <MetricCard Label="@Loc.T("property.units.totalUnits")"
                         Value="@_dashboard.TotalUnits.ToString()"
-                        Subtitle="@($"{_dashboard.Buildings.Count} buildings in {_snapshot.Community.Name}")"
+                        Subtitle="@string.Format(Loc.T("property.units.buildingsIn"), _dashboard.Buildings.Count, _snapshot.Community.Name)"
                         BadgeText="@_snapshot.Community.CommunityAccountNumber"
                         StatusVariant="info" />
-            <MetricCard Label="Occupied Units"
+            <MetricCard Label="@Loc.T("property.units.occupiedUnits")"
                         Value="@_dashboard.OccupiedUnits.ToString()"
-                        Subtitle="@($"{_dashboard.TotalActiveResidents} active assigned residents")"
-                        BadgeText="Active"
+                        Subtitle="@string.Format(Loc.T("property.units.activeResidents"), _dashboard.TotalActiveResidents)"
+                        BadgeText="@Loc.T("property.units.activeBadge")"
                         StatusVariant="ok" />
-            <MetricCard Label="Vacant Units"
+            <MetricCard Label="@Loc.T("property.units.vacantUnits")"
                         Value="@_dashboard.VacantUnits.ToString()"
-                        Subtitle="Ready for resident assignment or link"
-                        BadgeText="Available"
+                        Subtitle="@Loc.T("property.units.vacantHint")"
+                        BadgeText="@Loc.T("property.units.availableBadge")"
                         StatusVariant="neutral" />
-            <MetricCard Label="Pending Registrations"
+            <MetricCard Label="@Loc.T("property.units.pendingRegs")"
                         Value="@_dashboard.PendingRegistrationUnits.ToString()"
-                        Subtitle="@($"{_dashboard.ArrearsUnitsCount} units with open balance")"
-                        BadgeText="@(_dashboard.PendingRegistrationUnits > 0 ? "Links active" : "Clear")"
+                        Subtitle="@string.Format(Loc.T("property.units.openBalance"), _dashboard.ArrearsUnitsCount)"
+                        BadgeText="@(_dashboard.PendingRegistrationUnits > 0 ? Loc.T("property.units.linksActive") : Loc.T("property.units.clearBadge"))"
                         StatusVariant="@(_dashboard.PendingRegistrationUnits > 0 ? "warn" : "ok")" />
         </div>
 
@@ -79,17 +79,17 @@
         {
             <div class="cg-card" style="margin-bottom: 1rem; border: 1px solid var(--accent-primary);">
                 <div class="cg-section-header">
-                    <h2>Add Building to @_snapshot.Community.Name (@_snapshot.Community.CommunityAccountNumber)</h2>
-                    <button type="button" class="cg-btn cg-btn-sm" @onclick="() => _showAddBuilding = false">Cancel</button>
+                    <h2>@string.Format(Loc.T("property.units.addBuildingTitle"), _snapshot.Community.Name, _snapshot.Community.CommunityAccountNumber)</h2>
+                    <button type="button" class="cg-btn cg-btn-sm" @onclick="() => _showAddBuilding = false">@Loc.T("action.close")</button>
                 </div>
                 <div class="cg-grid-4">
-                    <div><label>Building Name</label><input @bind="_newBldName" placeholder="Building B" /></div>
-                    <div><label>Street Address</label><input @bind="_newBldStreet" placeholder="@_snapshot.Community.StreetAddress" /></div>
-                    <div><label>Floors Count</label><input type="number" min="1" max="50" @bind="_newBldFloors" /></div>
-                    <div><label>Stairwells Count</label><input type="number" min="1" max="15" @bind="_newBldStairwells" /></div>
+                    <div><label>@Loc.T("property.units.buildingName")</label><input @bind="_newBldName" placeholder="@Loc.T("property.units.buildingNamePh")" /></div>
+                    <div><label>@Loc.T("property.units.streetAddress")</label><input @bind="_newBldStreet" placeholder="@_snapshot.Community.StreetAddress" /></div>
+                    <div><label>@Loc.T("property.units.floorsCount")</label><input type="number" min="1" max="50" @bind="_newBldFloors" /></div>
+                    <div><label>@Loc.T("property.units.stairwellsCount")</label><input type="number" min="1" max="15" @bind="_newBldStairwells" /></div>
                 </div>
                 <div class="cg-toolbar" style="margin-top: 0.65rem;">
-                    <button type="button" class="cg-btn cg-btn-primary" @onclick="CreateBuildingNowAsync">Create Building with Default Riser Stacks</button>
+                    <button type="button" class="cg-btn cg-btn-primary" @onclick="CreateBuildingNowAsync">@Loc.T("property.units.createBuilding")</button>
                 </div>
             </div>
         }
@@ -119,28 +119,28 @@
 
         <div class="cg-card">
             <div class="cg-section-header">
-                <h2>Community Units Directory (@FilteredUnits.Count of @_dashboard.Units.Count)</h2>
+                <h2>@string.Format(Loc.T("property.units.directoryTitle"), FilteredUnits.Count, _dashboard.Units.Count)</h2>
                 <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
                     <input style="min-width: 240px;"
-                           placeholder="Search unit, owner, resident, RES-..."
+                           placeholder="@Loc.T("property.units.searchPh")"
                            @bind="_searchQuery"
                            @bind:event="oninput" />
                     <select @bind="_filterBuildingId">
-                        <option value="@Guid.Empty">All Buildings (@_dashboard.Buildings.Count)</option>
+                        <option value="@Guid.Empty">@string.Format(Loc.T("property.units.allBuildings"), _dashboard.Buildings.Count)</option>
                         @foreach (var b in _dashboard.Buildings)
                         {
                             <option value="@b.Id" @key="b.Id">@b.Name</option>
                         }
                     </select>
                     <select @bind="_filterOccupancy">
-                        <option value="">All Occupancy Statuses</option>
+                        <option value="">@Loc.T("property.units.allOccupancy")</option>
                         @foreach (var st in Enum.GetValues<UnitOccupancyStatus>())
                         {
                             <option value="@st.ToString()" @key="st">@st</option>
                         }
                     </select>
                     <select @bind="_filterKind">
-                        <option value="">All Unit Types</option>
+                        <option value="">@Loc.T("property.units.allTypes")</option>
                         @foreach (var k in Enum.GetValues<UnitKind>())
                         {
                             <option value="@k.ToString()" @key="k">@k</option>
@@ -153,21 +153,21 @@
                 <table class="cg-table">
                     <thead>
                         <tr>
-                            <th>Unit No.</th>
-                            <th>Building · Floor · Stack</th>
-                            <th>Type &amp; Area</th>
-                            <th class="num">Share</th>
-                            <th>Legal Owner</th>
-                            <th>Active Resident(s) &amp; Account No.</th>
-                            <th>Occupancy Status</th>
-                            <th class="num">Balance</th>
-                            <th>Actions</th>
+                            <th>@Loc.T("property.units.colUnitNo")</th>
+                            <th>@Loc.T("property.units.colBuilding")</th>
+                            <th>@Loc.T("property.units.colType")</th>
+                            <th class="num">@Loc.T("property.units.colShare")</th>
+                            <th>@Loc.T("table.owner")</th>
+                            <th>@Loc.T("property.units.colResident")</th>
+                            <th>@Loc.T("table.status")</th>
+                            <th class="num">@Loc.T("table.balance")</th>
+                            <th>@Loc.T("table.actions")</th>
                         </tr>
                     </thead>
                     <tbody>
                         @if (FilteredUnits.Count == 0)
                         {
-                            <tr><td colspan="9" style="color: var(--text-secondary);">No units match the current filter criteria.</td></tr>
+                            <tr><td colspan="9" style="color: var(--text-secondary);">@Loc.T("property.units.noMatch")</td></tr>
                         }
                         @foreach (var row in FilteredUnits)
                         {
@@ -177,12 +177,12 @@
                                     <strong class="mono num">@row.UnitNumber</strong>
                                 </td>
                                 <td>
-                                    <div>@row.BuildingName · Floor @row.FloorNumber · Stair @row.StairwellNumber</div>
+                                    <div>@row.BuildingName · @Loc.T("property.units.floorLabel") @row.FloorNumber · @Loc.T("property.units.stairLabel") @row.StairwellNumber</div>
                                     <div class="mono" style="font-size: 0.72rem; color: var(--text-secondary);">@row.VerticalStackCode</div>
                                 </td>
                                 <td>
                                     <div>@row.Kind</div>
-                                    <div class="mono num" style="font-size: 0.74rem; color: var(--text-secondary);">@row.FloorAreaM2.ToString("N1") m² · @row.RoomsCount rm</div>
+                                    <div class="mono num" style="font-size: 0.74rem; color: var(--text-secondary);">@row.FloorAreaM2.ToString("N1") m² · @row.RoomsCount @Loc.T("property.units.roomsSuffix")</div>
                                 </td>
                                 <td class="mono num">@row.ShareNumerator / @row.ShareDenominator</td>
                                 <td>
@@ -195,7 +195,7 @@
                                 <td>
                                     @if (row.ActiveResidentNames.Count == 0)
                                     {
-                                        <span style="color: var(--text-muted); font-size: 0.76rem;">No active resident</span>
+                                        <span style="color: var(--text-muted); font-size: 0.76rem;">@Loc.T("property.units.noResident")</span>
                                     }
                                     else
                                     {
@@ -217,18 +217,18 @@
                                     <span class="cg-badge @GetBadgeClass(row.OccupancyStatus)">@row.OccupancyStatus</span>
                                     @if (row.ActiveRegistrationLinksCount > 0)
                                     {
-                                        <span class="cg-badge cg-badge-info mono num" style="margin-left: 0.25rem;">@row.ActiveRegistrationLinksCount link</span>
+                                        <span class="cg-badge cg-badge-info mono num" style="margin-left: 0.25rem;">@row.ActiveRegistrationLinksCount @Loc.T("property.units.linkSuffix")</span>
                                     }
                                 </td>
                                 <td class="mono num">@row.CurrentBalance.ToString("N2")</td>
                                 <td>
                                     <div style="display: flex; gap: 0.35rem; flex-wrap: wrap;">
                                         <button type="button" class="cg-btn cg-btn-sm @(isSelected ? "cg-btn-primary" : "")" @onclick="() => OnSelectUnit(row.UnitId)">
-                                            @(isSelected ? "Inspecting" : "Open Dossier")
+                                            @(isSelected ? Loc.T("property.units.inspecting") : Loc.T("property.units.openDossier"))
                                         </button>
                                         @if (row.PrimaryResidentProfileId.HasValue)
                                         {
-                                            <a class="cg-btn cg-btn-sm" href="@($"/admin/residents/{row.PrimaryResidentProfileId.Value}")">Resident</a>
+                                            <a class="cg-btn cg-btn-sm" href="@($"/admin/residents/{row.PrimaryResidentProfileId.Value}")">@Loc.T("property.units.residentLink")</a>
                                         }
                                     </div>
                                 </td>
@@ -365,7 +365,7 @@
     {
         _showWizard = false;
         _selectedUnitId = result.Unit.Id;
-        _message = $"Unit {result.Unit.UnitNumber} created in {result.Building.Name}.";
+        _message = string.Format(Loc.T("property.units.createdMsg"), result.Unit.UnitNumber, result.Building.Name);
         await ReloadAsync();
     }
 
@@ -385,7 +385,7 @@
                 role);
             _showAddBuilding = false;
             _newBldName = string.Empty;
-            _message = $"Building '{b.Name}' created with default riser stacks.";
+            _message = string.Format(Loc.T("property.units.buildingCreatedMsg"), b.Name);
             await ReloadAsync();
         }
         catch (Exception ex) { _message = ex.Message; }

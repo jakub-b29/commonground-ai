@@ -2,17 +2,19 @@
 @layout Layout.AuthLayout
 @attribute [AllowAnonymous]
 @inject CommonGroundWorkspaceService Workspace
+@inject WorkspaceLocalization Loc
+@implements IDisposable
 
-<PageTitle>Verify firm email - CommonGround</PageTitle>
+<PageTitle>@Loc.T("verifyFirm.title") - CommonGround</PageTitle>
 
 <div class="cg-auth-heading">
-    <h1>Verify firm email</h1>
-    <p>Enter the confirmation token sent to the firm manager email to activate the firm.</p>
+    <h1>@Loc.T("verifyFirm.title")</h1>
+    <p>@Loc.T("verifyFirm.lead")</p>
 </div>
 
 @if (!string.IsNullOrWhiteSpace(ErrorCode))
 {
-    <div role="alert" class="cg-auth-error">Verification failed. Check the token and try again.</div>
+    <div role="alert" class="cg-auth-error">@Loc.T("verifyFirm.failed")</div>
 }
 @if (!string.IsNullOrWhiteSpace(SuccessMessage))
 {
@@ -21,33 +23,33 @@
 
 @if (_loading)
 {
-    <p role="status" aria-live="polite">Loading.</p>
+    <p role="status" aria-live="polite">@Loc.T("msg.loading")</p>
 }
 else if (_preview is not null)
 {
     <div class="cg-auth-note" role="status" aria-live="polite">
         <strong>@_preview.FirmName</strong> · @_preview.FirmGroupCode
-        <div>@_preview.ManagerEmail · Status: @(_preview.IsEmailConfirmed ? "Confirmed" : "Pending confirmation")</div>
+        <div>@_preview.ManagerEmail · @Loc.T("table.status"): @(_preview.IsEmailConfirmed ? Loc.T("verifyFirm.confirmed") : Loc.T("verifyFirm.pending"))</div>
     </div>
 }
 else if (!string.IsNullOrWhiteSpace(FirmIdRaw))
 {
     <div class="cg-auth-note" role="status" aria-live="polite">
-        <p>Firm record was not found for the supplied identifier.</p>
+        <p>@Loc.T("verifyFirm.notFound")</p>
     </div>
 }
 
 <form method="post" action="/auth/verify-firm-email" class="cg-form-stack">
     <div>
-        <label for="vfe-token">Confirmation token</label>
-        <input id="vfe-token" name="token" value="@_tokenInput" required autocomplete="off" placeholder="Paste confirmation token" />
+        <label for="vfe-token">@Loc.T("verifyFirm.tokenLabel")</label>
+        <input id="vfe-token" name="token" value="@_tokenInput" required autocomplete="off" placeholder="@Loc.T("verifyFirm.tokenPlaceholder")" />
     </div>
-    <button type="submit" class="cg-btn cg-btn-primary cg-btn-block">Verify firm email</button>
+    <button type="submit" class="cg-btn cg-btn-primary cg-btn-block">@Loc.T("verifyFirm.submit")</button>
 </form>
 
 <div class="cg-auth-links">
-    <a href="/login">Sign in</a>
-    <a href="/register-firm">Register a new firm</a>
+    <a href="/login">@Loc.T("nav.signin")</a>
+    <a href="/register-firm">@Loc.T("auth.createFirmLink")</a>
 </div>
 
 @code {
@@ -59,9 +61,13 @@ else if (!string.IsNullOrWhiteSpace(FirmIdRaw))
     private bool _loading = true;
     private string _tokenInput = string.Empty;
     private string SuccessMessage = string.Empty;
+    private Action? _locHandler;
 
     protected override async Task OnInitializedAsync()
     {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
         _tokenInput = Token?.Trim() ?? string.Empty;
         await ReloadAsync();
     }
@@ -86,7 +92,7 @@ else if (!string.IsNullOrWhiteSpace(FirmIdRaw))
                 _preview = await Workspace.GetFirmEmailConfirmationPreviewAsync(firmId);
                 if (_preview is not null && _preview.IsEmailConfirmed)
                 {
-                    SuccessMessage = "Firm email is confirmed. You can sign in.";
+                    SuccessMessage = Loc.T("verifyFirm.confirmedHint");
                 }
             }
             else
@@ -102,5 +108,10 @@ else if (!string.IsNullOrWhiteSpace(FirmIdRaw))
         {
             _loading = false;
         }
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
     }
 }

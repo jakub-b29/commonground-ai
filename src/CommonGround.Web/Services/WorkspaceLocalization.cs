@@ -27,6 +27,8 @@ public sealed class WorkspaceLocalization
 
     public string CurrentLanguage => _language;
 
+    public string ActiveLocale => _language;
+
     public IReadOnlyList<string> SupportedLanguages => Supported;
 
     public event Action? OnChange;

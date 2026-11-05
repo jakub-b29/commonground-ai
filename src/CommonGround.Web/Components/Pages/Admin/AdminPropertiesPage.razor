@@ -5,34 +5,36 @@
 @inject WorkspaceAccessService Access
 @inject IAppDbContextFactory DbFactory
 @inject NavigationManager Nav
+@inject WorkspaceLocalization Loc
+@implements IDisposable
 
-<PageTitle>Property registry — CommonGround</PageTitle>
+<PageTitle>@Loc.T("page.adminPropertiesTitle") — CommonGround</PageTitle>
 
-<PageHeader Category="Firm Administration"
-            ContextCode="@($"{_properties.Count} communities")"
-            Title="Properties registry"
-            Subtitle="Registered associations and condominium communities with primary manager assignment and workspace routing.">
+<PageHeader Category="@Loc.T("admin.category")"
+            ContextCode="@($"{_properties.Count} {Loc.T("admin.properties.communities")}")"
+            Title="@Loc.T("page.adminPropertiesTitle")"
+            Subtitle="@Loc.T("page.adminPropertiesLead")">
     <Actions>
-        <a class="cg-btn" href="/admin">Back to overview</a>
-        <a class="cg-btn cg-btn-primary" href="/admin/properties/new">Create property</a>
+        <a class="cg-btn" href="/admin">@Loc.T("action.backToOverview")</a>
+        <a class="cg-btn cg-btn-primary" href="/admin/properties/new">@Loc.T("action.createProperty")</a>
     </Actions>
 </PageHeader>
 
 @if (!_loaded)
 {
-    <p role="status" aria-live="polite">Loading properties.</p>
+    <p role="status" aria-live="polite">@Loc.T("msg.loadingProperties")</p>
 }
 else if (!_isAuthorized)
 {
-    <div class="cg-card"><p class="cg-empty-text">Access denied. Firm manager permission is required.</p></div>
+    <div class="cg-card"><p class="cg-empty-text">@Loc.T("msg.accessDeniedFirm")</p></div>
 }
 else
 {
     <div class="bento-card">
         <div class="bento-card-header">
             <div class="cg-panel-title">
-                <span>Firm properties</span>
-                <span class="cg-badge cg-badge-info">@_properties.Count registered</span>
+                <span>@Loc.T("admin.properties.firmProperties")</span>
+                <span class="cg-badge cg-badge-info">@_properties.Count @Loc.T("admin.overview.registered")</span>
             </div>
         </div>
         <div class="bento-card-body" style="padding: 0;">
@@ -40,16 +42,16 @@ else
                 <table class="cg-table">
                     <thead>
                         <tr>
-                            <th>Community &amp; Account Number</th>
-                            <th>Configuration &amp; Status</th>
-                            <th>Primary manager</th>
-                            <th>Actions</th>
+                            <th>@Loc.T("table.communityAccount")</th>
+                            <th>@Loc.T("table.configurationStatus")</th>
+                            <th>@Loc.T("table.primaryManager")</th>
+                            <th>@Loc.T("table.actions")</th>
                         </tr>
                     </thead>
                     <tbody>
                         @if (_properties.Count == 0)
                         {
-                            <tr><td colspan="4" style="color: var(--text-secondary);">No properties registered yet.</td></tr>
+                            <tr><td colspan="4" style="color: var(--text-secondary);">@Loc.T("admin.overview.noProperties")</td></tr>
                         }
                         @foreach (var property in _properties)
                         {
@@ -61,7 +63,7 @@ else
                                         <span class="cg-badge cg-badge-info mono num">@property.CommunityAccountNumber</span>
                                     </div>
                                     <div style="font-size: 0.72rem; color: var(--text-secondary);">@property.StreetAddress, @property.City</div>
-                                    <div class="mono num" style="font-size: 0.72rem; color: var(--text-muted);">Tariffs: @property.OperatingRatePerM2.ToString("N2") / @property.RepairFundRatePerM2.ToString("N2") · @property.UnitsCount units</div>
+                                    <div class="mono num" style="font-size: 0.72rem; color: var(--text-muted);">@Loc.T("admin.properties.tariffs"): @property.OperatingRatePerM2.ToString("N2") / @property.RepairFundRatePerM2.ToString("N2") · @property.UnitsCount @Loc.T("table.units")</div>
                                 </td>
                                 <td>
                                     <div style="display: flex; flex-direction: column; gap: 0.25rem; align-items: flex-start;">
@@ -70,9 +72,9 @@ else
                                     </div>
                                 </td>
                                 <td>
-                                    <label for="pm-@property.Id" class="visually-hidden">Primary manager</label>
+                                    <label for="pm-@property.Id" class="visually-hidden">@Loc.T("table.primaryManager")</label>
                                     <select id="pm-@property.Id" @bind="editor.SelectedMembershipId">
-                                        <option value="">No primary assignment</option>
+                                        <option value="">@Loc.T("form.noPrimaryAssignment")</option>
                                         @foreach (var manager in _managers)
                                         {
                                             <option value="@manager.MembershipId" @key="manager.MembershipId">@manager.DisplayName</option>
@@ -80,15 +82,15 @@ else
                                     </select>
                                     @if (!string.IsNullOrWhiteSpace(editor.CurrentLabel))
                                     {
-                                        <div style="font-size: 0.72rem; color: var(--text-secondary); margin-top: 0.2rem;">Current: @editor.CurrentLabel</div>
+                                        <div style="font-size: 0.72rem; color: var(--text-secondary); margin-top: 0.2rem;">@Loc.T("admin.properties.current"): @editor.CurrentLabel</div>
                                     }
                                 </td>
                                 <td>
                                     <div style="display: flex; gap: 0.4rem; flex-wrap: wrap;">
-                                        <button type="button" class="cg-btn cg-btn-sm cg-btn-primary" disabled="@_isBusy" @onclick="() => OnSavePrimaryAsync(property.Id)">Save primary</button>
-                                        <a class="cg-btn cg-btn-sm cg-btn-ai" href="@($"/properties/{property.Id}/overview")">Workspace</a>
-                                        <a class="cg-btn cg-btn-sm" href="@($"/properties/{property.Id}/units")">Units</a>
-                                        <a class="cg-btn cg-btn-sm" href="@($"/properties/{property.Id}/settings")">Profile &amp; contacts</a>
+                                        <button type="button" class="cg-btn cg-btn-sm cg-btn-primary" disabled="@_isBusy" @onclick="() => OnSavePrimaryAsync(property.Id)">@Loc.T("action.savePrimary")</button>
+                                        <a class="cg-btn cg-btn-sm cg-btn-ai" href="@($"/properties/{property.Id}/overview")">@Loc.T("action.openWorkspace")</a>
+                                        <a class="cg-btn cg-btn-sm" href="@($"/properties/{property.Id}/units")">@Loc.T("action.openUnits")</a>
+                                        <a class="cg-btn cg-btn-sm" href="@($"/properties/{property.Id}/settings")">@Loc.T("action.openProfileContacts")</a>
                                     </div>
                                 </td>
                             </tr>
@@ -115,9 +117,13 @@ else
     private List<ManagerOption> _managers = new();
     private readonly Dictionary<Guid, PrimaryEditor> _editors = new();
     private string _message = string.Empty;
+    private Action? _locHandler;
 
     protected override async Task OnInitializedAsync()
     {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
         try
         {
             var firmId = await Access.GetFirmIdAsync();
@@ -205,7 +211,7 @@ else
             .ToList();
         var propertyIds = _properties.Select(p => p.Id).ToList();
         var primaries = await db.MembershipPropertyAccesses.AsNoTracking()
-            .Where(a => propertyIds.Contains(a.CommunityId) && a.IsPrimaryManager)
+            .Where(a => propertyIds.Contains(a.CommunityId))
             .ToListAsync();
         _primaries.Clear();
         foreach (var primary in primaries.Take(500))
@@ -231,7 +237,7 @@ else
                 ?? throw new InvalidOperationException("Actor membership not found.");
             if (actor.Role != WorkspaceSecurityRole.FirmManager)
             {
-                throw new UnauthorizedAccessException("Only the Firm Manager may assign a primary manager.");
+                throw new UnauthorizedAccessException(Loc.T("msg.onlyFirmManagerAssign"));
             }
             var rows = await db.MembershipPropertyAccesses
                 .Where(a => a.CommunityId == propertyId)
@@ -249,7 +255,7 @@ else
                     .FirstOrDefaultAsync();
                 if (_firmId is null || targetFirm != _firmId.Value)
                 {
-                    throw new InvalidOperationException("Selected manager belongs to a different firm.");
+                    throw new InvalidOperationException(Loc.T("msg.managerDifferentFirm"));
                 }
                 var existing = rows.FirstOrDefault(r => r.FirmMembershipId == selected.Value);
                 if (existing is null)
@@ -267,7 +273,7 @@ else
                 }
             }
             await db.SaveChangesAsync();
-            _message = "Primary manager assignment saved.";
+            _message = Loc.T("msg.primarySaved");
             await ReloadAsync();
         }
         catch (Exception ex)
@@ -278,6 +284,11 @@ else
         {
             _isBusy = false;
         }
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null) Loc.OnChange -= _locHandler;
     }
 
     private sealed record PropertyRow(

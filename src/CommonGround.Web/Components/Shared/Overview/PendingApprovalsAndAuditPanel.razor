@@ -10,8 +10,8 @@
     <BentoCard Span="6"
                IsAi="true"
                Title="@Loc.T("panel.pendingApprovals")"
-               Subtitle="Human-in-the-loop gate for proposed ledger, maintenance, and governance actions"
-               BadgeText="@($"{Snapshot.PendingActions.Count} queued")"
+               Subtitle="@Loc.T("pending.humanLoopHint")"
+               BadgeText="@($"{Snapshot.PendingActions.Count} {Loc.T("pending.queuedSuffix")}")"
                BadgeVariant="ai">
         <HeaderActions>
             @if (Snapshot.PendingActions.Count > 0)
@@ -22,7 +22,7 @@
         <ChildContent>
             @if (Snapshot.PendingActions.Count == 0)
             {
-                <EmptyState Title="@Loc.T("msg.noPendingActions")" Description="All proposed CommonGround agent actions have been reviewed and committed." />
+                <EmptyState Title="@Loc.T("msg.noPendingActions")" Description="@Loc.T("pending.allReviewed")" />
             }
             else
             {
@@ -61,8 +61,8 @@
 
     <BentoCard Span="6"
                Title="@Loc.T("panel.membershipQueue")"
-               Subtitle="Resident onboarding verification and community bulletin feed"
-               BadgeText="Community Portal"
+               Subtitle="@Loc.T("pending.membershipHint")"
+               BadgeText="@Loc.T("pending.communityPortal")"
                BadgeVariant="neutral">
         <HeaderActions>
             <a class="cg-btn cg-btn-sm" href="/admin/members">@Loc.T("action.openResidentPortal")</a>
@@ -149,9 +149,9 @@
     @if (Snapshot.RecentAgentRuns.Count > 0)
     {
         <BentoCard Span="12"
-                   Title="Service execution log"
-                   Subtitle="Real-time telemetry across CommonGround agents, model provenance, latency, and token metrics"
-                   BadgeText="@($"{Snapshot.RecentAgentRuns.Count} recent runs")"
+                    Title="@Loc.T("pending.execLogTitle")"
+                    Subtitle="@Loc.T("pending.execLogHint")"
+                    BadgeText="@($"{Snapshot.RecentAgentRuns.Count} {Loc.T("pending.recentRuns")}")"
                    BadgeVariant="ai"
                    BodyStyle="padding: 0;">
             <ChildContent>
@@ -159,12 +159,12 @@
                     <table class="cg-table">
                         <thead>
                             <tr>
-                                <th>Agent</th>
-                                <th>Trigger</th>
-                                <th>Model provenance</th>
-                                <th class="num">Latency</th>
-                                <th class="num">Tokens</th>
-                                <th class="num">Timestamp (UTC)</th>
+                                <th>@Loc.T("pending.colAgent")</th>
+                                <th>@Loc.T("pending.colTrigger")</th>
+                                <th>@Loc.T("pending.colModel")</th>
+                                <th class="num">@Loc.T("pending.colLatency")</th>
+                                <th class="num">@Loc.T("pending.colTokens")</th>
+                                <th class="num">@Loc.T("pending.colTimestamp")</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -222,7 +222,7 @@
         try
         {
             var count = await Workspace.ApproveAllPendingActionsAsync(Snapshot.Community.Id);
-            _message = $"{count} {Loc.T("msg.approvedCount")}";
+            _message = string.Format(System.Globalization.CultureInfo.InvariantCulture, Loc.T("pending.approvedFmt"), count);
             await OnChanged.InvokeAsync();
         }
         finally
@@ -238,7 +238,7 @@
         {
             var role = await Access.GetRoleAsync() ?? WorkspaceSecurityRole.PropertyManager;
             var res = await Workspace.DecideResidentMembershipAsync(Snapshot.Community.Id, appId, approve, role);
-            _message = res.DecisionNote ?? Loc.T("msg.membershipUpdated");
+            _message = res.DecisionNote ?? Loc.T("pending.membershipDecision");
             await OnChanged.InvokeAsync();
         }
         finally

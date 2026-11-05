@@ -9,30 +9,30 @@
 @inject CommonGroundWorkspaceService Workspace
 @implements IDisposable
 
-<PageTitle>Property maintenance — CommonGround</PageTitle>
+<PageTitle>@Loc.T("property.maint.pageTitle")</PageTitle>
 
 <RequirePropertyAccess PropertyId="Id">
     @if (!_loaded)
     {
-        <p role="status" aria-live="polite">Loading.</p>
+        <p role="status" aria-live="polite">@Loc.T("msg.loading")</p>
     }
     else if (_snapshot is null)
     {
-        <div class="cg-card"><p class="cg-empty-text">Property not found.</p></div>
+        <div class="cg-card"><p class="cg-empty-text">@Loc.T("property.common.notFound")</p></div>
     }
     else
     {
-        <PageHeader Category="Work Orders & Inspections"
-                    ContextCode="@($"{_snapshot.Community.WorkOrders.Count} orders")"
-                    Title="@($"{_snapshot.Community.Name} · Maintenance & SAM 3.1 vision")"
-                    Subtitle="Multilingual resident intake triage, SAM 3.1 defect mask segmentation, BOQ cost estimation, video walkthrough splitter, and insurance claim dossiers.">
+        <PageHeader Category="@Loc.T("property.maint.category")"
+                    ContextCode="@($"{_snapshot.Community.WorkOrders.Count} {Loc.T("property.maint.ordersSuffix")}")"
+                    Title="@($"{_snapshot.Community.Name} · {Loc.T("property.maint.titleSuffix")}")"
+                    Subtitle="@Loc.T("property.maint.subtitle")">
             <Badges>
-                <AIBadge Label="Vision Segmentation" Model="sam-3.1" />
-                <AIBadge Label="Triage & Claims" Model="muse-wonder" ShowPulseDot="false" />
+                <AIBadge Label="@Loc.T("property.maint.visionBadge")" Model="sam-3.1" />
+                <AIBadge Label="@Loc.T("property.maint.triageBadge")" Model="muse-wonder" ShowPulseDot="false" />
             </Badges>
             <Actions>
-                <a class="cg-btn cg-btn-sm" href="@($"/properties/{Id}/infrastructure")">Infrastructure atlas</a>
-                <a class="cg-btn cg-btn-sm" href="@($"/properties/{Id}/overview")">Back to overview</a>
+                <a class="cg-btn cg-btn-sm" href="@($"/properties/{Id}/infrastructure")">@Loc.T("property.maint.atlasLink")</a>
+                <a class="cg-btn cg-btn-sm" href="@($"/properties/{Id}/overview")">@Loc.T("property.common.backToOverview")</a>
             </Actions>
         </PageHeader>
 
@@ -42,11 +42,11 @@
         </div>
         <div class="cg-card" style="margin-block-start: 1rem;">
             <div class="cg-section-header">
-                <h2>Work order dispatch & contractor message thread</h2>
-                <span class="cg-badge cg-badge-info">@_threads.Count messages</span>
+                <h2>@Loc.T("property.maint.threadTitle")</h2>
+                <span class="cg-badge cg-badge-info">@_threads.Count @Loc.T("property.maint.messagesSuffix")</span>
             </div>
             <div>
-                <label for="pm-order">Active work order</label>
+                <label for="pm-order">@Loc.T("form.workOrder")</label>
                 <select id="pm-order" value="@_selectedOrderId" @onchange="OnSelectOrder">
                     @foreach (var w in _snapshot.Community.WorkOrders)
                     {
@@ -58,14 +58,14 @@
                 <table class="cg-table">
                     <thead>
                         <tr>
-                            <th>Timestamp (UTC)</th>
-                            <th>Message</th>
+                            <th>@Loc.T("table.timestampUtc")</th>
+                            <th>@Loc.T("table.message")</th>
                         </tr>
                     </thead>
                     <tbody>
                         @if (_threads.Count == 0)
                         {
-                            <tr><td colspan="2" style="color: var(--text-secondary);">No dispatch messages logged for this work order yet.</td></tr>
+                            <tr><td colspan="2" style="color: var(--text-secondary);">@Loc.T("property.maint.noDispatch")</td></tr>
                         }
                         @foreach (var m in _threads)
                         {
@@ -78,11 +78,11 @@
                 </table>
             </div>
             <div style="margin-block-start: 0.65rem;">
-                <label for="pm-body">New dispatch note or contractor instruction</label>
-                <textarea id="pm-body" rows="2" @bind="_draft" placeholder="Enter instruction for assigned contractor or resident update..."></textarea>
+                <label for="pm-body">@Loc.T("property.maint.noteLabel")</label>
+                <textarea id="pm-body" rows="2" @bind="_draft" placeholder="@Loc.T("property.maint.notePlaceholder")"></textarea>
             </div>
             <div class="cg-toolbar">
-                <button type="button" class="cg-btn cg-btn-primary" disabled="@(_isBusy || _selectedOrderId == Guid.Empty || string.IsNullOrWhiteSpace(_draft))" @onclick="OnPostMessage">Post message</button>
+                <button type="button" class="cg-btn cg-btn-primary" disabled="@(_isBusy || _selectedOrderId == Guid.Empty || string.IsNullOrWhiteSpace(_draft))" @onclick="OnPostMessage">@Loc.T("action.postMessage")</button>
             </div>
         </div>
         <div style="margin-block-start: 1rem;">

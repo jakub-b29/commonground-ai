@@ -12,127 +12,127 @@
 @inject IAppDbContextFactory DbFactory
 @implements IDisposable
 
-<PageTitle>Community profile &amp; contacts — CommonGround</PageTitle>
+<PageTitle>@Loc.T("property.settings.pageTitle")</PageTitle>
 
 <RequirePropertyAccess PropertyId="Id">
     @if (!_loaded)
     {
-        <p role="status" aria-live="polite">Loading.</p>
+        <p role="status" aria-live="polite">@Loc.T("msg.loading")</p>
     }
     else if (_property is null)
     {
-        <div class="cg-card"><p class="cg-empty-text">Property not found.</p></div>
+        <div class="cg-card"><p class="cg-empty-text">@Loc.T("property.common.notFound")</p></div>
     }
     else if (!_canEdit)
     {
-        <div class="cg-card"><p class="cg-empty-text">Only the firm manager or the assigned primary manager may edit settings.</p></div>
+        <div class="cg-card"><p class="cg-empty-text">@Loc.T("property.settings.noEditPermission")</p></div>
     }
     else
     {
-        <PageHeader Category="Community Account &amp; Configuration"
+        <PageHeader Category="@Loc.T("property.settings.category")"
                     ContextCode="@($"{_property.CommunityAccountNumber} · {_property.TaxIdOrEin}")"
-                    Title="@($"{_property.Name} · Community Profile & Contacts")"
-                    Subtitle="Permanent Community Account Number, unified HOA &amp; governance capabilities, structured Community Contacts directory, tariffs, and AI-discovered authorities.">
+                    Title="@($"{_property.Name} · {Loc.T("property.settings.titleSuffix")}")"
+                    Subtitle="@Loc.T("property.settings.subtitle")">
             <Badges>
                 <StatusBadge Text="@_property.CommunityAccountNumber" Variant="info" />
                 <StatusBadge Text="@_property.Status.ToString()" Variant="ok" />
-                <AIBadge Label="AI Web Grounding" Model="muse-spark-1.3-contributor" />
+                <AIBadge Label="@Loc.T("property.settings.aiBadge")" Model="muse-spark-1.3-contributor" />
             </Badges>
             <Actions>
-                <a class="cg-btn cg-btn-sm" href="@($"/properties/{Id}/units")">Units &amp; occupancy</a>
-                <a class="cg-btn cg-btn-sm" href="@($"/properties/{Id}/overview")">Back to overview</a>
+                <a class="cg-btn cg-btn-sm" href="@($"/properties/{Id}/units")">@Loc.T("property.settings.unitsLink")</a>
+                <a class="cg-btn cg-btn-sm" href="@($"/properties/{Id}/overview")">@Loc.T("property.common.backToOverview")</a>
             </Actions>
         </PageHeader>
 
         <div class="cg-card">
             <div class="cg-section-header">
-                <h2>Community Details &amp; Unified Capabilities</h2>
-                <span class="cg-badge cg-badge-info mono num">@_property.CommunityAccountNumber (Immutable)</span>
+                <h2>@Loc.T("property.settings.detailsTitle")</h2>
+                <span class="cg-badge cg-badge-info mono num">@_property.CommunityAccountNumber (@Loc.T("property.settings.immutable"))</span>
             </div>
             <div class="cg-grid-3">
                 <div>
-                    <label for="ps-acc">Community Account Number (Permanent)</label>
+                    <label for="ps-acc">@Loc.T("property.settings.accountNo")</label>
                     <input id="ps-acc" class="mono num" value="@_property.CommunityAccountNumber" readonly disabled />
                 </div>
-                <div><label for="ps-name">Community / Property Name</label><input id="ps-name" @bind="_property.Name" /></div>
+                <div><label for="ps-name">@Loc.T("property.settings.propertyName")</label><input id="ps-name" @bind="_property.Name" /></div>
                 <div>
-                    <label for="ps-status">Community Status</label>
+                    <label for="ps-status">@Loc.T("property.settings.status")</label>
                     <select id="ps-status" @bind="_property.Status">
-                        <option value="@CommunityStatus.Active">Active</option>
-                        <option value="@CommunityStatus.Onboarding">Onboarding</option>
-                        <option value="@CommunityStatus.Archived">Archived</option>
+                        <option value="@CommunityStatus.Active">@Loc.T("property.settings.statusActive")</option>
+                        <option value="@CommunityStatus.Onboarding">@Loc.T("property.settings.statusOnboarding")</option>
+                        <option value="@CommunityStatus.Archived">@Loc.T("property.settings.statusArchived")</option>
                     </select>
                 </div>
-                <div><label for="ps-type">Property Type / Configuration</label><input id="ps-type" @bind="_property.PropertyTypeConfiguration" placeholder="Residential Condominium & HOA" /></div>
-                <div><label for="ps-street">Street Address</label><input id="ps-street" @bind="_property.StreetAddress" /></div>
-                <div><label for="ps-city">City</label><input id="ps-city" @bind="_property.City" /></div>
-                <div><label for="ps-zip">Postal / ZIP Code</label><input id="ps-zip" @bind="_property.PostalOrZipCode" /></div>
-                <div><label for="ps-country">Country Code</label><input id="ps-country" @bind="_property.CountryCode" /></div>
-                <div><label for="ps-curr">Currency Code</label><input id="ps-curr" @bind="_property.CurrencyCode" /></div>
-                <div><label for="ps-tax">Tax ID / EIN</label><input id="ps-tax" @bind="_property.TaxIdOrEin" /></div>
-                <div><label for="ps-reg">Registry Number</label><input id="ps-reg" @bind="_property.RegistryNumber" /></div>
-                <div><label for="ps-admin-email">Administrative Contact Email</label><input id="ps-admin-email" type="email" @bind="_property.AdministrativeEmail" /></div>
-                <div><label for="ps-admin-phone">Administrative Contact Phone</label><input id="ps-admin-phone" type="tel" @bind="_property.AdministrativePhone" /></div>
+                <div><label for="ps-type">@Loc.T("property.settings.propertyType")</label><input id="ps-type" @bind="_property.PropertyTypeConfiguration" placeholder="@Loc.T("property.settings.propertyTypePh")" /></div>
+                <div><label for="ps-street">@Loc.T("property.settings.street")</label><input id="ps-street" @bind="_property.StreetAddress" /></div>
+                <div><label for="ps-city">@Loc.T("firm.city")</label><input id="ps-city" @bind="_property.City" /></div>
+                <div><label for="ps-zip">@Loc.T("property.settings.postal")</label><input id="ps-zip" @bind="_property.PostalOrZipCode" /></div>
+                <div><label for="ps-country">@Loc.T("property.settings.country")</label><input id="ps-country" @bind="_property.CountryCode" /></div>
+                <div><label for="ps-curr">@Loc.T("property.settings.currency")</label><input id="ps-curr" @bind="_property.CurrencyCode" /></div>
+                <div><label for="ps-tax">@Loc.T("firm.taxId")</label><input id="ps-tax" @bind="_property.TaxIdOrEin" /></div>
+                <div><label for="ps-reg">@Loc.T("property.settings.registryNo")</label><input id="ps-reg" @bind="_property.RegistryNumber" /></div>
+                <div><label for="ps-admin-email">@Loc.T("form.email")</label><input id="ps-admin-email" type="email" @bind="_property.AdministrativeEmail" /></div>
+                <div><label for="ps-admin-phone">@Loc.T("form.phone")</label><input id="ps-admin-phone" type="tel" @bind="_property.AdministrativePhone" /></div>
                 <div>
-                    <label for="ps-jurisdiction">Statutory Jurisdiction Profile</label>
+                    <label for="ps-jurisdiction">@Loc.T("property.settings.jurisdiction")</label>
                     <select id="ps-jurisdiction" @bind="_property.OperatingMode">
-                        <option value="@SystemOperatingMode.HousingAssociation">European Condominium &amp; HOA Statute</option>
-                        <option value="@SystemOperatingMode.UsHoa">North American HOA &amp; Condominium Statute</option>
+                        <option value="@SystemOperatingMode.HousingAssociation">@Loc.T("property.settings.jurisdictionEu")</option>
+                        <option value="@SystemOperatingMode.UsHoa">@Loc.T("property.settings.jurisdictionUs")</option>
                     </select>
                 </div>
                 <div>
-                    <label for="ps-reg-mode">Default Resident Registration Link Policy</label>
+                    <label for="ps-reg-mode">@Loc.T("property.settings.regPolicy")</label>
                     <select id="ps-reg-mode" @bind="_property.DefaultRegistrationApprovalMode">
-                        <option value="@RegistrationApprovalMode.ManualFirmApproval">Mode B — Manual Firm Approval (Recommended)</option>
-                        <option value="@RegistrationApprovalMode.AutomaticAuthorized">Mode A — Automatic Authorized Registration</option>
+                        <option value="@RegistrationApprovalMode.ManualFirmApproval">@Loc.T("property.settings.regManual")</option>
+                        <option value="@RegistrationApprovalMode.AutomaticAuthorized">@Loc.T("property.settings.regAuto")</option>
                     </select>
                 </div>
             </div>
 
             <div class="cg-subcard" style="margin-block-start: 0.85rem;">
-                <strong>Unified HOA &amp; Community Capabilities</strong>
+                <strong>@Loc.T("property.settings.capTitle")</strong>
                 <div style="display: flex; flex-wrap: wrap; gap: 1rem; margin-block-start: 0.5rem;">
-                    <label class="cg-check-row"><input type="checkbox" @bind="_property.EnableHoaGovernance" /><span>HOA Board, Meetings &amp; Resolutions</span></label>
-                    <label class="cg-check-row"><input type="checkbox" @bind="_property.EnableShareWeightedVoting" /><span>Ownership Share &amp; Statutory Voting</span></label>
-                    <label class="cg-check-row"><input type="checkbox" @bind="_property.EnableArcRequests" /><span>ARC &amp; Remodeling Permits</span></label>
-                    <label class="cg-check-row"><input type="checkbox" @bind="_property.EnableSubMeterReconciliation" /><span>Bulk-to-Sub-Meter &amp; RUBS Reconciliation</span></label>
-                    <label class="cg-check-row"><input type="checkbox" @bind="_property.EnableReserveStudy" /><span>Reserve Study &amp; SIRS Capital Planning</span></label>
+                    <label class="cg-check-row"><input type="checkbox" @bind="_property.EnableHoaGovernance" /><span>@Loc.T("property.settings.capHoa")</span></label>
+                    <label class="cg-check-row"><input type="checkbox" @bind="_property.EnableShareWeightedVoting" /><span>@Loc.T("property.settings.capVoting")</span></label>
+                    <label class="cg-check-row"><input type="checkbox" @bind="_property.EnableArcRequests" /><span>@Loc.T("property.settings.capArc")</span></label>
+                    <label class="cg-check-row"><input type="checkbox" @bind="_property.EnableSubMeterReconciliation" /><span>@Loc.T("property.settings.capSubmeter")</span></label>
+                    <label class="cg-check-row"><input type="checkbox" @bind="_property.EnableReserveStudy" /><span>@Loc.T("property.settings.capReserve")</span></label>
                 </div>
             </div>
 
             <div class="cg-grid-4" style="margin-block-start: 0.85rem;">
-                <div><label for="ps-op">Operating rate per m2</label><input id="ps-op" type="number" step="0.01" @bind="_property.OperatingRatePerM2" /></div>
-                <div><label for="ps-repair">Repair fund rate per m2</label><input id="ps-repair" type="number" step="0.01" @bind="_property.RepairFundRatePerM2" /></div>
-                <div><label for="ps-waste">Waste fee per occupant</label><input id="ps-waste" type="number" step="0.01" @bind="_property.WasteFeePerOccupant" /></div>
-                <div><label for="ps-cold">Cold water tariff per m3</label><input id="ps-cold" type="number" step="0.01" @bind="_property.ColdWaterTariffPerM3" /></div>
-                <div><label for="ps-hot">Hot water heating cost per m3</label><input id="ps-hot" type="number" step="0.01" @bind="_property.HotWaterHeatingCostPerM3" /></div>
-                <div><label for="ps-heat">District heating tariff per GJ</label><input id="ps-heat" type="number" step="0.01" @bind="_property.DistrictHeatingTariffPerGj" /></div>
-                <div><label for="ps-elec">Electricity tariff per kWh</label><input id="ps-elec" type="number" step="0.01" @bind="_property.CommonElectricityTariffPerKwh" /></div>
-                <div><label for="ps-power">Contracted electrical power kW</label><input id="ps-power" type="number" step="0.5" @bind="_property.ContractedElectricalPowerKw" /></div>
+                <div><label for="ps-op">@Loc.T("settings.operatingRate")</label><input id="ps-op" type="number" step="0.01" @bind="_property.OperatingRatePerM2" /></div>
+                <div><label for="ps-repair">@Loc.T("settings.repairRate")</label><input id="ps-repair" type="number" step="0.01" @bind="_property.RepairFundRatePerM2" /></div>
+                <div><label for="ps-waste">@Loc.T("settings.wasteFee")</label><input id="ps-waste" type="number" step="0.01" @bind="_property.WasteFeePerOccupant" /></div>
+                <div><label for="ps-cold">@Loc.T("settings.coldTariff")</label><input id="ps-cold" type="number" step="0.01" @bind="_property.ColdWaterTariffPerM3" /></div>
+                <div><label for="ps-hot">@Loc.T("property.settings.hotCost")</label><input id="ps-hot" type="number" step="0.01" @bind="_property.HotWaterHeatingCostPerM3" /></div>
+                <div><label for="ps-heat">@Loc.T("settings.heatTariff")</label><input id="ps-heat" type="number" step="0.01" @bind="_property.DistrictHeatingTariffPerGj" /></div>
+                <div><label for="ps-elec">@Loc.T("settings.elecTariff")</label><input id="ps-elec" type="number" step="0.01" @bind="_property.CommonElectricityTariffPerKwh" /></div>
+                <div><label for="ps-power">@Loc.T("property.settings.powerKw")</label><input id="ps-power" type="number" step="0.5" @bind="_property.ContractedElectricalPowerKw" /></div>
             </div>
             <div class="cg-toolbar" style="margin-top: 0.85rem;">
-                <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="OnSave">Save community profile &amp; tariffs</button>
+                <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="OnSave">@Loc.T("property.settings.saveProfile")</button>
             </div>
         </div>
 
         <div class="cg-card" style="margin-block-start: 1rem;">
             <div class="cg-section-header">
-                <h2>Community Contacts Directory</h2>
-                <span class="cg-badge cg-badge-info">@_contacts.Count contacts</span>
+                <h2>@Loc.T("property.settings.contactsTitle")</h2>
+                <span class="cg-badge cg-badge-info">@_contacts.Count @Loc.T("property.overview.contactsSuffix")</span>
             </div>
             <p style="font-size: 0.78rem; color: var(--text-secondary); margin-bottom: 0.75rem;">
-                Maintain property-level contacts for Management Office, Property Manager, Board / Association, Emergency, Technical, Accounting, Maintenance, and Other.
+                @Loc.T("property.settings.contactsHint")
             </p>
             <div class="cg-table-wrap">
                 <table class="cg-table">
                     <thead>
                         <tr>
-                            <th>Category</th>
-                            <th>Contact Name &amp; Role</th>
-                            <th>Phone &amp; Email</th>
-                            <th>Office Hours &amp; Location</th>
-                            <th>Visible to Residents</th>
-                            <th>Actions</th>
+                            <th>@Loc.T("table.category")</th>
+                            <th>@Loc.T("table.contactRole")</th>
+                            <th>@Loc.T("table.phoneEmail")</th>
+                            <th>@Loc.T("table.officeHours")</th>
+                            <th>@Loc.T("table.visibleResidents")</th>
+                            <th>@Loc.T("table.actions")</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -152,11 +152,11 @@
                                     <div>@item.OfficeHours</div>
                                     <div style="color: var(--text-secondary);">@item.AddressOrLocation</div>
                                 </td>
-                                <td>@(item.IsVisibleToResidents ? "Yes" : "Internal")</td>
+                                <td>@(item.IsVisibleToResidents ? Loc.T("property.settings.yes") : Loc.T("property.settings.internal"))</td>
                                 <td>
                                     <div style="display: flex; gap: 0.35rem;">
-                                        <button type="button" class="cg-btn cg-btn-sm" @onclick="() => EditContact(item)">Edit</button>
-                                        <button type="button" class="cg-btn cg-btn-sm" @onclick="() => DeleteContactAsync(item.Id)">Remove</button>
+                                        <button type="button" class="cg-btn cg-btn-sm" @onclick="() => EditContact(item)">@Loc.T("property.settings.edit")</button>
+                                        <button type="button" class="cg-btn cg-btn-sm" @onclick="() => DeleteContactAsync(item.Id)">@Loc.T("property.settings.remove")</button>
                                     </div>
                                 </td>
                             </tr>
@@ -166,10 +166,10 @@
             </div>
 
             <div class="cg-subcard" style="margin-top: 0.85rem;">
-                <strong>@(_editingContactId.HasValue ? "Edit Community Contact" : "Add Community Contact")</strong>
+                <strong>@(_editingContactId.HasValue ? Loc.T("property.settings.editContact") : Loc.T("property.settings.addContact"))</strong>
                 <div class="cg-grid-3" style="margin-top: 0.5rem;">
                     <div>
-                        <label for="cc-cat">Category</label>
+                        <label for="cc-cat">@Loc.T("table.category")</label>
                         <select id="cc-cat" @bind="_contactCategory">
                             @foreach (var cat in Enum.GetValues<CommunityContactCategory>())
                             {
@@ -177,33 +177,33 @@
                             }
                         </select>
                     </div>
-                    <div><label for="cc-name">Contact Name</label><input id="cc-name" @bind="_contactName" placeholder="e.g. Anna Kowalska / 24h Dispatch" /></div>
-                    <div><label for="cc-role">Role / Title</label><input id="cc-role" @bind="_contactRole" placeholder="e.g. Senior Property Manager" /></div>
-                    <div><label for="cc-phone">Phone Number</label><input id="cc-phone" @bind="_contactPhone" placeholder="+48 22 555 0100" /></div>
-                    <div><label for="cc-email">Email Address</label><input id="cc-email" type="email" @bind="_contactEmail" placeholder="office@commonground.local" /></div>
-                    <div><label for="cc-hours">Office Hours</label><input id="cc-hours" @bind="_contactHours" placeholder="Mon-Fri 08:00-17:00" /></div>
-                    <div><label for="cc-addr">Address / Location</label><input id="cc-addr" @bind="_contactAddress" placeholder="Ground floor office" /></div>
-                    <div><label for="cc-notes">Notes</label><input id="cc-notes" @bind="_contactNotes" placeholder="Optional escalation notes" /></div>
+                    <div><label for="cc-name">@Loc.T("property.settings.contactName")</label><input id="cc-name" @bind="_contactName" placeholder="@Loc.T("property.settings.contactNamePh")" /></div>
+                    <div><label for="cc-role">@Loc.T("property.settings.contactRole")</label><input id="cc-role" @bind="_contactRole" placeholder="@Loc.T("property.settings.contactRolePh")" /></div>
+                    <div><label for="cc-phone">@Loc.T("form.phone")</label><input id="cc-phone" @bind="_contactPhone" placeholder="@Loc.T("form.phoneEx")" /></div>
+                    <div><label for="cc-email">@Loc.T("form.email")</label><input id="cc-email" type="email" @bind="_contactEmail" placeholder="@Loc.T("form.emailEx")" /></div>
+                    <div><label for="cc-hours">@Loc.T("property.settings.officeHours")</label><input id="cc-hours" @bind="_contactHours" placeholder="@Loc.T("property.settings.officeHoursPh")" /></div>
+                    <div><label for="cc-addr">@Loc.T("property.settings.addressLoc")</label><input id="cc-addr" @bind="_contactAddress" placeholder="@Loc.T("property.settings.addressLocPh")" /></div>
+                    <div><label for="cc-notes">@Loc.T("property.settings.notes")</label><input id="cc-notes" @bind="_contactNotes" placeholder="@Loc.T("property.settings.notesPh")" /></div>
                     <div style="display: flex; align-items: flex-end; padding-bottom: 0.35rem;">
-                        <label class="cg-check-row"><input type="checkbox" @bind="_contactVisible" /><span>Visible to residents</span></label>
+                        <label class="cg-check-row"><input type="checkbox" @bind="_contactVisible" /><span>@Loc.T("property.settings.visibleResidents")</span></label>
                     </div>
                 </div>
                 <div class="cg-toolbar" style="margin-top: 0.65rem;">
-                    <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="SaveContactAsync">@(_editingContactId.HasValue ? "Update contact" : "Add contact")</button>
+                    <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="SaveContactAsync">@(_editingContactId.HasValue ? Loc.T("property.settings.updateContact") : Loc.T("property.settings.addContact"))</button>
                     @if (_editingContactId.HasValue)
                     {
-                        <button type="button" class="cg-btn" @onclick="ResetContactForm">Cancel edit</button>
+                        <button type="button" class="cg-btn" @onclick="ResetContactForm">@Loc.T("property.settings.cancelEdit")</button>
                     }
                 </div>
             </div>
         </div>
 
         <div class="cg-card" style="margin-block-start: 1rem;">
-            <div class="cg-section-header"><h2>Discovered Municipal &amp; Emergency Authorities</h2><span class="cg-badge">@_property.EmergencyContacts.Count contacts</span></div>
-            <div class="cg-table-wrap"><table class="cg-table"><thead><tr><th>Category</th><th>Name</th><th>Phone</th><th>Address or notes</th></tr></thead><tbody>
+            <div class="cg-section-header"><h2>@Loc.T("property.settings.authoritiesTitle")</h2><span class="cg-badge">@_property.EmergencyContacts.Count @Loc.T("property.overview.contactsSuffix")</span></div>
+            <div class="cg-table-wrap"><table class="cg-table"><thead><tr><th>@Loc.T("table.category")</th><th>@Loc.T("table.name")</th><th>@Loc.T("table.phone")</th><th>@Loc.T("table.addressNotes")</th></tr></thead><tbody>
             @foreach (var c in _property.EmergencyContacts.OrderBy(c => c.SortOrder))
             {
-                <tr @key="c.Id"><td><span class="cg-badge cg-badge-neutral">@c.Category</span></td><td><strong>@c.Name</strong></td><td class="mono"><input aria-label="Phone" @bind="c.PhoneNumber" /></td><td><input aria-label="Address" @bind="c.AddressOrNotes" /></td></tr>
+                <tr @key="c.Id"><td><span class="cg-badge cg-badge-neutral">@c.Category</span></td><td><strong>@c.Name</strong></td><td class="mono"><input aria-label="@Loc.T("contact.phone")" @bind="c.PhoneNumber" /></td><td><input aria-label="@Loc.T("contact.address")" @bind="c.AddressOrNotes" /></td></tr>
             }
             </tbody></table></div>
             @if (_isScanning || _scanPercent > 0)
@@ -216,10 +216,10 @@
                 </div>
             }
             <div class="cg-toolbar" style="margin-top: 0.85rem;">
-                <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="OnSaveAuthorities">Save authorities</button>
+                <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="OnSaveAuthorities">@Loc.T("property.settings.saveAuthorities")</button>
                 <button type="button" class="cg-btn cg-btn-ai" disabled="@(_isBusy || _isScanning)" @onclick="OnRescan">
                     <span class="ai-dot" aria-hidden="true"></span>
-                    <span>Re-scan via AI web search</span>
+                    <span>@Loc.T("property.settings.rescan")</span>
                 </button>
             </div>
         </div>
@@ -330,7 +330,7 @@
                 role,
                 userId);
             _property = await Onboarding.GetPropertyDetailAsync(Id);
-            _message = $"Community profile saved ({_property?.CommunityAccountNumber}).";
+            _message = string.Format(Loc.T("property.settings.savedMsg"), _property?.CommunityAccountNumber);
         }
         catch (Exception ex) { _message = ex.Message; }
         finally { _isBusy = false; }
@@ -387,7 +387,7 @@
                 role);
             _contacts = await Workspace.GetCommunityContactsAsync(Id);
             ResetContactForm();
-            _message = "Community contact saved.";
+            _message = Loc.T("property.settings.contactSaved");
         }
         catch (Exception ex) { _message = ex.Message; }
         finally { _isBusy = false; }
@@ -401,7 +401,7 @@
             var role = await Access.GetRoleAsync() ?? WorkspaceSecurityRole.FirmManager;
             await Workspace.DeleteCommunityContactAsync(Id, contactId, role);
             _contacts = await Workspace.GetCommunityContactsAsync(Id);
-            _message = "Community contact removed.";
+            _message = Loc.T("property.settings.contactRemoved");
         }
         catch (Exception ex) { _message = ex.Message; }
         finally { _isBusy = false; }
@@ -424,7 +424,7 @@
                 }
             }
             await db.SaveChangesAsync();
-            _message = "Authorities saved.";
+            _message = Loc.T("property.settings.authoritiesSaved");
         }
         catch (Exception ex) { _message = ex.Message; }
         finally { _isBusy = false; }
@@ -433,7 +433,7 @@
     private async Task OnRescan()
     {
         if (_property is null) return;
-        _isScanning = true; _scanPercent = 0; _scanStage = "Starting live search."; _scanDetail = string.Empty;
+        _isScanning = true; _scanPercent = 0; _scanStage = Loc.T("property.settings.scanStart"); _scanDetail = string.Empty;
         _scanThinking.Clear(); _scanThinkingSeen.Clear(); _scanLastMilestone = -1;
         try
         {
@@ -459,12 +459,12 @@
                 }
                 InvokeAsync(StateHasChanged);
             });
-            var dossier = await Onboarding.DiscoverPropertyDossierFromAddressAsync(request, default, reporter);
+            var dossier = await Onboarding.DiscoverPropertyDossierFromAddressAsync(request, default, reporter, Loc.ActiveLocale);
             await Onboarding.ApplyDiscoveryDossierToPropertyAsync(Id, membershipId, dossier, DossierSectionFlags.All);
             _property = await Onboarding.GetPropertyDetailAsync(Id);
             _message = dossier.SourceUrls.Any(u => u.Contains("offline-fallback", StringComparison.OrdinalIgnoreCase))
-                ? "Live search timed out; offline defaults applied. Fill missing fields manually."
-                : "Discovery dossier applied.";
+                ? Loc.T("property.settings.scanOffline")
+                : Loc.T("property.settings.scanApplied");
         }
         catch (Exception ex) { _message = ex.Message; }
         finally { _isScanning = false; }

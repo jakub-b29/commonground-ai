@@ -6,29 +6,29 @@
 @inject CommonGroundWorkspaceService Workspace
 @implements IDisposable
 
-<PageTitle>Account &amp; Resident Identity — CommonGround</PageTitle>
+<PageTitle>@Loc.T("page.accountTitle") — CommonGround</PageTitle>
 
 <div class="cg-page-header">
     <div>
-        <h1>Account &amp; Resident Identity</h1>
-        <p class="cg-page-lead">Personal profile, permanent Resident Account Number, unit assignment history, and password security.</p>
+        <h1>@Loc.T("page.accountTitle")</h1>
+        <p class="cg-page-lead">@Loc.T("page.accountLead")</p>
     </div>
 </div>
 
 @if (!_loaded)
 {
-    <p role="status" aria-live="polite">Loading.</p>
+    <p role="status" aria-live="polite">@Loc.T("msg.loading")</p>
 }
 else if (_account is null)
 {
-    <div class="cg-card"><p class="cg-empty-text">Account not found. <a href="/login">Sign in</a></p></div>
+    <div class="cg-card"><p class="cg-empty-text">@Loc.T("account.notFound") <a href="/login">@Loc.T("nav.signin")</a></p></div>
 }
 else
 {
     <div class="cg-grid-2">
         <div class="cg-card">
             <div class="cg-section-header">
-                <h2>Personal Profile &amp; Resident Identity</h2>
+                <h2>@Loc.T("account.profileTitle")</h2>
                 <div style="display: flex; gap: 0.35rem;">
                     @if (_residentDossier is not null)
                     {
@@ -43,18 +43,18 @@ else
                         @if (_residentDossier is not null)
                         {
                             <tr>
-                                <td>Resident Account Number</td>
-                                <td><strong class="mono">@_residentDossier.Profile.ResidentAccountNumber</strong> (Permanent &amp; Immutable)</td>
+                                <td>@Loc.T("resident.accountNumber")</td>
+                                <td><strong class="mono">@_residentDossier.Profile.ResidentAccountNumber</strong> (@Loc.T("account.permanentImmutable"))</td>
                             </tr>
                         }
-                        <tr><td>Name</td><td><strong>@_account.FullName</strong></td></tr>
-                        <tr><td>Email</td><td class="mono">@_account.Email</td></tr>
-                        <tr><td>Phone</td><td class="mono">@_account.Phone</td></tr>
-                        <tr><td>Provider</td><td>@_account.Provider</td></tr>
+                        <tr><td>@Loc.T("form.name")</td><td><strong>@_account.FullName</strong></td></tr>
+                        <tr><td>@Loc.T("form.email")</td><td class="mono">@_account.Email</td></tr>
+                        <tr><td>@Loc.T("form.phone")</td><td class="mono">@_account.Phone</td></tr>
+                        <tr><td>@Loc.T("form.provider")</td><td>@_account.Provider</td></tr>
                         @if (_residentDossier is not null)
                         {
-                            <tr><td>Verification Status</td><td><span class="cg-badge">@_residentDossier.Profile.VerificationStatus</span></td></tr>
-                            <tr><td>Emergency Contact</td><td>@_residentDossier.Profile.EmergencyContactName · <span class="mono">@_residentDossier.Profile.EmergencyContactPhone</span></td></tr>
+                            <tr><td>@Loc.T("account.verificationStatus")</td><td><span class="cg-badge">@_residentDossier.Profile.VerificationStatus</span></td></tr>
+                            <tr><td>@Loc.T("account.emergencyContact")</td><td>@_residentDossier.Profile.EmergencyContactName · <span class="mono">@_residentDossier.Profile.EmergencyContactPhone</span></td></tr>
                         }
                     </tbody>
                 </table>
@@ -62,13 +62,13 @@ else
         </div>
 
         <div class="cg-card">
-            <div class="cg-section-header"><h2>Password &amp; Security</h2></div>
+            <div class="cg-section-header"><h2>@Loc.T("account.securityTitle")</h2></div>
             <p style="color: var(--color-text-secondary); font-size: 0.78125rem;">
-                Password changes are handled through the account service. Email confirmation status: @(_account.EmailConfirmed ? "Confirmed" : "Pending confirmation").
+                @Loc.T("account.securityHint") @Loc.T("account.emailStatusPrefix") @(_account.EmailConfirmed ? Loc.T("account.confirmed") : Loc.T("account.pendingConfirm")).
             </p>
             <div class="cg-toolbar">
-                <a class="cg-btn" href="/verify-email">Verify email</a>
-                <a class="cg-btn" href="/my-unit">Open My Unit</a>
+                <a class="cg-btn" href="/verify-email">@Loc.T("account.verifyEmail")</a>
+                <a class="cg-btn" href="/my-unit">@Loc.T("account.openMyUnit")</a>
             </div>
         </div>
     </div>
@@ -77,12 +77,12 @@ else
     {
         <div class="cg-card" style="margin-block-start: 0.75rem;">
             <div class="cg-section-header">
-                <h2>Active &amp; Historical Unit Assignments (@(_residentDossier.ActiveAssignments.Count + _residentDossier.PastAssignments.Count))</h2>
+                <h2>@Loc.T("account.assignmentsTitle") (@(_residentDossier.ActiveAssignments.Count + _residentDossier.PastAssignments.Count))</h2>
                 <span class="cg-badge mono">@_residentDossier.Profile.ResidentAccountNumber</span>
             </div>
             @if (_residentDossier.ActiveAssignments.Count == 0 && _residentDossier.PastAssignments.Count == 0)
             {
-                <p class="cg-empty-text">No unit assignments linked to this Resident Account Number yet.</p>
+                <p class="cg-empty-text">@Loc.T("account.noAssignments")</p>
             }
             else
             {
@@ -90,11 +90,11 @@ else
                     <table class="cg-table">
                         <thead>
                             <tr>
-                                <th>Community</th>
-                                <th>Building &amp; Unit</th>
-                                <th>Assignment Role</th>
-                                <th>Status</th>
-                                <th>Tenancy Period</th>
+                                <th>@Loc.T("account.colCommunity")</th>
+                                <th>@Loc.T("account.colBuildingUnit")</th>
+                                <th>@Loc.T("account.colRole")</th>
+                                <th>@Loc.T("table.status")</th>
+                                <th>@Loc.T("account.colTenancy")</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -105,10 +105,10 @@ else
                                         <strong>@a.CommunityName</strong>
                                         <span class="mono" style="font-size: 0.72rem; color: var(--accent-primary);">@a.CommunityAccountNumber</span>
                                     </td>
-                                    <td><strong>Unit @a.UnitNumber</strong> · @a.BuildingName</td>
+                                    <td><strong>@Loc.T("form.unit") @a.UnitNumber</strong> · @a.BuildingName</td>
                                     <td><span class="cg-badge">@a.Assignment.AssignmentType</span></td>
                                     <td><span class="cg-badge @(a.Assignment.Status == UnitAssignmentStatus.Active ? "cg-badge-ok" : "")">@a.Assignment.Status</span></td>
-                                    <td class="mono">@a.Assignment.MoveInDateUtc.ToString("yyyy-MM-dd") → @(a.Assignment.MoveOutDateUtc?.ToString("yyyy-MM-dd") ?? "Present")</td>
+                                    <td class="mono">@a.Assignment.MoveInDateUtc.ToString("yyyy-MM-dd") → @(a.Assignment.MoveOutDateUtc?.ToString("yyyy-MM-dd") ?? Loc.T("account.present"))</td>
                                 </tr>
                             }
                         </tbody>

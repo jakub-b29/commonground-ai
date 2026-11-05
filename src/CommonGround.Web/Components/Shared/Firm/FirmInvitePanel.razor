@@ -15,15 +15,15 @@
         <div class="cg-grid-3">
             <div>
                 <label for="inv-email">@Loc.T("form.workEmail")</label>
-                <input id="inv-email" @bind="_email" placeholder="manager@example.com" />
+                <input id="inv-email" @bind="_email" placeholder="@Loc.T("form.emailEx")" />
             </div>
             <div>
                 <label for="inv-name">@Loc.T("form.name")</label>
-                <input id="inv-name" @bind="_name" placeholder="Anna Kowalska" />
+                <input id="inv-name" @bind="_name" placeholder="@Loc.T("form.nameEx")" />
             </div>
             <div>
                 <label for="inv-phone">@Loc.T("form.phone")</label>
-                <input id="inv-phone" @bind="_phone" placeholder="+48 600 000 000" />
+                <input id="inv-phone" @bind="_phone" placeholder="@Loc.T("form.phoneEx")" />
             </div>
             <div>
                 <label for="inv-role">@Loc.T("form.requestedRole")</label>
@@ -56,19 +56,19 @@
             </div>
             <div>
                 <label for="inv-unit">@Loc.T("form.unitNumber")</label>
-                <input id="inv-unit" @bind="_unit" placeholder="A-101" />
+                <input id="inv-unit" @bind="_unit" placeholder="@Loc.T("form.unitNumberEx")" />
             </div>
             <div>
                 <label for="inv-trade">@Loc.T("form.companyTrade")</label>
-                <input id="inv-trade" @bind="_trade" placeholder="Hydro-Instal" />
+                <input id="inv-trade" @bind="_trade" placeholder="@Loc.T("form.companyTradeEx")" />
             </div>
         </div>
         <div style="margin-block-start: 0.75rem;">
-            <label id="inv-multi-label">Property scope (select one or more)</label>
+            <label id="inv-multi-label">@Loc.T("admin.invite.propertyScope")</label>
             <fieldset aria-labelledby="inv-multi-label" style="border: 1px solid var(--color-border, #E2E8F0); border-radius: 4px; padding: 0.5rem 0.75rem; margin: 0;">
                 @if (_properties.Count == 0)
                 {
-                    <p style="color: var(--color-text-secondary); font-size: 0.78125rem; margin: 0;">No properties available.</p>
+                    <p style="color: var(--color-text-secondary); font-size: 0.78125rem; margin: 0;">@Loc.T("admin.invite.noProperties")</p>
                 }
                 @foreach (var p in _properties)
                 {
@@ -81,7 +81,7 @@
             </fieldset>
         </div>
         <div style="margin-block-start: 0.75rem;">
-            <label id="inv-perm-label">Permission matrix for selected role</label>
+            <label id="inv-perm-label">@Loc.T("admin.invite.permMatrix")</label>
             <fieldset aria-labelledby="inv-perm-label" style="border: 1px solid var(--color-border, #E2E8F0); border-radius: 4px; padding: 0.5rem 0.75rem; margin: 0;">
                 @foreach (var flag in RelevantFlags)
                 {
@@ -91,26 +91,26 @@
                     </label>
                 }
             </fieldset>
-            <p style="color: var(--color-text-secondary); font-size: 0.75rem; margin-block-start: 0.375rem;">Defaults follow the preset for the chosen role. Uncheck to restrict.</p>
+            <p style="color: var(--color-text-secondary); font-size: 0.75rem; margin-block-start: 0.375rem;">@Loc.T("admin.invite.presetHint")</p>
         </div>
         @if (!string.IsNullOrWhiteSpace(_firmGroupCode))
         {
             <div style="margin-block-start: 0.75rem; border: 1px solid var(--color-border, #E2E8F0); border-radius: 4px; padding: 0.5rem 0.75rem;">
-                <strong>Join code share box</strong>
+                <strong>@Loc.T("admin.invite.joinBox")</strong>
                 <div style="margin-block-start: 0.375rem; display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center;">
-                    <span>Group code:</span>
+                    <span>@Loc.T("admin.invite.groupCode"):</span>
                     <code class="mono num" style="font-variant-numeric: tabular-nums;">@_firmGroupCode</code>
-                    <span style="color: var(--color-text-secondary); font-size: 0.75rem;">Copy this code and share it with new members.</span>
+                    <span style="color: var(--color-text-secondary); font-size: 0.75rem;">@Loc.T("admin.invite.copyShare")</span>
                 </div>
                 <div style="margin-block-start: 0.375rem;">
-                    <span>Invite link:</span>
+                    <span>@Loc.T("admin.invite.inviteLink"):</span>
                     <a href="/accept-invite?code=@Uri.EscapeDataString(_firmGroupCode)">@($"/accept-invite?code={_firmGroupCode}")</a>
                 </div>
             </div>
         }
         <div style="margin-block-start: 0.5rem;">
             <label style="display: flex; align-items: center; gap: 0.375rem; font-weight: 500;">
-                <input type="checkbox" @bind="_requiresManagerApproval" /> Require manager approval after sign up
+                <input type="checkbox" @bind="_requiresManagerApproval" /> @Loc.T("admin.invite.requireApprovalAfter")
             </label>
         </div>
         <div class="cg-toolbar">
@@ -250,19 +250,9 @@
             _checkedPermissions &= ~flag;
     }
 
-    private static string GetPermissionLabel(WorkspacePermissionFlags flag)
+    private string GetPermissionLabel(WorkspacePermissionFlags flag)
     {
-        var raw = flag.ToString();
-        if (string.IsNullOrWhiteSpace(raw)) return string.Empty;
-        var chars = new System.Text.StringBuilder();
-        for (var i = 0; i < raw.Length; i++)
-        {
-            var c = raw[i];
-            if (i > 0 && char.IsUpper(c) && !char.IsUpper(raw[i - 1]))
-                chars.Append(' ');
-            chars.Append(i == 0 ? c : char.ToLowerInvariant(c));
-        }
-        return chars.ToString();
+        return Loc.T($"perm.{flag}");
     }
 
     private async Task OnInvite()
