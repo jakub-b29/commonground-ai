@@ -139,7 +139,7 @@ else
                     <span class="mono">@(!string.IsNullOrWhiteSpace(_lastResult?.EffectivePropertyName) ? _lastResult.EffectivePropertyName : (UiState.SelectedCommunityId.HasValue ? Loc.T("spark.scopeCommunity") : Loc.T("spark.scopePortfolio")))</span>
                 </span>
                 <span class="cg-context-tag cg-context-role" title="@StatusTextOrFallback("spark.highestPermissionTitle", "Highest account permission resolved for target property")">
-                    <span class="mono">@(!string.IsNullOrWhiteSpace(_lastResult?.EffectiveRole) ? _lastResult.EffectiveRole : UiState.ActiveSecurityRole.ToString())</span>
+                    <span class="mono">@(UiState.IsFirmManager ? "FirmManager" : (!string.IsNullOrWhiteSpace(_lastResult?.EffectiveRole) ? _lastResult.EffectiveRole : UiState.ActiveSecurityRole.ToString()))</span>
                 </span>
             </div>
         </div>
@@ -658,10 +658,26 @@ else
         Loc.OnChange += _locHandler;
         await Loc.EnsureLoadedAsync();
         _statusText = Loc.T("spark.status.ready");
+        await EnsureFirmManagerRoleSyncAsync();
     }
 
-    private void OnOpenChat()
+    private async Task EnsureFirmManagerRoleSyncAsync()
     {
+        try
+        {
+            var r = await Access.GetRoleAsync();
+            var acc = await Access.GetAccountAsync();
+            if (r == WorkspaceSecurityRole.FirmManager || acc?.Role == WorkspaceSecurityRole.FirmManager)
+            {
+                UiState.SetRole(WorkspaceSecurityRole.FirmManager);
+            }
+        }
+        catch { }
+    }
+
+    private async Task OnOpenChat()
+    {
+        await EnsureFirmManagerRoleSyncAsync();
         UiState.SetSparkAgentChatOpen(true);
     }
 

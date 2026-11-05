@@ -23,7 +23,7 @@ public static class WorkspaceClaimTypes
 
 public static class WorkspaceClaims
 {
-    public static ClaimsPrincipal CreatePrincipal(Guid userId, Guid? activeMembershipId)
+    public static ClaimsPrincipal CreatePrincipal(Guid userId, Guid? activeMembershipId, WorkspaceSecurityRole? role = null)
     {
         var claims = new List<Claim>
         {
@@ -31,6 +31,8 @@ public static class WorkspaceClaims
         };
         if (activeMembershipId.HasValue && activeMembershipId.Value != Guid.Empty)
             claims.Add(new Claim(WorkspaceClaimTypes.ActiveMembershipId, activeMembershipId.Value.ToString()));
+        if (role.HasValue)
+            claims.Add(new Claim(ClaimTypes.Role, role.Value.ToString()));
         var identity = new ClaimsIdentity(claims, "WorkspaceCookie");
         return new ClaimsPrincipal(identity);
     }

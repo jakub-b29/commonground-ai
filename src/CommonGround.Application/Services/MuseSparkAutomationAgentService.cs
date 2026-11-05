@@ -235,6 +235,31 @@ public sealed class SparkAgentPermissionEvaluator
                 .Where(m => m.UserId == userId || (activeMembershipId != Guid.Empty && m.Id == activeMembershipId))
                 .ToListAsync(ct);
 
+            var userAcc = await db.UserAccounts.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, ct);
+            if (candidates.Count == 0 && userAcc is not null)
+            {
+                candidates.Add(new FirmMembership
+                {
+                    Id = Guid.Empty,
+                    UserId = userAcc.Id,
+                    ManagementFirmId = userAcc.ManagementFirmId ?? Guid.Empty,
+                    Role = userAcc.Role,
+                    Status = WorkspaceMembershipStatus.Approved,
+                    GrantedPermissions = WorkspacePermissionPresets.DefaultForRole(userAcc.Role)
+                });
+            }
+
+            if (userAcc?.Role == WorkspaceSecurityRole.FirmManager || candidates.Any(c => c.Role == WorkspaceSecurityRole.FirmManager))
+            {
+                role = WorkspaceSecurityRole.FirmManager;
+                status = WorkspaceMembershipStatus.Approved;
+                permissions = (WorkspacePermissionFlags)~0L;
+                if (userAcc?.ManagementFirmId.HasValue == true && userAcc.ManagementFirmId.Value != Guid.Empty)
+                {
+                    firmId = userAcc.ManagementFirmId.Value;
+                }
+            }
+
             if (candidates.Count > 0)
             {
                 var approved = candidates.Where(m => m.Status == WorkspaceMembershipStatus.Approved).ToList();
@@ -348,18 +373,62 @@ public sealed class SparkAgentPermissionEvaluator
             IsFirmManager: false);
     }
 
+    public static string NormalizeToolName(string? toolName)
+    {
+        var raw = (toolName ?? string.Empty).Trim().ToLowerInvariant();
+        return raw switch
+        {
+            "create_resident_profile"
+                or "create_resident"
+                or "create_resident_wizard"
+                or "register_resident"
+                or "add_resident"
+                or "register_resident_profile"
+                or "new_resident"
+                or "upsert_resident"
+                or "create_or_update_resident" => "create_or_update_resident_profile",
+
+            "list_available_tools"
+                or "list_tools"
+                or "get_tools"
+                or "available_tools"
+                or "tools_catalog"
+                or "list_capabilities" => "list_account_capabilities",
+
+            "create_unit"
+                or "add_unit"
+                or "new_unit" => "create_unit_wizard",
+
+            "ask_clarification"
+                or "ask_question"
+                or "ask_user"
+                or "clarify" => "ask_user_clarification",
+
+            "register_link"
+                or "create_invitation_link"
+                or "create_registration_link"
+                or "create_resident_link" => "generate_registration_link",
+
+            "query_entities"
+                or "search_entities" => "query_system_entities",
+
+            "execute_query"
+                or "db_query" => "execute_database_query",
+
+            "create_property"
+                or "add_community"
+                or "new_community" => "create_community",
+
+            _ => raw
+        };
+    }
+
     public SparkAgentPermissionEvaluationResult EvaluateToolPermission(
         SparkAgentPermissionContext context,
         string toolName,
         IReadOnlyDictionary<string, string> args)
     {
-        var normalizedTool = (toolName ?? string.Empty).Trim().ToLowerInvariant();
-
-        // FirmManager can do EVERYTHING with properties, units, and system actions in AI Spark Mode!
-        if (context.IsFirmManager || context.Role == WorkspaceSecurityRole.FirmManager)
-        {
-            return new SparkAgentPermissionEvaluationResult(true, 0, 0);
-        }
+        var normalizedTool = NormalizeToolName(toolName);
 
         // CATEGORY A: Introspection, Clarification, DB Query, UI
         if (normalizedTool is "check_account_permission" or "list_account_capabilities" or "ask_user_clarification")
@@ -923,7 +992,7 @@ public sealed class SparkAgentToolExecutor(
         Guid defaultCommunityId,
         CancellationToken ct = default)
     {
-        var normalized = (toolName ?? string.Empty).Trim().ToLowerInvariant();
+        var normalized = SparkAgentPermissionEvaluator.NormalizeToolName(toolName);
         var comId = ResolveCommunityId(args, context, defaultCommunityId);
 
         try
@@ -1457,11 +1526,23 @@ public sealed class SparkAgentToolExecutor(
                 case "create_or_update_resident_profile":
                 {
                     var profIdStr = args.GetValueOrDefault("residentProfileId");
+                    var fn = args.GetValueOrDefault("fullName");
+                    string first = args.GetValueOrDefault("firstName") ?? string.Empty;
+                    string last = args.GetValueOrDefault("lastName") ?? string.Empty;
+                    if (!string.IsNullOrWhiteSpace(fn) && string.IsNullOrWhiteSpace(first))
+                    {
+                        var parts = fn.Trim().Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+                        first = parts[0];
+                        last = parts.Length > 1 ? parts[1] : "Resident";
+                    }
+                    if (string.IsNullOrWhiteSpace(first)) first = "Resident";
+                    if (string.IsNullOrWhiteSpace(last)) last = "User";
+
                     if (Guid.TryParse(profIdStr, out var pid))
                     {
                         var input = new ResidentProfileUpdateInput(
-                            args.GetValueOrDefault("firstName") ?? "Resident",
-                            args.GetValueOrDefault("lastName") ?? "User",
+                            first,
+                            last,
                             args.GetValueOrDefault("email") ?? "resident@example.local",
                             args.GetValueOrDefault("phone") ?? "+48 000 000 000",
                             null,
@@ -1483,8 +1564,8 @@ public sealed class SparkAgentToolExecutor(
                     var created = await workspace.CreateOrGetResidentProfileAsync(
                         context.ManagementFirmId,
                         context.UserId,
-                        args.GetValueOrDefault("firstName") ?? "Resident",
-                        args.GetValueOrDefault("lastName") ?? "User",
+                        first,
+                        last,
                         args.GetValueOrDefault("email") ?? "resident@example.local",
                         args.GetValueOrDefault("phone") ?? "+48 000 000 000",
                         args.GetValueOrDefault("preferredLanguage") ?? "EN",
@@ -1492,8 +1573,49 @@ public sealed class SparkAgentToolExecutor(
                         args.GetValueOrDefault("emergencyContactPhone") ?? string.Empty,
                         args.GetValueOrDefault("notes") ?? string.Empty,
                         ct);
+
+                    string assignmentNote = string.Empty;
+                    await using (var db = await dbFactory.CreateDbContextAsync(ct))
+                    {
+                        Unit? foundUnit = null;
+                        if (Guid.TryParse(args.GetValueOrDefault("unitId"), out var targetUid) && targetUid != Guid.Empty)
+                        {
+                            foundUnit = await db.Units.AsNoTracking().FirstOrDefaultAsync(x => x.Id == targetUid, ct);
+                        }
+                        else if (args.TryGetValue("unitNumber", out var unitNum) && !string.IsNullOrWhiteSpace(unitNum))
+                        {
+                            foundUnit = await db.Units.AsNoTracking().FirstOrDefaultAsync(x => x.CommunityId == comId && x.UnitNumber == unitNum.Trim(), ct);
+                        }
+
+                        if (foundUnit != null)
+                        {
+                            var req = new ManualResidentAssignmentRequest(
+                                CommunityId: comId,
+                                BuildingId: foundUnit.BuildingId,
+                                UnitId: foundUnit.Id,
+                                CreateNewResident: false,
+                                ExistingResidentProfileId: created.Id,
+                                FirstName: first,
+                                LastName: last,
+                                Email: args.GetValueOrDefault("email") ?? "resident@example.local",
+                                Phone: args.GetValueOrDefault("phone") ?? "+48 000 000 000",
+                                PreferredLanguage: args.GetValueOrDefault("preferredLanguage") ?? "EN",
+                                EmergencyContactName: string.Empty,
+                                EmergencyContactPhone: string.Empty,
+                                AssignmentType: ResidentAssignmentType.Tenant,
+                                Status: UnitAssignmentStatus.Active,
+                                IsPrimaryResident: true,
+                                MoveInDateUtc: DateTime.UtcNow,
+                                MoveOutDateUtc: null,
+                                AssignmentReasonOrNotes: "Assigned via AI Spark Resident Wizard",
+                                ConflictOverrideReason: null);
+                            await workspace.AssignResidentToUnitManualAsync(req, context.EffectiveRole, context.FullName, context.ActiveMembershipId, ct);
+                            assignmentNote = $" and linked to unit {foundUnit.UnitNumber}";
+                        }
+                    }
+
                     return MakeResult(new { residentProfileId = created.Id, accountNumber = created.ResidentAccountNumber, name = created.FullName },
-                        $"Created resident profile {created.FullName} ({created.ResidentAccountNumber})", $"/admin/residents/{created.Id}");
+                        $"Created resident profile {created.FullName} ({created.ResidentAccountNumber}){assignmentNote}", $"/admin/residents/{created.Id}");
                 }
 
                 // E25. assign_resident_to_unit
@@ -2660,7 +2782,7 @@ public sealed class MuseSparkAutomationAgentService(
                 resolvedForProperty = effectivePropertyName
             }, JsonOpts);
 
-            var toolCatalogJson = "[44-Tool Catalog across Introspection, Firm, Communities, Buildings, Units, Residents, Financials, Maintenance, Governance, Vision, Voice, Custom Image Generation (generate_custom_info_image), Security]";
+            var toolCatalogJson = FullToolCatalogJson;
             var scratchpadHistoryJson = JsonSerializer.Serialize(scratchpad, JsonOpts);
 
             // Stream thinking event
@@ -3134,6 +3256,465 @@ public sealed class MuseSparkAutomationAgentService(
         catch
         {
         }
+    }
+
+    public static readonly string FullToolCatalogJson = BuildFullToolCatalog();
+
+    private static string BuildFullToolCatalog()
+    {
+        var tools = new object[]
+        {
+            new
+            {
+                name = "check_account_permission",
+                description = "Checks whether the active account has permission to execute a specific tool on a property.",
+                parameters = new { toolName = "string (name of tool to check, e.g. 'create_unit_wizard')" }
+            },
+            new
+            {
+                name = "list_account_capabilities",
+                description = "Lists all permissions, roles, allowed properties, and firm attributes for the active user. (Aliases: list_available_tools, list_tools, get_tools, available_tools).",
+                parameters = new { }
+            },
+            new
+            {
+                name = "ask_user_clarification",
+                description = "CRITICAL: Call this tool whenever user intent is ambiguous, when essential parameters (property, unit number, resident name/email) are missing, or when you are not 100% sure how to proceed. Never invent or guess arguments.",
+                parameters = new
+                {
+                    question = "string (the exact question to ask the user)",
+                    options = "string (optional comma-separated choices for quick selection, e.g. 'Yes, No' or 'Unit 1, Unit 2')",
+                    inputHint = "string (optional short placeholder or hint for the input box)"
+                }
+            },
+            new
+            {
+                name = "execute_database_query",
+                description = "Queries real database entities to look up IDs, statuses, or fields. Supported entities: units, communities, work_orders, resolutions, meters.",
+                parameters = new
+                {
+                    entityName = "string ('units'|'communities'|'work_orders'|'resolutions'|'meters')",
+                    filter = "string (optional predicate, e.g. 'UnitNumber == \"A-101\"')",
+                    communityId = "string (optional property guid)"
+                }
+            },
+            new
+            {
+                name = "query_system_entities",
+                description = "Searches system entities by search term, status, or property.",
+                parameters = new
+                {
+                    entityName = "string ('units'|'communities'|'work_orders'|'resolutions'|'meters')",
+                    searchTerm = "string (e.g. '101' or 'Oakridge')",
+                    status = "string (optional filter)",
+                    communityId = "string (optional property guid)"
+                }
+            },
+            new
+            {
+                name = "get_workspace_overview",
+                description = "Retrieves high-level property and portfolio KPIs, unit counts, arrears, and active work orders.",
+                parameters = new { communityId = "string (optional property guid)" }
+            },
+            new
+            {
+                name = "switch_ui_context_or_navigate",
+                description = "Navigates the UI to a specific screen or property.",
+                parameters = new
+                {
+                    targetUrl = "string (e.g. '/properties/{communityId}/units')",
+                    communityId = "string (optional property guid)"
+                }
+            },
+            new
+            {
+                name = "update_firm_contacts",
+                description = "Updates firm emergency phone, dispatch email, or office address.",
+                parameters = new
+                {
+                    emergencyPhone = "string",
+                    dispatchEmail = "string",
+                    officeAddress = "string"
+                }
+            },
+            new
+            {
+                name = "create_scoped_invitation",
+                description = "Generates a cryptographic zero-disclosure invitation link for a new property manager or board member.",
+                parameters = new
+                {
+                    communityId = "string",
+                    email = "string",
+                    role = "string ('PropertyManager'|'BoardMemberReadOnly'|'Accountant'|'Resident')",
+                    unitNumber = "string (optional for resident invitations)"
+                }
+            },
+            new
+            {
+                name = "approve_or_update_membership",
+                description = "Approves, rejects, or adjusts role/permissions for a pending workspace member.",
+                parameters = new
+                {
+                    membershipId = "string (guid)",
+                    newStatus = "string ('Approved'|'Rejected')",
+                    newRole = "string ('FirmManager'|'PropertyManager'|'Resident')"
+                }
+            },
+            new
+            {
+                name = "create_firm_manager_group",
+                description = "Creates a cross-property manager collaboration channel.",
+                parameters = new { groupName = "string", communityId = "string (optional)" }
+            },
+            new
+            {
+                name = "post_firm_manager_message",
+                description = "Posts an internal dispatch message to property managers or board members.",
+                parameters = new { communityId = "string", subject = "string", messageBody = "string" }
+            },
+            new
+            {
+                name = "create_community",
+                description = "Registers a new managed residential community/condominium association.",
+                parameters = new
+                {
+                    name = "string",
+                    code = "string",
+                    country = "string ('PL'|'US')",
+                    streetAddress = "string",
+                    postalCode = "string",
+                    city = "string"
+                }
+            },
+            new
+            {
+                name = "discover_property_from_address",
+                description = "Enriches a property by address using public registries to identify local utility operators, gross tariffs, and emergency authorities.",
+                parameters = new
+                {
+                    streetAddress = "string",
+                    city = "string",
+                    postalCode = "string",
+                    country = "string ('PL'|'US')"
+                }
+            },
+            new
+            {
+                name = "update_community_profile",
+                description = "Updates condominium legal details, bank IBAN, or tax ID.",
+                parameters = new
+                {
+                    communityId = "string",
+                    name = "string",
+                    bankAccount = "string",
+                    taxId = "string"
+                }
+            },
+            new
+            {
+                name = "upsert_community_contact",
+                description = "Adds or updates an emergency authority or contractor contact for a community.",
+                parameters = new
+                {
+                    communityId = "string",
+                    name = "string",
+                    phone = "string",
+                    role = "string",
+                    category = "string ('Emergency'|'Maintenance'|'Municipal')"
+                }
+            },
+            new
+            {
+                name = "delete_community_contact",
+                description = "Deletes a community contact entry.",
+                parameters = new { contactId = "string (guid)" }
+            },
+            new
+            {
+                name = "create_building",
+                description = "Adds a building to a community with floors and stairwells.",
+                parameters = new
+                {
+                    communityId = "string",
+                    name = "string (e.g. 'Building A')",
+                    totalFloors = "int",
+                    stairwellCount = "int"
+                }
+            },
+            new
+            {
+                name = "upsert_riser_stack_or_structure",
+                description = "Creates or updates a vertical utility riser stack in a building (e.g. STACK-A1).",
+                parameters = new
+                {
+                    buildingId = "string",
+                    stackCode = "string (e.g. 'STACK-A1')",
+                    systemType = "string ('WaterPotable'|'CentralHeating'|'Drainage')"
+                }
+            },
+            new
+            {
+                name = "create_unit_wizard",
+                description = "Creates an individual unit/apartment in a building with surface area and ownership share fraction.",
+                parameters = new
+                {
+                    buildingId = "string",
+                    unitNumber = "string (e.g. 'A-101')",
+                    floor = "int",
+                    squareMeters = "double (e.g. 62.5)",
+                    shareFractionNumerator = "long (e.g. 625)",
+                    shareFractionDenominator = "long (e.g. 10000)"
+                }
+            },
+            new
+            {
+                name = "update_unit_details",
+                description = "Updates surface area, occupancy capacity, or notes on a unit.",
+                parameters = new
+                {
+                    unitId = "string",
+                    squareMeters = "double",
+                    occupancyCount = "int"
+                }
+            },
+            new
+            {
+                name = "bulk_generate_floor_units",
+                description = "Generates all apartments across a specified building floor in bulk.",
+                parameters = new
+                {
+                    buildingId = "string",
+                    floorNumber = "int",
+                    unitsPerFloor = "int"
+                }
+            },
+            new
+            {
+                name = "delete_unit",
+                description = "Deletes an unassigned apartment unit.",
+                parameters = new { unitId = "string" }
+            },
+            new
+            {
+                name = "create_or_update_resident_profile",
+                description = "Creates or updates a resident profile in the directory, and optionally links/assigns them to an apartment unit. (Aliases: create_resident_profile, create_resident, create_resident_wizard, register_resident, add_resident).",
+                parameters = new
+                {
+                    communityId = "string (guid of community)",
+                    fullName = "string (e.g. 'Anna Nowak')",
+                    firstName = "string",
+                    lastName = "string",
+                    email = "string",
+                    phone = "string",
+                    unitNumber = "string (optional unit to link, e.g. 'A-101')",
+                    unitId = "string (optional unit guid to link)",
+                    preferredLanguage = "string ('PL'|'EN'|'ES'|'DE')",
+                    isPrimaryResident = "bool"
+                }
+            },
+            new
+            {
+                name = "assign_resident_to_unit",
+                description = "Links an existing resident profile to an apartment unit with tenancy dates.",
+                parameters = new
+                {
+                    residentProfileId = "string (guid)",
+                    unitId = "string (guid)",
+                    isPrimary = "bool"
+                }
+            },
+            new
+            {
+                name = "execute_resident_move_out",
+                description = "Records a resident move-out and terminates active tenancy/lease link.",
+                parameters = new
+                {
+                    assignmentId = "string (guid)",
+                    moveOutDate = "string (yyyy-MM-dd)"
+                }
+            },
+            new
+            {
+                name = "generate_registration_link",
+                description = "Issues a single-use self-registration URL with a 32-byte zero-disclosure token for a resident.",
+                parameters = new
+                {
+                    communityId = "string",
+                    unitNumber = "string (e.g. 'A-101')",
+                    unitId = "string (optional guid)",
+                    residentName = "string",
+                    residentEmail = "string"
+                }
+            },
+            new
+            {
+                name = "revoke_registration_link",
+                description = "Revokes a pending resident self-registration link.",
+                parameters = new { tokenId = "string (guid)", communityId = "string" }
+            },
+            new
+            {
+                name = "review_registration_request",
+                description = "Approves or rejects a resident self-registration queue entry.",
+                parameters = new
+                {
+                    requestId = "string (guid)",
+                    decision = "string ('Approve'|'Reject')"
+                }
+            },
+            new
+            {
+                name = "upsert_or_remove_household_member",
+                description = "Adds, updates, or removes household co-occupants (spouse, child, pet).",
+                parameters = new
+                {
+                    residentProfileId = "string (guid)",
+                    fullName = "string",
+                    relationship = "string ('Spouse'|'Child'|'Tenant')"
+                }
+            },
+            new
+            {
+                name = "add_resident_document",
+                description = "Uploads or links an ownership deed or lease agreement to a resident profile.",
+                parameters = new
+                {
+                    residentProfileId = "string (guid)",
+                    title = "string",
+                    documentType = "string ('Deed'|'Lease'|'ID')"
+                }
+            },
+            new
+            {
+                name = "submit_meter_reading",
+                description = "Submits a sub-meter reading with optional dial photo OCR.",
+                parameters = new
+                {
+                    communityId = "string",
+                    meterId = "string (guid)",
+                    readingValue = "double",
+                    simulatedReadingOverride = "double"
+                }
+            },
+            new
+            {
+                name = "run_bulk_utility_settlement",
+                description = "Runs the deterministic bulk-to-sub-meter utility reconciliation engine for cold water, heating, or US RUBS.",
+                parameters = new
+                {
+                    communityId = "string",
+                    periodName = "string (e.g. 'Q3 2026')",
+                    utilityType = "string ('ColdWater'|'Heating'|'Gas')"
+                }
+            },
+            new
+            {
+                name = "match_bank_transfers",
+                description = "Matches incoming bank transfer titles to resident accounts via deterministic FIFO rules.",
+                parameters = new { communityId = "string" }
+            },
+            new
+            {
+                name = "run_inflation_and_power_audit",
+                description = "Audits contracted power tariffs against peak measured demand and runs 10-year inflation simulations.",
+                parameters = new { communityId = "string", targetYear = "int" }
+            },
+            new
+            {
+                name = "generate_arrears_or_mediation_action",
+                description = "Drafts polite arrears reminders, installment agreements, or neighbor mediation notices.",
+                parameters = new
+                {
+                    unitId = "string",
+                    arrearsNoticeType = "string ('Reminder'|'PreLitigation'|'Mediation')"
+                }
+            },
+            new
+            {
+                name = "transcribe_voice_or_audio",
+                description = "Transcribes resident voice memos using Whisper ASR with multilingual translation.",
+                parameters = new { audioBase64 = "string", audioUrl = "string" }
+            },
+            new
+            {
+                name = "submit_maintenance_request",
+                description = "Submits a maintenance report, cross-referencing vertical riser stacks and checking active municipal outages.",
+                parameters = new
+                {
+                    communityId = "string",
+                    unitNumber = "string",
+                    messageText = "string",
+                    category = "string ('Plumbing'|'Electrical'|'HVAC'|'Structure')"
+                }
+            },
+            new
+            {
+                name = "run_vision_inspection_or_verify_repair",
+                description = "Segments damage area (m²) via SAM 3.1 and generates an independent investor BOQ estimate, or verifies contractor repair.",
+                parameters = new
+                {
+                    workOrderId = "string (guid)",
+                    inspectionType = "string ('Damage'|'RepairVerification')",
+                    photoBase64 = "string"
+                }
+            },
+            new
+            {
+                name = "evaluate_or_submit_modification_request",
+                description = "Audits architectural remodeling (split-AC, solar, balcony glazing) against structural risers and statutes.",
+                parameters = new
+                {
+                    unitId = "string",
+                    description = "string",
+                    category = "string ('Balcony'|'Facade'|'Solar'|'HVAC')"
+                }
+            },
+            new
+            {
+                name = "run_governance_and_voting_workflow",
+                description = "Calculates statutory voting tallies, verifies 1-owner-1-vote thresholds, and checks quorum.",
+                parameters = new
+                {
+                    communityId = "string",
+                    resolutionId = "string (guid)",
+                    action = "string ('CheckQuorum'|'Tally'|'Adopt')"
+                }
+            },
+            new
+            {
+                name = "post_announcement_or_direct_message",
+                description = "Broadcasts announcements or emergency alerts to community residents.",
+                parameters = new
+                {
+                    communityId = "string",
+                    title = "string",
+                    messageBody = "string",
+                    targetAudience = "string ('AllResidents'|'StackA1'|'BuildingA')"
+                }
+            },
+            new
+            {
+                name = "security_approvals_sos_and_vault",
+                description = "Approves/rejects pending human-in-the-loop AiActions, reveals emergency access PINs, or triggers SOS broadcast.",
+                parameters = new
+                {
+                    action = "string ('Approve'|'Reject'|'EmergencySosBroadcast')",
+                    targetId = "string (guid)"
+                }
+            },
+            new
+            {
+                name = "generate_custom_info_image",
+                description = "Renders notice posters, shutoff valve guides, or waste segregation graphics.",
+                parameters = new
+                {
+                    prompt = "string",
+                    communityId = "string"
+                }
+            }
+        };
+
+        return JsonSerializer.Serialize(tools, JsonOpts);
     }
 
     private static IReadOnlyList<string> ParseOptionsList(string? raw)

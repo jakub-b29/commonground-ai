@@ -107,7 +107,14 @@ public sealed class WorkspaceUiState
         WorkspaceAccountKind accountKind = WorkspaceAccountKind.RegularAccount,
         Guid? membershipId = null)
     {
-        ActiveSecurityRole = role;
+        if (account?.Role == WorkspaceSecurityRole.FirmManager || role == WorkspaceSecurityRole.FirmManager)
+        {
+            ActiveSecurityRole = WorkspaceSecurityRole.FirmManager;
+        }
+        else
+        {
+            ActiveSecurityRole = role;
+        }
         ActiveAccountKind = accountKind;
         if (membershipId.HasValue)
         {

@@ -42,9 +42,9 @@ public static class AuthEndpoints
     private static string NormalizeFirmCode(string code)
         => (code ?? string.Empty).Trim().ToUpperInvariant();
 
-    private static async Task SignInMinimalAsync(HttpContext http, Guid userId, Guid? activeMembershipId)
+    private static async Task SignInMinimalAsync(HttpContext http, Guid userId, Guid? activeMembershipId, WorkspaceSecurityRole? role = null)
     {
-        var principal = WorkspaceClaims.CreatePrincipal(userId, activeMembershipId);
+        var principal = WorkspaceClaims.CreatePrincipal(userId, activeMembershipId, role);
         var properties = new AuthenticationProperties
         {
             IsPersistent = true,
@@ -153,7 +153,7 @@ public static class AuthEndpoints
                 if (approved.Count == 1)
                 {
                     var active = approved[0];
-                    await SignInMinimalAsync(http, user.Id, active.Id);
+                    await SignInMinimalAsync(http, user.Id, active.Id, active.Role);
                     var safe = SafeReturnUrl(returnUrl);
                     if (!string.IsNullOrWhiteSpace(safe))
                         return Results.Redirect(safe);
@@ -163,13 +163,14 @@ public static class AuthEndpoints
 
                 if (approved.Count > 1)
                 {
-                    await SignInMinimalAsync(http, user.Id, null);
+                    var best = approved.OrderByDescending(m => m.Role == WorkspaceSecurityRole.FirmManager ? 1 : 0).First();
+                    await SignInMinimalAsync(http, user.Id, best.Id, best.Role);
                     return Results.Redirect("/choose-membership");
                 }
 
                 if (pending.Count > 0)
                 {
-                    await SignInMinimalAsync(http, user.Id, pending[0].Id);
+                    await SignInMinimalAsync(http, user.Id, pending[0].Id, pending[0].Role);
                     return Results.Redirect(pending[0].Status == WorkspaceMembershipStatus.PendingEmailConfirmation ? "/verify-email" : "/pending");
                 }
 
@@ -190,7 +191,7 @@ public static class AuthEndpoints
                 .ToListAsync(ct);
             var legacyApproved = legacyMemberships.FirstOrDefault(m => m.ApprovalStatus == WorkspaceMembershipStatus.Approved);
             var legacyActiveId = legacyApproved?.Id ?? legacyMemberships.FirstOrDefault()?.Id;
-            await SignInMinimalAsync(http, legacy.Id, legacyActiveId);
+            await SignInMinimalAsync(http, legacy.Id, legacyActiveId, legacy.Role);
             var legacySafe = SafeReturnUrl(returnUrl);
             if (!string.IsNullOrWhiteSpace(legacySafe))
                 return Results.Redirect(legacySafe);
@@ -316,7 +317,7 @@ public static class AuthEndpoints
             if (firm.RequireEmailConfirmation && !firm.IsEmailConfirmed)
                 return Results.Redirect($"/verify-firm-email?firmId={firm.Id}");
 
-            await SignInMinimalAsync(http, user.Id, membership.Id);
+            await SignInMinimalAsync(http, user.Id, membership.Id, membership.Role);
             return Results.Redirect("/admin");
         }
         catch
@@ -446,7 +447,7 @@ public static class AuthEndpoints
                 .FirstOrDefaultAsync(ct);
             if (approved is not null)
             {
-                await SignInMinimalAsync(http, user.Id, approved.Id);
+                await SignInMinimalAsync(http, user.Id, approved.Id, approved.Role);
                 var firstProperty = await FirstAccessiblePropertyAsync(db, approved.Id, approved.ManagementFirmId, approved.Role, ct);
                 return Results.Redirect(LandingForRole(approved.Role, firstProperty));
             }
@@ -455,7 +456,7 @@ public static class AuthEndpoints
                 .Where(m => m.UserId == user.Id && (m.Status == WorkspaceMembershipStatus.PendingApproval || m.Status == WorkspaceMembershipStatus.PendingEmailConfirmation))
                 .OrderBy(m => m.ManagementFirmId)
                 .FirstOrDefaultAsync(ct);
-            await SignInMinimalAsync(http, user.Id, pending?.Id);
+            await SignInMinimalAsync(http, user.Id, pending?.Id, pending?.Role);
             return Results.Redirect("/pending");
         }
         catch
@@ -637,7 +638,7 @@ public static class AuthEndpoints
                     await db.SaveChangesAsync(ct);
                 }
 
-                await SignInMinimalAsync(http, user.Id, membership.Id);
+                await SignInMinimalAsync(http, user.Id, membership.Id, membership.Role);
                 if (membership.Status == WorkspaceMembershipStatus.Approved)
                 {
                     var firstProperty = await FirstAccessiblePropertyAsync(db, membership.Id, membership.ManagementFirmId, membership.Role, ct);
@@ -761,7 +762,7 @@ public static class AuthEndpoints
             }
             else if (membership.Status == WorkspaceMembershipStatus.Approved)
             {
-                await SignInMinimalAsync(http, user.Id, membership.Id);
+                await SignInMinimalAsync(http, user.Id, membership.Id, membership.Role);
                 var firstProperty = await FirstAccessiblePropertyAsync(db, membership.Id, membership.ManagementFirmId, membership.Role, ct);
                 return Results.Redirect(LandingForRole(membership.Role, firstProperty));
             }
@@ -796,7 +797,7 @@ public static class AuthEndpoints
                 }
             }
 
-            await SignInMinimalAsync(http, user.Id, membership.Id);
+            await SignInMinimalAsync(http, user.Id, membership.Id, membership.Role);
             return Results.Redirect("/pending");
         }
         catch

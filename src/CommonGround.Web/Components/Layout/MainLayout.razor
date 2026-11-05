@@ -74,12 +74,28 @@
                 UiState.ClearCommunitySelection();
                 return;
             }
-            var role = WorkspaceClaims.GetRole(user);
+            var role = await Access.GetRoleAsync();
+            var account = await Access.GetAccountAsync();
+            if (!role.HasValue || role.Value == WorkspaceSecurityRole.Resident)
+            {
+                if (account?.Role is not null && account.Role != WorkspaceSecurityRole.Resident)
+                {
+                    role = account.Role;
+                }
+                else
+                {
+                    role ??= WorkspaceClaims.GetRole(user);
+                }
+            }
             WorkspaceClaims.TryGetFirmId(user, out var firmId);
+            if (firmId == Guid.Empty)
+            {
+                var accessFirmId = await Access.GetFirmIdAsync();
+                if (accessFirmId.HasValue) firmId = accessFirmId.Value;
+            }
             var firmCode = user.FindFirst(WorkspaceClaimTypes.FirmCode)?.Value ?? string.Empty;
             WorkspaceClaims.TryGetCommunityId(user, out var primary);
-            var account = await Access.GetAccountAsync();
-            UiState.SyncFromClaims(role, firmId == Guid.Empty ? null : firmId, firmCode, primary == Guid.Empty ? null : primary, account);
+            UiState.SyncFromClaims(role.Value, firmId == Guid.Empty ? null : firmId, firmCode, primary == Guid.Empty ? null : primary, account);
         }
         catch
         {

@@ -211,7 +211,7 @@ else
         try
         {
             var firmId = _firmId.Value;
-            _pending = (await MembershipService.GetPendingApprovalsAsync(firmId, _actorId.Value)).ToList();
+            _pending = (await MembershipService.GetPendingApprovalsAsync(firmId, _actorId ?? Guid.Empty)).ToList();
             await using var db = await DbFactory.CreateDbContextAsync();
             _invitations = await db.Invitations.AsNoTracking()
                 .Where(i => i.ManagementFirmId == firmId)

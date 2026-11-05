@@ -200,7 +200,7 @@ else
                 && (m.Role == WorkspaceSecurityRole.FirmManager || m.Role == WorkspaceSecurityRole.PropertyManager));
         if (_firmId.HasValue && _firmId.Value != Guid.Empty)
         {
-            membershipsQuery = membershipsQuery.Where(m => m.ManagementFirmId == null || m.ManagementFirmId == _firmId.Value);
+            membershipsQuery = membershipsQuery.Where(m => m.ManagementFirmId == _firmId.Value);
         }
         var memberships = await membershipsQuery.ToListAsync();
         var userIds = memberships.Select(m => m.UserId).Distinct().ToList();

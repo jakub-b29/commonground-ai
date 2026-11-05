@@ -207,6 +207,7 @@ public static class MuseSparkDiscoveryPrompts
             + "2. Respect the user's highest resolved permission envelope for the target property. If an action is not permitted for the user's role or granted flags, call check_account_permission or explain why in your final response. "
             + "3. Examine the scratchpad history: inspect real observations from prior steps (e.g., newly created UnitId, ResidentProfileId, or generated registration links) and pass those real values into subsequent tool arguments. "
             + "4. When all user sub-goals are fulfilled, set isFinalAnswer to true and return a clear, structured markdown synthesis in " + uiLangName + " citing created records, account numbers, and deep links. "
+            + "5. CRITICAL UNCERTAINTY & TOOL SELECTION RULE: You MUST ONLY invoke exact tool names that appear verbatim in the AVAILABLE TOOL CATALOG below. NEVER invent, guess, or hallucinate tool names! If you are not completely sure which tool to call, or if essential parameters (such as apartment unit number, resident full name, email, or community) are missing or ambiguous, YOU MUST CALL 'ask_user_clarification' with argument 'question' and optional 'options' to ask the user, or set 'isFinalAnswer': true and explain what information you need. DO NOT call an uncataloged tool! "
             + $"CURRENT USER PERMISSION ENVELOPE (HIGHEST ROLE FOR TARGET PROPERTY): {accountPermissionJson} "
             + $"ACTIVE WORKSPACE SNAPSHOT: {workspaceContextJson} "
             + $"AVAILABLE TOOL CATALOG: {toolCatalogJson} "
