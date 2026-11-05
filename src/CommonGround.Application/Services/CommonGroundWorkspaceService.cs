@@ -714,12 +714,16 @@ public sealed partial class CommonGroundWorkspaceService(
             .ToListAsync(ct);
     }
 
-    public async Task<LegalDocumentSource> AddPropertyDocumentAsync(
+    public async Task<LegalDocumentSource> UploadPropertyDocumentAsync(
         Guid communityId,
         string documentCode,
         string title,
         string category,
         string verbatimText,
+        string? attachmentFileName,
+        string? attachmentContentType,
+        string? attachmentDataUrl,
+        Guid? boundResolutionId,
         WorkspaceSecurityRole actorRole,
         CancellationToken ct = default)
     {
@@ -750,6 +754,17 @@ public sealed partial class CommonGroundWorkspaceService(
         var kind = Enum.TryParse<LegalDocumentKind>(category, true, out var parsedKind)
             ? parsedKind
             : LegalDocumentKind.CommunityStatuteOrCcr;
+        var cleanAttachment = (attachmentDataUrl ?? string.Empty).Trim();
+        if (cleanAttachment.Length > 4_000_000)
+        {
+            throw new InvalidOperationException("Document attachment is too large (4 MB limit).");
+        }
+        Resolution? boundResolution = null;
+        if (boundResolutionId.HasValue && boundResolutionId.Value != Guid.Empty)
+        {
+            boundResolution = community.Resolutions.FirstOrDefault(r => r.Id == boundResolutionId.Value)
+                ?? throw new InvalidOperationException("Bound resolution not found in this property.");
+        }
         var doc = new LegalDocumentSource
         {
             CommunityId = community.Id,
@@ -762,11 +777,78 @@ public sealed partial class CommonGroundWorkspaceService(
             VerbatimLegalText = (verbatimText ?? string.Empty).Trim(),
             AppliedInModules = "PropertyDocumentsPanel",
             AcquiredByModel = actorRole.ToString(),
-            AcquiredAtUtc = DateTime.UtcNow
+            AcquiredAtUtc = DateTime.UtcNow,
+            AttachmentFileName = string.IsNullOrWhiteSpace(attachmentFileName) ? null : attachmentFileName.Trim(),
+            AttachmentContentType = string.IsNullOrWhiteSpace(attachmentContentType) ? null : attachmentContentType.Trim(),
+            AttachmentSizeBytes = cleanAttachment.Length,
+            AttachmentDataUrl = string.IsNullOrWhiteSpace(cleanAttachment) ? null : cleanAttachment,
+            BoundResolutionId = boundResolution?.Id
         };
         community.LegalDocuments.Add(doc);
         db.LegalDocuments.Add(doc);
-        await AppendAuditAsync(db, community, actorRole, "PROPERTY_DOCUMENT_ADDED", "Info", $"LegalDocumentSource: {doc.DocumentCode}", $"Property document '{doc.Title}' ({doc.DocumentCode}) filed by {actorRole}.", ct);
+        if (boundResolution is not null)
+        {
+            boundResolution.CitedLegalDocumentCode = doc.DocumentCode;
+            boundResolution.CitedVerbatimLegalExcerpt = doc.VerbatimLegalText.Length > 500 ? doc.VerbatimLegalText[..500] : doc.VerbatimLegalText;
+        }
+        await AppendAuditAsync(db, community, actorRole, "PROPERTY_DOCUMENT_ADDED", "Info", $"LegalDocumentSource: {doc.DocumentCode}", $"Property document '{doc.Title}' ({doc.DocumentCode}) filed by {actorRole}." + (boundResolution is not null ? $" Bound to resolution {boundResolution.Number}." : string.Empty), ct);
+        await db.SaveChangesAsync(ct);
+        return doc;
+    }
+
+    public async Task<LegalDocumentSource> AddPropertyDocumentAsync(
+        Guid communityId,
+        string documentCode,
+        string title,
+        string category,
+        string verbatimText,
+        WorkspaceSecurityRole actorRole,
+        CancellationToken ct = default)
+        => await UploadPropertyDocumentAsync(communityId, documentCode, title, category, verbatimText, null, null, null, null, actorRole, ct);
+
+    public async Task<LegalDocumentSource> BindDocumentToResolutionAsync(
+        Guid communityId,
+        Guid documentId,
+        Guid resolutionId,
+        WorkspaceSecurityRole actorRole,
+        CancellationToken ct = default)
+    {
+        if (!DataSecurityAndPrivacyGuard.IsManagerRole(actorRole))
+        {
+            throw new UnauthorizedAccessException("Only a Firm Manager or Property Manager may bind documents to resolutions.");
+        }
+        await using var db = await CreateDbAsync(ct);
+        var community = await LoadCommunityAsync(db, communityId, ct) ?? throw new InvalidOperationException("Community not found.");
+        var doc = community.LegalDocuments.FirstOrDefault(d => d.Id == documentId)
+            ?? throw new InvalidOperationException("Property document not found.");
+        var resolution = community.Resolutions.FirstOrDefault(r => r.Id == resolutionId)
+            ?? throw new InvalidOperationException("Resolution not found in this property.");
+        DataSecurityAndPrivacyGuard.EnsureCommunityScope(doc, communityId);
+        doc.BoundResolutionId = resolution.Id;
+        resolution.CitedLegalDocumentCode = doc.DocumentCode;
+        resolution.CitedVerbatimLegalExcerpt = doc.VerbatimLegalText.Length > 500 ? doc.VerbatimLegalText[..500] : doc.VerbatimLegalText;
+        await AppendAuditAsync(db, community, actorRole, "PROPERTY_DOCUMENT_BOUND", "Info", $"LegalDocumentSource: {doc.DocumentCode}", $"Property document '{doc.Title}' bound to resolution {resolution.Number} by {actorRole}.", ct);
+        await db.SaveChangesAsync(ct);
+        return doc;
+    }
+
+    public async Task<LegalDocumentSource> UnbindDocumentFromResolutionAsync(
+        Guid communityId,
+        Guid documentId,
+        WorkspaceSecurityRole actorRole,
+        CancellationToken ct = default)
+    {
+        if (!DataSecurityAndPrivacyGuard.IsManagerRole(actorRole))
+        {
+            throw new UnauthorizedAccessException("Only a Firm Manager or Property Manager may unbind documents.");
+        }
+        await using var db = await CreateDbAsync(ct);
+        var community = await LoadCommunityAsync(db, communityId, ct) ?? throw new InvalidOperationException("Community not found.");
+        var doc = community.LegalDocuments.FirstOrDefault(d => d.Id == documentId)
+            ?? throw new InvalidOperationException("Property document not found.");
+        DataSecurityAndPrivacyGuard.EnsureCommunityScope(doc, communityId);
+        doc.BoundResolutionId = null;
+        await AppendAuditAsync(db, community, actorRole, "PROPERTY_DOCUMENT_UNBOUND", "Info", $"LegalDocumentSource: {doc.DocumentCode}", $"Property document '{doc.Title}' unbound by {actorRole}.", ct);
         await db.SaveChangesAsync(ct);
         return doc;
     }

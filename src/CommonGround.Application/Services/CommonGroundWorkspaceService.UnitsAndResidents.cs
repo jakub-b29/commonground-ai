@@ -737,10 +737,17 @@ public sealed partial class CommonGroundWorkspaceService
                 db.Buildings.Add(building);
             }
         }
+        else if (request.BuildingId != Guid.Empty)
+        {
+            building = community.Buildings.FirstOrDefault(b => b.Id == request.BuildingId);
+            if (building is null)
+            {
+                throw new InvalidOperationException("Selected building was not found in this property. Pick an existing building from the list instead of guessing an ID.");
+            }
+        }
         else
         {
-            building = community.Buildings.FirstOrDefault(b => b.Id == request.BuildingId)
-                ?? community.Buildings.OrderBy(b => b.Name).FirstOrDefault();
+            building = community.Buildings.OrderBy(b => b.Name).FirstOrDefault();
             if (building is null)
             {
                 building = new Building
@@ -1868,11 +1875,11 @@ public sealed partial class CommonGroundWorkspaceService
         var warnings = new List<string>();
         var requiresOverride = false;
 
-        if (isPrimaryResident && activeAssignments.Any(a => a.IsPrimaryResident))
+        if (isPrimaryResident && activeAssignments.Any(a => a.IsPrimaryResident && a.Status == UnitAssignmentStatus.Active))
         {
             var existingPrimary = activeAssignments.First(a => a.IsPrimaryResident);
-            warnings.Add($"Unit {unit.UnitNumber} already has an active Primary Resident ({existingPrimary.ResidentProfile?.FullName ?? "Resident"} - {existingPrimary.ResidentProfile?.ResidentAccountNumber}).");
-            requiresOverride = true;
+            warnings.Add($"Unit {unit.UnitNumber} already has an active Primary Resident ({existingPrimary.ResidentProfile?.FullName ?? "Resident"} - {existingPrimary.ResidentProfile?.ResidentAccountNumber}). The previous primary flag will be demoted.");
+            requiresOverride = false;
         }
 
         if (proposedType == ResidentAssignmentType.Tenant && activeAssignments.Any(a => a.AssignmentType == ResidentAssignmentType.OwnerResident))

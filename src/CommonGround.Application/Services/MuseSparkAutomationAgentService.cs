@@ -602,7 +602,7 @@ public sealed class SparkAgentPermissionEvaluator
             return new SparkAgentPermissionEvaluationResult(true, 0, 0);
         }
 
-        if (normalizedTool is "update_community_profile" or "upsert_community_contact" or "delete_community_contact" or "add_property_document")
+        if (normalizedTool is "update_community_profile" or "upsert_community_contact" or "delete_community_contact" or "add_property_document" or "upload_property_document" or "bind_document_to_resolution" or "bind_property_document" or "unbind_document_from_resolution")
         {
             const WorkspacePermissionFlags required = WorkspacePermissionFlags.ManagePropertySettings;
             if (!context.HasFlag(required))
@@ -1522,6 +1522,9 @@ public sealed class SparkAgentToolExecutor(
                         documentCode = d.DocumentCode,
                         title = d.Title,
                         category = d.Kind.ToString(),
+                        hasAttachment = !string.IsNullOrWhiteSpace(d.AttachmentDataUrl),
+                        attachmentFileName = d.AttachmentFileName,
+                        boundResolutionId = d.BoundResolutionId,
                         excerpt = d.VerbatimLegalText.Length > 240 ? d.VerbatimLegalText[..240] + "..." : d.VerbatimLegalText
                     }).ToList();
                     return MakeResult(new { communityId = comId, totalCount = rows.Count, documents = rows },
@@ -1531,6 +1534,7 @@ public sealed class SparkAgentToolExecutor(
 
                 // C17c. add_property_document (write requires ManagePropertySettings)
                 case "add_property_document":
+                case "upload_property_document":
                 {
                     var code = args.GetValueOrDefault("documentCode") ?? string.Empty;
                     var title = args.GetValueOrDefault("title") ?? string.Empty;
@@ -1538,12 +1542,22 @@ public sealed class SparkAgentToolExecutor(
                     {
                         return MakeError("documentCode and title are required to file a property document.");
                     }
-                    var doc = await workspace.AddPropertyDocumentAsync(
+                    Guid? bindId = null;
+                    var bindRaw = args.GetValueOrDefault("boundResolutionId") ?? args.GetValueOrDefault("resolutionId");
+                    if (Guid.TryParse(bindRaw, out var parsedBind) && parsedBind != Guid.Empty)
+                    {
+                        bindId = parsedBind;
+                    }
+                    var doc = await workspace.UploadPropertyDocumentAsync(
                         comId,
                         code,
                         title,
                         args.GetValueOrDefault("category") ?? LegalDocumentKind.CommunityStatuteOrCcr.ToString(),
                         args.GetValueOrDefault("verbatimText") ?? args.GetValueOrDefault("notes") ?? string.Empty,
+                        args.GetValueOrDefault("attachmentFileName"),
+                        args.GetValueOrDefault("attachmentContentType"),
+                        args.GetValueOrDefault("attachmentDataUrl"),
+                        bindId,
                         context.EffectiveRole,
                         ct);
                     return MakeResult(new
@@ -1551,16 +1565,81 @@ public sealed class SparkAgentToolExecutor(
                         documentId = doc.Id,
                         documentCode = doc.DocumentCode,
                         title = doc.Title,
-                        category = doc.Kind.ToString()
-                    }, $"Filed property document '{doc.Title}' ({doc.DocumentCode})", $"/properties/{comId}/governance");
+                        category = doc.Kind.ToString(),
+                        hasAttachment = !string.IsNullOrWhiteSpace(doc.AttachmentDataUrl),
+                        boundResolutionId = doc.BoundResolutionId
+                    }, $"Filed property document '{doc.Title}' ({doc.DocumentCode})" + (bindId.HasValue ? " bound to decision." : string.Empty), $"/properties/{comId}/governance");
+                }
+
+                // C17d. bind_document_to_resolution
+                case "bind_document_to_resolution":
+                case "bind_property_document":
+                case "unbind_document_from_resolution":
+                {
+                    var docRaw = args.GetValueOrDefault("documentId");
+                    Guid.TryParse(args.GetValueOrDefault("documentCode") is string dc && Guid.TryParse(dc, out var asGuid) ? dc : null, out _);
+                    var isUnbind = toolName.Contains("unbind", StringComparison.OrdinalIgnoreCase);
+                    if (!Guid.TryParse(docRaw, out var documentId) || documentId == Guid.Empty)
+                    {
+                        await using var bindDb = await dbFactory.CreateDbContextAsync(ct);
+                        var code = (args.GetValueOrDefault("documentCode") ?? string.Empty).Trim();
+                        if (!string.IsNullOrWhiteSpace(code))
+                        {
+                            var found = await bindDb.LegalDocuments.AsNoTracking()
+                                .Where(d => d.CommunityId == comId && d.DocumentCode.ToUpper() == code.ToUpperInvariant())
+                                .Select(d => d.Id)
+                                .FirstOrDefaultAsync(ct);
+                            if (found != Guid.Empty)
+                            {
+                                documentId = found;
+                            }
+                        }
+                    }
+                    if (documentId == Guid.Empty)
+                    {
+                        return MakeError("documentId (or documentCode) is required to bind a document.");
+                    }
+                    if (isUnbind)
+                    {
+                        var unbound = await workspace.UnbindDocumentFromResolutionAsync(comId, documentId, context.EffectiveRole, ct);
+                        return MakeResult(new { documentId = unbound.Id, documentCode = unbound.DocumentCode },
+                            $"Unbound '{unbound.Title}' from its decision.", $"/properties/{comId}/governance");
+                    }
+                    var resRaw = args.GetValueOrDefault("resolutionId") ?? args.GetValueOrDefault("boundResolutionId");
+                    if (!Guid.TryParse(resRaw, out var resolutionId) || resolutionId == Guid.Empty)
+                    {
+                        return MakeError("resolutionId is required to bind a document to a decision.");
+                    }
+                    var bound = await workspace.BindDocumentToResolutionAsync(comId, documentId, resolutionId, context.EffectiveRole, ct);
+                    return MakeResult(new { documentId = bound.Id, documentCode = bound.DocumentCode, boundResolutionId = bound.BoundResolutionId },
+                        $"Bound '{bound.Title}' to decision.", $"/properties/{comId}/governance");
                 }
 
                 // D18. create_building
                 case "create_building":
                 {
+                    var requestedName = (args.GetValueOrDefault("name") ?? "Building A").Trim();
+                    await using (var lookupDb = await dbFactory.CreateDbContextAsync(ct))
+                    {
+                        var existingBld = await lookupDb.Buildings.AsNoTracking()
+                            .Where(b => b.CommunityId == comId && b.Name.ToUpper() == requestedName.ToUpperInvariant())
+                            .Select(b => new { b.Id, b.Name, b.FloorsCount, b.StairwellsCount })
+                            .FirstOrDefaultAsync(ct);
+                        if (existingBld is not null)
+                        {
+                            return MakeResult(new
+                            {
+                                buildingId = existingBld.Id,
+                                name = existingBld.Name,
+                                floorsCount = existingBld.FloorsCount,
+                                stairwellsCount = existingBld.StairwellsCount,
+                                reusedExisting = true
+                            }, $"Reused existing building '{existingBld.Name}' (no duplicate created)", $"/properties/{comId}/infrastructure");
+                        }
+                    }
                     var bld = await workspace.CreateBuildingAsync(
                         comId,
-                        args.GetValueOrDefault("name") ?? "Building A",
+                        requestedName,
                         args.GetValueOrDefault("streetAddress") ?? "Main Street",
                         int.TryParse(args.GetValueOrDefault("floorsCount"), out var fl) ? fl : 5,
                         int.TryParse(args.GetValueOrDefault("stairwellsCount"), out var st) ? st : 2,
@@ -1572,7 +1651,8 @@ public sealed class SparkAgentToolExecutor(
                         buildingId = bld.Id,
                         name = bld.Name,
                         floorsCount = bld.FloorsCount,
-                        stairwellsCount = bld.StairwellsCount
+                        stairwellsCount = bld.StairwellsCount,
+                        reusedExisting = false
                     }, $"Created building '{bld.Name}' with {bld.FloorsCount} floors", $"/properties/{comId}/infrastructure");
                 }
 
@@ -1600,7 +1680,18 @@ public sealed class SparkAgentToolExecutor(
                 case "create_unit_wizard":
                 {
                     var bldId = Guid.TryParse(args.GetValueOrDefault("buildingId"), out var bid) ? bid : Guid.Empty;
-                    var unitNum = args.GetValueOrDefault("unitNumber") ?? "A-501";
+                    var unitNum = (args.GetValueOrDefault("unitNumber") ?? "A-501").Trim();
+                    if (unitNum.Length > 1 && unitNum.All(char.IsDigit))
+                    {
+                        var bldName = args.GetValueOrDefault("newBuildingName") ?? "Building A";
+                        var letter = bldName.Trim().ToUpperInvariant() switch
+                        {
+                            var n when n.Contains("BUILDING B") || n.Contains(" B ") || n.EndsWith(" B") => "B",
+                            var n when n.Contains("BUILDING C") || n.Contains(" C ") || n.EndsWith(" C") => "C",
+                            _ => "A"
+                        };
+                        unitNum = $"{letter}-{unitNum}";
+                    }
                     var req = new UnitCreationWizardRequest(
                         CommunityId: comId,
                         BuildingId: bldId,
@@ -1663,9 +1754,20 @@ public sealed class SparkAgentToolExecutor(
                 case "update_unit_details":
                 {
                     var unitId = Guid.TryParse(args.GetValueOrDefault("unitId"), out var uid) ? uid : Guid.Empty;
+                    string? requestedNumber = args.GetValueOrDefault("unitNumber");
+                    if (unitId != Guid.Empty && string.IsNullOrWhiteSpace(requestedNumber))
+                    {
+                        await using (var numDb = await dbFactory.CreateDbContextAsync(ct))
+                        {
+                            requestedNumber = await numDb.Units.AsNoTracking()
+                                .Where(u => u.Id == unitId && u.CommunityId == comId)
+                                .Select(u => u.UnitNumber)
+                                .FirstOrDefaultAsync(ct);
+                        }
+                    }
                     var input = new UnitUpdateInput(
                         BuildingId: Guid.TryParse(args.GetValueOrDefault("buildingId"), out var bid) ? bid : Guid.Empty,
-                        UnitNumber: args.GetValueOrDefault("unitNumber") ?? "101",
+                        UnitNumber: string.IsNullOrWhiteSpace(requestedNumber) ? "101" : requestedNumber.Trim(),
                         FloorNumber: int.TryParse(args.GetValueOrDefault("floorNumber"), out var fl) ? fl : 1,
                         StairwellNumber: int.TryParse(args.GetValueOrDefault("stairwellNumber"), out var st) ? st : 1,
                         VerticalStackCode: args.GetValueOrDefault("verticalStackCode") ?? "STACK-A1",
@@ -4575,26 +4677,44 @@ public sealed class MuseSparkAutomationAgentService(
             new
             {
                 name = "add_property_document",
-                description = "Files a property document (title, code, category, verbatim excerpt). Requires ManagePropertySettings.",
+                description = "Files a property document (title, code, category, verbatim excerpt). Requires ManagePropertySettings. (Alias: upload_property_document supports attachmentDataUrl file bytes + boundResolutionId.)",
                 parameters = new
                 {
                     communityId = "string (optional property guid)",
                     documentCode = "string (e.g. 'HOUSE-RULES-2026')",
                     title = "string",
                     category = "string (LegalDocumentKind enum name)",
-                    verbatimText = "string (excerpt, file name or notes)"
+                    verbatimText = "string (excerpt, file name or notes)",
+                    attachmentFileName = "string (optional upload file name)",
+                    attachmentContentType = "string (optional MIME type)",
+                    attachmentDataUrl = "string (optional data: URL file bytes, 4 MB limit)",
+                    boundResolutionId = "string (optional resolution guid to bind)"
+                }
+            },
+            new
+            {
+                name = "bind_document_to_resolution",
+                description = "Binds a filed property document to a governance decision so votes cite the attachment. (Aliases: bind_property_document, unbind_document_from_resolution.) Requires ManagePropertySettings.",
+                parameters = new
+                {
+                    communityId = "string (optional property guid)",
+                    documentId = "string (document guid; or pass documentCode)",
+                    documentCode = "string (optional code lookup when id unknown)",
+                    resolutionId = "string (decision guid)"
                 }
             },
             new
             {
                 name = "create_building",
-                description = "Adds a building to a community with floors and stairwells.",
+                description = "Creates a new standalone building with the standard 3-stack riser structure (STACK-A1, STACK-A2, STACK-B1). Reuses an existing building with the same name instead of creating a duplicate.",
                 parameters = new
                 {
-                    communityId = "string",
-                    name = "string (e.g. 'Building A')",
-                    totalFloors = "int",
-                    stairwellCount = "int"
+                    communityId = "string (guid)",
+                    name = "string (call query_system_entities with entityType 'buildings' first; reuse the existing buildingId when the name already exists)",
+                    streetAddress = "string",
+                    floorsCount = "int",
+                    stairwellsCount = "int",
+                    constructionYear = "int"
                 }
             },
             new
@@ -4672,9 +4792,9 @@ public sealed class MuseSparkAutomationAgentService(
                     fullName = "string (e.g. 'Anna Nowak')",
                     firstName = "string",
                     lastName = "string",
-                    email = "string",
+                    email = "string (required unique resident email; never reuse a manager email or 'resident@example.local' placeholder for a real person)",
                     phone = "string",
-                    unitNumber = "string (optional unit to link, e.g. 'A-101')",
+                    unitNumber = "string (optional unit to link, e.g. 'A-101'; preserve the exact letter prefix, never strip to digits)",
                     unitId = "string (optional unit guid to link)",
                     preferredLanguage = "string ('PL'|'EN'|'ES'|'DE')",
                     isPrimaryResident = "bool"

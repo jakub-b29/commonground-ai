@@ -291,6 +291,11 @@ public sealed class LegalDocumentSource : ICommunityScoped
     public string KeyProvisionsSummary { get; set; } = string.Empty;
     public string VerbatimLegalText { get; set; } = string.Empty;
     public string AppliedInModules { get; set; } = string.Empty;
+    public string? AttachmentFileName { get; set; }
+    public string? AttachmentContentType { get; set; }
+    public long AttachmentSizeBytes { get; set; }
+    public string? AttachmentDataUrl { get; set; }
+    public Guid? BoundResolutionId { get; set; }
 }
 
 public sealed class SecurityAuditEvent : ICommunityScoped

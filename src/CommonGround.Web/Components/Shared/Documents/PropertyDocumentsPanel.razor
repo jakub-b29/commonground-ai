@@ -48,6 +48,7 @@
                     <th>Code</th>
                     <th>Title / Category</th>
                     <th>Attachment</th>
+                    <th>Bound decision</th>
                     <th>Excerpt</th>
                     <th>Actions</th>
                 </tr>
@@ -55,7 +56,7 @@
             <tbody>
                 @if (Filtered.Count == 0)
                 {
-                    <tr><td colspan="5" style="color: var(--text-secondary);">No property documents filed yet.</td></tr>
+                    <tr><td colspan="6" style="color: var(--text-secondary);">No property documents filed yet.</td></tr>
                 }
                 @foreach (var d in Filtered)
                 {
@@ -66,12 +67,17 @@
                             <div style="font-size: 0.72rem; color: var(--text-secondary);"><span class="cg-badge cg-badge-neutral">@d.Kind</span></div>
                         </td>
                         <td class="mono" style="font-size: 0.75rem;">@AttachmentNote(d)</td>
+                        <td style="font-size: 0.75rem;">@BoundLabel(d)</td>
                         <td style="font-size: 0.75rem; color: var(--text-secondary);">@Excerpt(d.VerbatimLegalText)</td>
                         <td>
                             <div style="display: flex; gap: 0.35rem; flex-wrap: wrap;">
                                 <button type="button" class="cg-btn cg-btn-sm" @onclick="() => _selectedId = d.Id">View</button>
                                 @if (_canEdit)
                                 {
+                                    @if (d.BoundResolutionId.HasValue)
+                                    {
+                                        <button type="button" class="cg-btn cg-btn-sm" disabled="@_isBusy" @onclick="() => UnbindAsync(d.Id)">Unbind</button>
+                                    }
                                     <button type="button" class="cg-btn cg-btn-sm" disabled="@_isBusy" @onclick="() => DeleteAsync(d.Id)">Delete</button>
                                 }
                             </div>
@@ -91,8 +97,42 @@
             </div>
             <div style="font-size: 0.72rem; color: var(--text-secondary); margin-block: 0.25rem 0.45rem;">
                 @Selected.Kind · Filed @Selected.AcquiredAtUtc.ToString("yyyy-MM-dd") via @Selected.AcquiredByModel
+                @if (!string.IsNullOrWhiteSpace(Selected.AttachmentFileName))
+                {
+                    <span> · File: @Selected.AttachmentFileName (@Selected.AttachmentContentType, <span class="num">@Selected.AttachmentSizeBytes</span> chars)</span>
+                }
+                @if (Selected.BoundResolutionId.HasValue)
+                {
+                    <span> · Bound to @BoundLabel(Selected)</span>
+                }
             </div>
+            @if (!string.IsNullOrWhiteSpace(Selected.AttachmentDataUrl) && (Selected.AttachmentContentType?.StartsWith("image/", StringComparison.OrdinalIgnoreCase) == true))
+            {
+                <img src="@Selected.AttachmentDataUrl" alt="Document scan for @Selected.Title" style="max-width: 100%; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-control); margin-bottom: 0.5rem;" />
+            }
+            else if (!string.IsNullOrWhiteSpace(Selected.AttachmentDataUrl))
+            {
+                <div style="margin-bottom: 0.5rem;"><a class="cg-btn cg-btn-sm" href="@Selected.AttachmentDataUrl" download="@(Selected.AttachmentFileName ?? Selected.DocumentCode)">Download attachment</a></div>
+            }
             <div class="mono" style="white-space: pre-wrap; font-size: 0.75rem; background: var(--color-bg-surface); padding: 0.625rem; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-control);">@Selected.VerbatimLegalText</div>
+            @if (_canEdit && Resolutions.Count > 0)
+            {
+                <div class="cg-grid-3" style="margin-top: 0.5rem;">
+                    <div style="grid-column: span 2;">
+                        <label for="propdoc-bind">Bind to governance decision</label>
+                        <select id="propdoc-bind" @bind="_bindResolutionId">
+                            <option value="">No binding</option>
+                            @foreach (var r in Resolutions)
+                            {
+                                <option value="@r.Id" @key="r.Id">@r.Number — @r.Title</option>
+                            }
+                        </select>
+                    </div>
+                    <div style="display: flex; align-items: flex-end;">
+                        <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="BindAsync">Bind document</button>
+                    </div>
+                </div>
+            }
         </div>
     }
 
@@ -119,11 +159,25 @@
                     </select>
                 </div>
                 <div>
-                    <label for="propdoc-file">File name (no binary upload)</label>
-                    <input id="propdoc-file" class="mono" @bind="_fileName" placeholder="e.g. house-rules-2026.pdf" />
+                    <label for="propdoc-file">Upload scan (PDF or image)</label>
+                    <InputFile OnChange="OnFileSelected" accept="application/pdf,image/*" />
+                    @if (!string.IsNullOrWhiteSpace(_fileName))
+                    {
+                        <div class="mono" style="font-size: 0.72rem; color: var(--text-secondary); margin-top: 0.25rem;">@_fileName (@_fileType, <span class="num">@_fileChars</span> chars)</div>
+                    }
                 </div>
-                <div style="grid-column: span 2;">
-                    <label for="propdoc-notes">Notes / verbatim excerpt</label>
+                <div>
+                    <label for="propdoc-bind-new">Bind to decision (optional)</label>
+                    <select id="propdoc-bind-new" @bind="_bindNewResolutionId">
+                        <option value="">No binding</option>
+                        @foreach (var r in Resolutions)
+                        {
+                            <option value="@r.Id" @key="r.Id">@r.Number — @r.Title</option>
+                        }
+                    </select>
+                </div>
+                <div style="grid-column: span 3;">
+                    <label for="propdoc-notes">Notes / verbatim excerpt (Spark reads this)</label>
                     <textarea id="propdoc-notes" rows="2" @bind="_notes" placeholder="Paste the key excerpt or filing notes..."></textarea>
                 </div>
             </div>
@@ -142,6 +196,7 @@
 @code {
     [Parameter, EditorRequired] public Guid CommunityId { get; set; }
     [Parameter, EditorRequired] public IReadOnlyList<LegalDocumentSource> Documents { get; set; } = [];
+    [Parameter] public IReadOnlyList<Resolution> Resolutions { get; set; } = [];
     [Parameter] public EventCallback OnChanged { get; set; }
     [Parameter] public bool CanEdit { get; set; } = true;
 
@@ -156,6 +211,11 @@
     private string _code = string.Empty;
     private LegalDocumentKind _category = LegalDocumentKind.CommunityStatuteOrCcr;
     private string _fileName = string.Empty;
+    private string _fileType = string.Empty;
+    private long _fileChars;
+    private string _fileDataUrl = string.Empty;
+    private string _bindNewResolutionId = string.Empty;
+    private string _bindResolutionId = string.Empty;
     private string _notes = string.Empty;
 
     private LegalDocumentSource? Selected => Documents.FirstOrDefault(d => d.Id == _selectedId);
@@ -214,6 +274,10 @@
 
     private static string AttachmentNote(LegalDocumentSource doc)
     {
+        if (!string.IsNullOrWhiteSpace(doc.AttachmentFileName))
+        {
+            return $"{doc.AttachmentFileName} ({doc.AttachmentContentType ?? "file"})";
+        }
         const string marker = "[Attachment:";
         var text = doc.VerbatimLegalText ?? string.Empty;
         var idx = text.IndexOf(marker, StringComparison.Ordinal);
@@ -224,6 +288,49 @@
         var end = text.IndexOf(']', idx);
         var inner = end < 0 ? text[(idx + marker.Length)..] : text.Substring(idx + marker.Length, end - idx - marker.Length);
         return string.IsNullOrWhiteSpace(inner) ? "—" : inner.Trim();
+    }
+
+    private string BoundLabel(LegalDocumentSource doc)
+    {
+        if (!doc.BoundResolutionId.HasValue)
+        {
+            return "—";
+        }
+        var match = Resolutions.FirstOrDefault(r => r.Id == doc.BoundResolutionId.Value);
+        return match is null ? $"Bound {doc.BoundResolutionId.Value:D}" : $"Res {match.Number} — {match.Title}";
+    }
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        _fileName = string.Empty;
+        _fileType = string.Empty;
+        _fileChars = 0;
+        _fileDataUrl = string.Empty;
+        var file = e.File;
+        if (file is null)
+        {
+            return;
+        }
+        const long maxBytes = 3_000_000;
+        try
+        {
+            await using var stream = file.OpenReadStream(maxBytes);
+            await using var buffer = new MemoryStream();
+            await stream.CopyToAsync(buffer);
+            var bytes = buffer.ToArray();
+            _fileName = file.Name;
+            _fileType = string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType;
+            _fileDataUrl = $"data:{_fileType};base64,{Convert.ToBase64String(bytes)}";
+            _fileChars = _fileDataUrl.Length;
+            if (string.IsNullOrWhiteSpace(_notes))
+            {
+                _notes = $"Uploaded {_fileName}. Spark OCR can read the attached scan.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+        }
     }
 
     private async Task AddAsync()
@@ -244,14 +351,68 @@
             {
                 verbatim = $"Filed {_code.Trim()} placeholder excerpt. Full scan pending upload.";
             }
-            var doc = await Workspace.AddPropertyDocumentAsync(
-                CommunityId, _code.Trim(), _title.Trim(), _category.ToString(), verbatim, role);
+            Guid? bindId = Guid.TryParse(_bindNewResolutionId, out var parsedBind) && parsedBind != Guid.Empty ? parsedBind : null;
+            var doc = await Workspace.UploadPropertyDocumentAsync(
+                CommunityId, _code.Trim(), _title.Trim(), _category.ToString(), verbatim,
+                string.IsNullOrWhiteSpace(_fileName) ? null : _fileName.Trim(),
+                string.IsNullOrWhiteSpace(_fileType) ? null : _fileType,
+                string.IsNullOrWhiteSpace(_fileDataUrl) ? null : _fileDataUrl,
+                bindId, role);
             _selectedId = doc.Id;
             _title = string.Empty;
             _code = string.Empty;
             _fileName = string.Empty;
+            _fileType = string.Empty;
+            _fileChars = 0;
+            _fileDataUrl = string.Empty;
+            _bindNewResolutionId = string.Empty;
             _notes = string.Empty;
-            _message = $"Filed property document '{doc.Title}' ({doc.DocumentCode}).";
+            _message = $"Filed property document '{doc.Title}' ({doc.DocumentCode})." + (bindId.HasValue ? " Bound to decision." : string.Empty);
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task BindAsync()
+    {
+        if (Selected is null || !Guid.TryParse(_bindResolutionId, out var resolutionId) || resolutionId == Guid.Empty)
+        {
+            _message = "Select a decision to bind.";
+            return;
+        }
+        _isBusy = true;
+        try
+        {
+            var role = await Access.GetRoleAsync() ?? WorkspaceSecurityRole.PropertyManager;
+            await Workspace.BindDocumentToResolutionAsync(CommunityId, Selected.Id, resolutionId, role);
+            _message = $"Bound '{Selected.Title}' to decision.";
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task UnbindAsync(Guid documentId)
+    {
+        _isBusy = true;
+        try
+        {
+            var role = await Access.GetRoleAsync() ?? WorkspaceSecurityRole.PropertyManager;
+            await Workspace.UnbindDocumentFromResolutionAsync(CommunityId, documentId, role);
+            _message = "Document unbound from decision.";
             await OnChanged.InvokeAsync();
         }
         catch (Exception ex)

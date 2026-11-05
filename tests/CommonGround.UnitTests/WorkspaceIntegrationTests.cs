@@ -1034,34 +1034,85 @@ public sealed class WorkspaceIntegrationTests : IDisposable
                 "Initial assignment"),
             WorkspaceSecurityRole.FirmManager);
 
-        // Check conflict for a second primary resident
+        // Check conflict for a second primary resident: warned but no override required (co-resident flow demotes previous primary)
         var conflict = await _workspace.CheckUnitOccupancyConflictAsync(
             _communityId, unit.Id, ResidentAssignmentType.PrimaryResident, true);
         Assert.True(conflict.HasConflict);
-        Assert.True(conflict.RequiresOverrideReason);
+        Assert.False(conflict.RequiresOverrideReason);
 
-        // Attempting assignment without override reason must throw
+        // Second primary joins as co-resident and demotes the first
+        var second = await _workspace.AssignResidentToUnitManualAsync(
+            new ManualResidentAssignmentRequest(
+                _communityId,
+                unit.BuildingId,
+                unit.Id,
+                true,
+                null,
+                "Adam",
+                "Drugi",
+                $"adam.drugi.{Guid.NewGuid():N}@test.local",
+                "+48 500 111 002",
+                "PL",
+                string.Empty,
+                string.Empty,
+                ResidentAssignmentType.PrimaryResident,
+                UnitAssignmentStatus.Active,
+                true,
+                DateTime.UtcNow,
+                null,
+                "Second primary resident",
+                null),
+            WorkspaceSecurityRole.FirmManager);
+        Assert.NotEqual(Guid.Empty, second.Id);
+
+        // Tenant over active OwnerResident still requires an explicit override reason
+        var ownerUnit = await EnsureUnitAsync(_communityId, "E-302");
+        await _workspace.AssignResidentToUnitManualAsync(
+            new ManualResidentAssignmentRequest(
+                ownerUnit.CommunityId,
+                ownerUnit.BuildingId,
+                ownerUnit.Id,
+                true,
+                null,
+                "Ewa",
+                "Wlasciciel",
+                $"ewa.w.{Guid.NewGuid():N}@test.local",
+                "+48 500 111 003",
+                "PL",
+                string.Empty,
+                string.Empty,
+                ResidentAssignmentType.OwnerResident,
+                UnitAssignmentStatus.Active,
+                true,
+                DateTime.UtcNow,
+                null,
+                "Owner resident",
+                "Initial owner assignment"),
+            WorkspaceSecurityRole.FirmManager);
+        var ownerConflict = await _workspace.CheckUnitOccupancyConflictAsync(
+            ownerUnit.CommunityId, ownerUnit.Id, ResidentAssignmentType.Tenant, false);
+        Assert.True(ownerConflict.RequiresOverrideReason);
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             _workspace.AssignResidentToUnitManualAsync(
                 new ManualResidentAssignmentRequest(
-                    _communityId,
-                    unit.BuildingId,
-                    unit.Id,
+                    ownerUnit.CommunityId,
+                    ownerUnit.BuildingId,
+                    ownerUnit.Id,
                     true,
                     null,
-                    "Adam",
-                    "Drugi",
-                    $"adam.drugi.{Guid.NewGuid():N}@test.local",
-                    "+48 500 111 002",
+                    "Najemca",
+                    "Testowy",
+                    $"najemca.{Guid.NewGuid():N}@test.local",
+                    "+48 500 111 004",
                     "PL",
                     string.Empty,
                     string.Empty,
-                    ResidentAssignmentType.PrimaryResident,
+                    ResidentAssignmentType.Tenant,
                     UnitAssignmentStatus.Active,
-                    true,
+                    false,
                     DateTime.UtcNow,
                     null,
-                    "Second primary resident",
+                    "Tenant over owner",
                     null),
                 WorkspaceSecurityRole.FirmManager));
     }

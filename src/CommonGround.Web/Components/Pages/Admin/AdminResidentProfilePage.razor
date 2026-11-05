@@ -243,6 +243,13 @@ else if (_dossier is null)
                                 </select>
                             </div>
                             <div>
+                                <label>
+                                    <input type="checkbox" @bind="_assignAsPrimary" style="width: auto; margin-right: 0.35rem;" />
+                                    @Loc.T("admin.wizard.primary")
+                                </label>
+                                <div class="mono" style="font-size: 0.72rem; color: var(--text-secondary); margin-top: 0.25rem;">Additional residents join as co-residents. Only check for the main tenant.</div>
+                            </div>
+                            <div>
                                 <label>@Loc.T("admin.profile.overrideNotes")</label>
                                 <input @bind="_assignNotes" placeholder="@Loc.T("admin.profile.overridePh")" />
                             </div>
@@ -770,7 +777,8 @@ else if (_dossier is null)
     private bool _showQuickAssign;
     private Guid _assignCommunityId;
     private Guid _assignUnitId;
-    private ResidentAssignmentType _assignType = ResidentAssignmentType.PrimaryResident;
+    private ResidentAssignmentType _assignType = ResidentAssignmentType.Tenant;
+    private bool _assignAsPrimary;
     private string _assignNotes = string.Empty;
 
     // Household fields
@@ -833,6 +841,8 @@ else if (_dossier is null)
             _allowedCommunityIds = allowedComms.Select(c => c.Id).ToList();
             _firmId = await Access.GetFirmIdAsync() ?? allowedComms.FirstOrDefault()?.ManagementFirmId;
 
+            _dossier = null;
+            StateHasChanged();
             _dossier = await Workspace.GetResidentFullDossierAsync(Id);
             if (_dossier is not null)
             {
@@ -951,11 +961,11 @@ else if (_dossier is null)
                 _dossier.Profile.EmergencyContactPhone,
                 _assignType,
                 UnitAssignmentStatus.Active,
-                true,
+                _assignAsPrimary,
                 DateTime.UtcNow,
                 null,
                 _assignNotes,
-                string.IsNullOrWhiteSpace(_assignNotes) ? "Administrator assignment from Resident Profile" : _assignNotes);
+                string.IsNullOrWhiteSpace(_assignNotes) ? (_assignAsPrimary ? "Primary assignment from Resident Profile" : "Co-resident assignment from Resident Profile") : _assignNotes);
             await Workspace.AssignResidentToUnitManualAsync(req, _role, _actorName, _membershipId);
             _showQuickAssign = false;
             _message = $"{Loc.T("admin.profile.assigned")} {_dossier.Profile.FullName} ({_dossier.Profile.ResidentAccountNumber}) {Loc.T("admin.residents.toUnit")} {targetUnit?.UnitNumber}.";
