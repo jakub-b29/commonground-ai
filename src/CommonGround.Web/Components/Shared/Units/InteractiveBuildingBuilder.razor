@@ -14,7 +14,7 @@
     {
         <div style="margin-block-end: 0.5rem;">
             <label for="builder-bld">@Loc.T("builder.building")</label>
-            <select id="builder-bld" @bind="_buildingId">
+            <select id="builder-bld" @bind="BuildingId">
                 @foreach (var b in _buildings)
                 {
                     <option value="@b.Id">@b.Name</option>
@@ -146,6 +146,7 @@
 @code {
     [Parameter, EditorRequired] public Community Community { get; set; } = default!;
     [Parameter, EditorRequired] public IReadOnlyList<Unit> Units { get; set; } = [];
+    [Parameter] public Guid? SelectedBuildingId { get; set; }
     [Parameter] public Guid SelectedUnitId { get; set; }
     [Parameter] public EventCallback<Guid> OnSelectUnit { get; set; }
     [Parameter] public EventCallback<string> OnBroadcastStackAlert { get; set; }
@@ -153,6 +154,18 @@
 
     private List<Building> _buildings = new();
     private Guid _buildingId = Guid.Empty;
+    private Guid BuildingId
+    {
+        get => _buildingId;
+        set
+        {
+            if (_buildingId != value)
+            {
+                _buildingId = value;
+                SyncActiveBuilding();
+            }
+        }
+    }
     private List<string> _stacks = new() { "STACK-A1", "STACK-A2", "STACK-B1" };
     private int _floors = 4;
     private int _stairwells = 2;
@@ -180,6 +193,19 @@
     protected override void OnParametersSet()
     {
         _buildings = Community.Buildings.OrderBy(b => b.Name).ToList();
+        if (SelectedBuildingId.HasValue && SelectedBuildingId.Value != Guid.Empty && _buildings.Any(b => b.Id == SelectedBuildingId.Value))
+        {
+            _buildingId = SelectedBuildingId.Value;
+        }
+        else if (_buildingId == Guid.Empty || !_buildings.Any(b => b.Id == _buildingId))
+        {
+            _buildingId = _buildings.FirstOrDefault()?.Id ?? Guid.Empty;
+        }
+        SyncActiveBuilding();
+    }
+
+    private void SyncActiveBuilding()
+    {
         var active = _buildings.FirstOrDefault(b => b.Id == _buildingId) ?? _buildings.FirstOrDefault();
         if (active is not null)
         {
@@ -189,6 +215,10 @@
             if (active.RiserStacks.Count > 0)
             {
                 _stacks = active.RiserStacks.OrderBy(r => r.Code).Select(r => r.Code).ToList();
+            }
+            else
+            {
+                _stacks = new() { "STACK-A1", "STACK-A2", "STACK-B1" };
             }
         }
         if (_stacks.Count == 0)

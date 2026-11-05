@@ -1098,10 +1098,14 @@ public sealed partial class CommonGroundWorkspaceService
         CancellationToken ct = default)
     {
         await using var db = await CreateDbAsync(ct);
-        var commQuery = db.Communities.AsNoTracking().Where(c => c.ManagementFirmId == firmId);
+        var commQuery = db.Communities.AsNoTracking();
         if (allowedCommunityIds is not null && allowedCommunityIds.Count > 0)
         {
             commQuery = commQuery.Where(c => allowedCommunityIds.Contains(c.Id));
+        }
+        else if (firmId != Guid.Empty)
+        {
+            commQuery = commQuery.Where(c => c.ManagementFirmId == firmId);
         }
 
         var communities = await commQuery.OrderBy(c => c.Name).ToListAsync(ct);
@@ -1674,10 +1678,14 @@ public sealed partial class CommonGroundWorkspaceService
         CancellationToken ct = default)
     {
         await using var db = await CreateDbAsync(ct);
-        var commQuery = db.Communities.AsNoTracking().Where(c => c.ManagementFirmId == firmId);
+        var commQuery = db.Communities.AsNoTracking();
         if (allowedCommunityIds is not null && allowedCommunityIds.Count > 0)
         {
             commQuery = commQuery.Where(c => allowedCommunityIds.Contains(c.Id));
+        }
+        else if (firmId != Guid.Empty)
+        {
+            commQuery = commQuery.Where(c => c.ManagementFirmId == firmId);
         }
         var communities = await commQuery.ToDictionaryAsync(c => c.Id, ct);
         var commIds = communities.Keys.ToList();

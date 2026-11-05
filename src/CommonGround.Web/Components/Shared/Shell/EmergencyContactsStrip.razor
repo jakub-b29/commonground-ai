@@ -55,7 +55,7 @@
         else
         {
             var first = allowed.OrderBy(c => c.Name).First();
-            UiState.SelectCommunity(first.Id, first.OperatingMode == SystemOperatingMode.UsHoa ? Loc.T("shell.modeUsHoa") : Loc.T("shell.modeHousing"));
+
             targetId = first.Id;
         }
         if (!await Access.CanAccessCommunityAsync(targetId))

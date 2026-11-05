@@ -296,6 +296,7 @@
     [Parameter, EditorRequired] public IReadOnlyList<Building> Buildings { get; set; } = [];
     [Parameter] public IReadOnlyList<ResidentDirectoryRow> ExistingResidents { get; set; } = [];
     [Parameter] public Guid? InitialCommunityId { get; set; }
+    [Parameter] public Guid? InitialBuildingId { get; set; }
     [Parameter] public bool LockCommunity { get; set; }
     [Parameter] public EventCallback<UnitCreationWizardResult> OnUnitCreated { get; set; }
     [Parameter] public EventCallback OnCancel { get; set; }
@@ -364,7 +365,11 @@
                 ? InitialCommunityId.Value
                 : Communities.FirstOrDefault()?.Id ?? Guid.Empty;
         }
-        if (_buildingId == Guid.Empty && CurrentCommunityBuildings.Count > 0)
+        if (InitialBuildingId.HasValue && InitialBuildingId.Value != Guid.Empty && CurrentCommunityBuildings.Any(b => b.Id == InitialBuildingId.Value))
+        {
+            _buildingId = InitialBuildingId.Value;
+        }
+        else if (_buildingId == Guid.Empty && CurrentCommunityBuildings.Count > 0)
         {
             _buildingId = CurrentCommunityBuildings[0].Id;
         }

@@ -1,6 +1,8 @@
 @inject WorkspaceAccessService Access
 @inject NavigationManager Nav
 @inject WorkspaceLocalization Loc
+@inject WorkspaceUiState UiState
+@inject IJSRuntime JS
 @implements IDisposable
 
 @if (!_checked)
@@ -48,6 +50,21 @@ else if (_authorized)
 
             await Access.RequirePropertyAccessAsync(PropertyId, RequiredPermission);
             _authorized = true;
+            if (UiState.SelectedCommunityId != PropertyId)
+            {
+                var allowed = await Access.GetAllowedCommunitiesAsync();
+                var current = allowed.FirstOrDefault(c => c.Id == PropertyId);
+                var mode = current?.OperatingMode ?? SystemOperatingMode.HousingAssociation;
+                var term = mode == SystemOperatingMode.UsHoa
+                    ? Loc.T("shell.termUsHoa")
+                    : Loc.T("shell.termHousing");
+                UiState.SelectCommunity(PropertyId, term);
+                try
+                {
+                    await JS.InvokeVoidAsync("localStorage.setItem", "cg-selected-property", PropertyId.ToString());
+                }
+                catch { }
+            }
         }
         catch (UnauthorizedAccessException)
         {

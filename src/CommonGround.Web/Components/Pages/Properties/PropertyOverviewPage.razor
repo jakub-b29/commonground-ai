@@ -125,6 +125,45 @@
                     </div>
                 </ChildContent>
             </BentoCard>
+
+            <BentoCard Span="12"
+                       Title="@Loc.T("property.units.buildingsTitle")"
+                       Subtitle="@($"{_snapshot.Community.Buildings.Count} {Loc.T("property.overview.buildings")} · {_snapshot.Community.Units.Count} {Loc.T("property.overview.units")}")"
+                       BadgeText="@($"{_snapshot.Community.Buildings.Count} {Loc.T("property.overview.buildings")}")"
+                       BadgeVariant="info">
+                <HeaderActions>
+                    <a class="cg-btn cg-btn-sm cg-btn-primary" href="@($"/properties/{Id}/units")">+ @Loc.T("builder.addBuilding")</a>
+                    <a class="cg-btn cg-btn-sm" href="@($"/properties/{Id}/units")">@Loc.T("action.openUnits")</a>
+                </HeaderActions>
+                <ChildContent>
+                    <div class="cg-grid-3">
+                        @foreach (var bld in _snapshot.Community.Buildings.OrderBy(b => b.Name))
+                        {
+                            var bldUnits = _snapshot.Community.Units.Count(u => u.BuildingId == bld.Id);
+                            <div class="cg-subcard">
+                                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.35rem; gap: 0.5rem;">
+                                    <strong>@bld.Name</strong>
+                                    <span class="cg-badge @(bldUnits > 0 ? "cg-badge-ok" : "cg-badge-warn") mono num">
+                                        @(bldUnits > 0 ? $"{bldUnits} {Loc.T("table.units")}" : Loc.T("property.units.noUnitsYet"))
+                                    </span>
+                                </div>
+                                <div style="font-size: 0.74rem; color: var(--text-secondary); margin-bottom: 0.35rem;">
+                                    @(string.IsNullOrWhiteSpace(bld.StreetAddress) ? _snapshot.Community.StreetAddress : bld.StreetAddress)
+                                </div>
+                                <div class="cg-grid-2 mono num" style="font-size: 0.72rem; color: var(--text-muted); margin-bottom: 0.5rem;">
+                                    <div>@Loc.T("builder.floors"): <strong>@bld.FloorsCount</strong></div>
+                                    <div>@Loc.T("builder.stairwells"): <strong>@bld.StairwellsCount</strong></div>
+                                    <div>@Loc.T("property.units.year"): <strong>@bld.ConstructionYear</strong></div>
+                                    <div>@Loc.T("property.units.risers"): <strong>@bld.RiserStacks.Count</strong></div>
+                                </div>
+                                <div style="display: flex; gap: 0.3rem;">
+                                    <a class="cg-btn cg-btn-sm" href="@($"/properties/{Id}/units")">@Loc.T("property.units.viewUnits")</a>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </ChildContent>
+            </BentoCard>
         </BentoGrid>
 
         @if (!string.IsNullOrWhiteSpace(_message))

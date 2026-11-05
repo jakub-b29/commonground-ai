@@ -1,6 +1,8 @@
 @inject WorkspaceUiState UiState
 @inject WorkspaceAccessService Access
 @inject WorkspaceLocalization Loc
+@inject NavigationManager Nav
+@inject IJSRuntime JS
 @implements IDisposable
 
 @if (_properties.Count > 0)
@@ -21,15 +23,25 @@
     private Action? _stateHandler;
     private Action? _locHandler;
     private List<Community> _properties = new();
+    private bool _hasAttemptedStorageRestore;
 
     protected override async Task OnInitializedAsync()
     {
-        _stateHandler = () => InvokeAsync(ReloadAsync);
+        _stateHandler = () => InvokeAsync(StateHasChanged);
         UiState.OnChange += _stateHandler;
         _locHandler = () => InvokeAsync(StateHasChanged);
         Loc.OnChange += _locHandler;
         await Loc.EnsureLoadedAsync();
         await ReloadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_hasAttemptedStorageRestore && _properties.Count > 0)
+        {
+            _hasAttemptedStorageRestore = true;
+            await RestoreSelectedPropertyAsync();
+        }
     }
 
     private string GetTerminology(SystemOperatingMode mode) => mode == SystemOperatingMode.UsHoa
@@ -45,6 +57,14 @@
             {
                 UiState.ClearCommunitySelection();
             }
+
+            // Sync from route if present
+            var match = System.Text.RegularExpressions.Regex.Match(Nav.Uri, @"/properties/([0-9a-fA-F-]{36})");
+            if (match.Success && Guid.TryParse(match.Groups[1].Value, out var routeId) && _properties.Any(p => p.Id == routeId))
+            {
+                var routeProp = _properties.First(p => p.Id == routeId);
+                UiState.SelectCommunity(routeId, GetTerminology(routeProp.OperatingMode));
+            }
         }
         catch
         {
@@ -54,7 +74,42 @@
         StateHasChanged();
     }
 
-    private Task OnPropertyChanged(ChangeEventArgs e)
+    private async Task RestoreSelectedPropertyAsync()
+    {
+        if (UiState.SelectedPropertyId.HasValue)
+        {
+            return;
+        }
+
+        try
+        {
+            var saved = await JS.InvokeAsync<string>("localStorage.getItem", "cg-selected-property");
+            if (Guid.TryParse(saved, out var savedId) && _properties.Any(p => p.Id == savedId))
+            {
+                var prop = _properties.First(p => p.Id == savedId);
+                UiState.SelectCommunity(savedId, GetTerminology(prop.OperatingMode));
+                StateHasChanged();
+                return;
+            }
+        }
+        catch
+        {
+        }
+
+        if (!UiState.SelectedPropertyId.HasValue && _properties.Count > 0)
+        {
+            var first = _properties[0];
+            UiState.SelectCommunity(first.Id, GetTerminology(first.OperatingMode));
+            try
+            {
+                await JS.InvokeVoidAsync("localStorage.setItem", "cg-selected-property", first.Id.ToString());
+            }
+            catch { }
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnPropertyChanged(ChangeEventArgs e)
     {
         if (Guid.TryParse(e.Value?.ToString(), out var propertyId))
         {
@@ -62,14 +117,29 @@
             if (selected is not null)
             {
                 UiState.SelectCommunity(propertyId, GetTerminology(selected.OperatingMode));
+                try
+                {
+                    await JS.InvokeVoidAsync("localStorage.setItem", "cg-selected-property", propertyId.ToString());
+                }
+                catch { }
+
+                var match = System.Text.RegularExpressions.Regex.Match(Nav.Uri, @"/properties/([0-9a-fA-F-]{36})(/.*)?");
+                if (match.Success)
+                {
+                    var subpath = match.Groups[2].Success ? match.Groups[2].Value : "/overview";
+                    Nav.NavigateTo($"/properties/{propertyId}{subpath}");
+                }
             }
         }
         else
         {
+            try
+            {
+                await JS.InvokeVoidAsync("localStorage.removeItem", "cg-selected-property");
+            }
+            catch { }
             UiState.ClearCommunitySelection();
         }
-
-        return Task.CompletedTask;
     }
 
     public void Dispose()

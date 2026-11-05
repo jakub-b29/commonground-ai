@@ -100,6 +100,7 @@
                                      Buildings="_dashboard.Buildings"
                                      ExistingResidents="_residents"
                                      InitialCommunityId="Id"
+                                     InitialBuildingId="_wizardBuildingId"
                                      LockCommunity="true"
                                      OnUnitCreated="OnWizardCreatedAsync"
                                      OnCancel="() => _showWizard = false" />
@@ -110,10 +111,67 @@
             <div style="margin-bottom: 1rem;">
                 <InteractiveBuildingBuilder Community="_snapshot.Community"
                                             Units="_units"
+                                            SelectedBuildingId="_builderSelectedBuildingId"
                                             SelectedUnitId="_selectedUnitId"
                                             OnSelectUnit="OnSelectUnit"
                                             OnBroadcastStackAlert="OnBroadcastStackAlert"
                                             OnStructureChanged="ReloadAsync" />
+            </div>
+        }
+
+        @if (_snapshot.Community.Buildings.Count > 0)
+        {
+            <div class="cg-card" style="margin-bottom: 1rem;">
+                <div class="cg-section-header">
+                    <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+                        <h2>@Loc.T("property.units.buildingsTitle") (@_snapshot.Community.Buildings.Count)</h2>
+                        <span class="cg-badge cg-badge-info mono num">@_snapshot.Community.Buildings.Count @Loc.T("property.overview.buildings")</span>
+                    </div>
+                    @if (_isManager)
+                    {
+                        <button type="button" class="cg-btn cg-btn-sm cg-btn-primary" @onclick="() => _showAddBuilding = true">
+                            + @Loc.T("builder.addBuilding")
+                        </button>
+                    }
+                </div>
+                <div class="cg-grid-3">
+                    @foreach (var bld in _snapshot.Community.Buildings.OrderBy(b => b.Name))
+                    {
+                        var bldUnitsCount = _units.Count(u => u.BuildingId == bld.Id);
+                        var isSelectedBld = _filterBuildingId == bld.Id;
+                        <div class="cg-subcard" style="@(isSelectedBld ? "border-color: var(--accent-primary); box-shadow: 0 0 0 1px var(--accent-primary);" : "")">
+                            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.35rem; gap: 0.5rem;">
+                                <strong style="font-size: 0.95rem;">@bld.Name</strong>
+                                <span class="cg-badge @(bldUnitsCount > 0 ? "cg-badge-ok" : "cg-badge-warn") mono num">
+                                    @(bldUnitsCount > 0 ? $"{bldUnitsCount} {Loc.T("table.units")}" : Loc.T("property.units.noUnitsYet"))
+                                </span>
+                            </div>
+                            <div style="font-size: 0.74rem; color: var(--text-secondary); margin-bottom: 0.35rem;">
+                                @(string.IsNullOrWhiteSpace(bld.StreetAddress) ? _snapshot.Community.StreetAddress : bld.StreetAddress)
+                            </div>
+                            <div class="cg-grid-2 mono num" style="font-size: 0.72rem; color: var(--text-muted); margin-bottom: 0.5rem;">
+                                <div>@Loc.T("builder.floors"): <strong>@bld.FloorsCount</strong></div>
+                                <div>@Loc.T("builder.stairwells"): <strong>@bld.StairwellsCount</strong></div>
+                                <div>@Loc.T("property.units.year"): <strong>@bld.ConstructionYear</strong></div>
+                                <div>@Loc.T("property.units.risers"): <strong>@bld.RiserStacks.Count</strong></div>
+                            </div>
+                            <div style="display: flex; gap: 0.3rem; flex-wrap: wrap;">
+                                <button type="button" class="cg-btn cg-btn-sm @(isSelectedBld ? "cg-btn-primary" : "")" @onclick="() => SelectBuildingFilter(bld.Id)">
+                                    @(isSelectedBld ? Loc.T("property.units.filtered") : Loc.T("property.units.viewUnits"))
+                                </button>
+                                <button type="button" class="cg-btn cg-btn-sm" @onclick="() => OpenMatrixForBuilding(bld.Id)">
+                                    @Loc.T("property.units.matrixBtn")
+                                </button>
+                                @if (_isManager)
+                                {
+                                    <button type="button" class="cg-btn cg-btn-sm cg-btn-ghost" @onclick="() => OpenWizardForBuilding(bld.Id)">
+                                        + @Loc.T("property.units.addUnitBtn")
+                                    </button>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
             </div>
         }
 
@@ -269,6 +327,8 @@
 
     private string _searchQuery = string.Empty;
     private Guid _filterBuildingId = Guid.Empty;
+    private Guid? _builderSelectedBuildingId;
+    private Guid? _wizardBuildingId;
     private string _filterOccupancy = string.Empty;
     private string _filterKind = string.Empty;
 
@@ -385,10 +445,31 @@
                 role);
             _showAddBuilding = false;
             _newBldName = string.Empty;
+            _filterBuildingId = b.Id;
+            _builderSelectedBuildingId = b.Id;
+            _wizardBuildingId = b.Id;
+            _showMatrix = true;
             _message = string.Format(Loc.T("property.units.buildingCreatedMsg"), b.Name);
             await ReloadAsync();
         }
         catch (Exception ex) { _message = ex.Message; }
+    }
+
+    private void SelectBuildingFilter(Guid bldId)
+    {
+        _filterBuildingId = _filterBuildingId == bldId ? Guid.Empty : bldId;
+    }
+
+    private void OpenMatrixForBuilding(Guid bldId)
+    {
+        _builderSelectedBuildingId = bldId;
+        _showMatrix = true;
+    }
+
+    private void OpenWizardForBuilding(Guid bldId)
+    {
+        _wizardBuildingId = bldId;
+        _showWizard = true;
     }
 
     private async Task OnBroadcastStackAlert(string stack)
