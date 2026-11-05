@@ -360,6 +360,19 @@ public sealed partial class CommonGroundWorkspaceService
         string taxIdOrEin,
         WorkspaceSecurityRole actorRole,
         CancellationToken ct = default)
+        => await CreatePropertyForFirmAsync(firmId, propertyName, streetAddress, city, operatingMode, taxIdOrEin, actorRole, null, null, ct);
+
+    public async Task<Community> CreatePropertyForFirmAsync(
+        Guid firmId,
+        string propertyName,
+        string streetAddress,
+        string city,
+        SystemOperatingMode operatingMode,
+        string taxIdOrEin,
+        WorkspaceSecurityRole actorRole,
+        Guid? actorUserId,
+        Guid? actorMembershipId,
+        CancellationToken ct = default)
     {
         if (actorRole != WorkspaceSecurityRole.FirmManager)
             throw new UnauthorizedAccessException("Only the Firm Manager may create properties.");
@@ -414,6 +427,46 @@ public sealed partial class CommonGroundWorkspaceService
             db.RiserStacks.Add(stack);
         }
         await db.SaveChangesAsync(ct);
+        // Grant explicit property access to the creator so non-bypass roles keep access.
+        // FirmManager creators already bypass via role check, but an explicit row keeps AllowedCommunityIds consistent.
+        Guid? membershipIdToGrant = null;
+        if (actorMembershipId.HasValue && actorMembershipId.Value != Guid.Empty)
+        {
+            var explicitMembership = await db.FirmMemberships.AsNoTracking()
+                .FirstOrDefaultAsync(m => m.Id == actorMembershipId.Value, ct);
+            if (explicitMembership is not null && explicitMembership.ManagementFirmId == firm.Id)
+            {
+                membershipIdToGrant = explicitMembership.Id;
+            }
+        }
+        if (membershipIdToGrant is null && actorUserId.HasValue && actorUserId.Value != Guid.Empty)
+        {
+            var userMembership = await db.FirmMemberships
+                .Where(m => m.UserId == actorUserId.Value && m.ManagementFirmId == firm.Id)
+                .OrderByDescending(m => m.Status == WorkspaceMembershipStatus.Approved)
+                .ThenByDescending(m => m.Role == WorkspaceSecurityRole.FirmManager)
+                .ThenByDescending(m => m.Role == WorkspaceSecurityRole.PropertyManager)
+                .FirstOrDefaultAsync(ct);
+            if (userMembership is not null)
+            {
+                membershipIdToGrant = userMembership.Id;
+            }
+        }
+        if (membershipIdToGrant.HasValue && membershipIdToGrant.Value != Guid.Empty)
+        {
+            var alreadyHas = await db.MembershipPropertyAccesses.AnyAsync(
+                a => a.FirmMembershipId == membershipIdToGrant.Value && a.CommunityId == community.Id, ct);
+            if (!alreadyHas)
+            {
+                db.MembershipPropertyAccesses.Add(new MembershipPropertyAccess
+                {
+                    FirmMembershipId = membershipIdToGrant.Value,
+                    CommunityId = community.Id,
+                    IsPrimaryManager = true
+                });
+                await db.SaveChangesAsync(ct);
+            }
+        }
         return community;
     }
 

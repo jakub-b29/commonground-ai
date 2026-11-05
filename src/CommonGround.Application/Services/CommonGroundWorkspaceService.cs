@@ -544,7 +544,10 @@ public sealed partial class CommonGroundWorkspaceService(
     }
 
     // 10. PaperBallotOcrAndMinutesAgent
-    public async Task<VotingTallyResult> DigitizePaperBallotSheetAsync(Guid communityId, Guid resolutionId, CancellationToken ct = default)
+    public Task<VotingTallyResult> DigitizePaperBallotSheetAsync(Guid communityId, Guid resolutionId, CancellationToken ct = default)
+        => DigitizePaperBallotSheetAsync(communityId, resolutionId, ballotImageDataUrl: null, ct);
+
+    public async Task<VotingTallyResult> DigitizePaperBallotSheetAsync(Guid communityId, Guid resolutionId, string? ballotImageDataUrl, CancellationToken ct = default)
     {
         await using var db = await CreateDbAsync(ct);
         var community = await LoadCommunityAsync(db, communityId, ct) ?? throw new InvalidOperationException("Community not found.");
@@ -558,11 +561,47 @@ public sealed partial class CommonGroundWorkspaceService(
             resolution.Votes.Add(vote); db.Votes.Add(vote);
         }
         var tally = VotingCalculator.CalculateTally(resolution, resolution.Votes);
+        var steps = new List<AgentStep>
+        {
+            Step(1, "Paper ballot OCR and signature check", "muse-spark-1.3", $"{ocr.Rows.Count} rows extracted; shares for {tally.SharesFor:P2}. Adopted: {tally.IsAdopted}.", ocr.LatencyMs)
+        };
+        if (!string.IsNullOrWhiteSpace(ballotImageDataUrl))
+        {
+            var preview = ballotImageDataUrl.Length > 64 ? ballotImageDataUrl[..64] : ballotImageDataUrl;
+            steps.Add(Step(2, "Ballot image upload intake", "blazor-inputfile", $"Uploaded ballot image received ({ballotImageDataUrl.Length} chars, prefix {preview}...). Image retained client-side for audit; OCR executed via muse-spark-1.3.", 5));
+        }
         var run = NewRun(community.Id, "PaperBallotOcrAndMinutesAgent", $"Paper ballot digitization for {resolution.Number}", "sam-3.1 + muse-spark-1.3",
-            [Step(1, "Paper ballot OCR and signature check", "muse-spark-1.3", $"{ocr.Rows.Count} rows extracted; shares for {tally.SharesFor:P2}. Adopted: {tally.IsAdopted}.", ocr.LatencyMs)]);
+            steps);
         community.AgentRuns.Add(run); db.AgentRuns.Add(run);
         await db.SaveChangesAsync(ct);
         return tally;
+    }
+
+    public async Task<Resolution> CreateResolutionAsync(Guid communityId, string number, string title, string description, VotingMajorityRule majorityRule, CancellationToken ct = default)
+    {
+        await using var db = await CreateDbAsync(ct);
+        var community = await LoadCommunityAsync(db, communityId, ct) ?? throw new InvalidOperationException("Community not found.");
+        var trimmedNumber = (number ?? string.Empty).Trim();
+        var trimmedTitle = (title ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(trimmedNumber)) throw new InvalidOperationException("Resolution number is required.");
+        if (string.IsNullOrWhiteSpace(trimmedTitle)) throw new InvalidOperationException("Resolution title is required.");
+        if (community.Resolutions.Any(r => string.Equals(r.Number, trimmedNumber, StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException($"Resolution {trimmedNumber} already exists.");
+        var resolution = new Resolution
+        {
+            CommunityId = community.Id,
+            Number = trimmedNumber,
+            Title = trimmedTitle,
+            Content = (description ?? string.Empty).Trim(),
+            MajorityRule = majorityRule,
+            ComplianceStatus = "VerifiedClean"
+        };
+        community.Resolutions.Add(resolution); db.Resolutions.Add(resolution);
+        var run = NewRun(community.Id, "MeetingAutopilotAndComplianceAgent", $"Resolution created {resolution.Number}", "muse-spark-1.3",
+            [Step(1, "Manual resolution creation", "blazor-governance-panel", $"Resolution {resolution.Number} '{resolution.Title}' created with rule {resolution.MajorityRule}.", 5)]);
+        community.AgentRuns.Add(run); db.AgentRuns.Add(run);
+        await db.SaveChangesAsync(ct);
+        return resolution;
     }
 
     public async Task<MeetingRecord> TranscribeMeetingRecordingToMinutesAsync(Guid communityId, CancellationToken ct = default)
@@ -582,7 +621,7 @@ public sealed partial class CommonGroundWorkspaceService(
         return meeting;
     }
 
-    public async Task<Vote> CastVoteAsync(Guid communityId, Guid resolutionId, Guid unitId, VoteChoice choice, string? proxyName = null, CancellationToken ct = default)
+    public async Task<Vote> CastVoteAsync(Guid communityId, Guid resolutionId, Guid unitId, VoteChoice choice, string? proxyName = null, CancellationToken ct = default, string? voterName = null)
     {
         await using var db = await CreateDbAsync(ct);
         var community = await LoadCommunityAsync(db, communityId, ct) ?? throw new InvalidOperationException("Community not found.");
@@ -591,7 +630,8 @@ public sealed partial class CommonGroundWorkspaceService(
         resolution.Votes.RemoveAll(v => v.UnitId == unit.Id);
         var existing = await db.Votes.Where(v => v.ResolutionId == resolution.Id && v.UnitId == unit.Id).ToListAsync(ct);
         db.Votes.RemoveRange(existing);
-        var vote = new Vote { ResolutionId = resolution.Id, UnitId = unit.Id, UnitNumber = unit.UnitNumber, VoterName = unit.PrimaryOwnerName, ProxyName = proxyName, Choice = choice, OwnershipShareWeight = unit.OwnershipShare, Channel = VoteSourceChannel.WebPortal };
+        var resolvedVoterName = string.IsNullOrWhiteSpace(voterName) ? unit.PrimaryOwnerName : voterName.Trim();
+        var vote = new Vote { ResolutionId = resolution.Id, UnitId = unit.Id, UnitNumber = unit.UnitNumber, VoterName = resolvedVoterName, ProxyName = proxyName, Choice = choice, OwnershipShareWeight = unit.OwnershipShare, Channel = VoteSourceChannel.WebPortal };
         resolution.Votes.Add(vote); db.Votes.Add(vote);
         await db.SaveChangesAsync(ct);
         return vote;
@@ -663,6 +703,94 @@ public sealed partial class CommonGroundWorkspaceService(
         community.AgentRuns.Add(run); db.AgentRuns.Add(run);
         await db.SaveChangesAsync(ct);
         return community.LegalDocuments;
+    }
+
+    public async Task<IReadOnlyList<LegalDocumentSource>> GetPropertyDocumentsAsync(Guid communityId, CancellationToken ct = default)
+    {
+        await using var db = await CreateDbAsync(ct);
+        return await db.LegalDocuments.AsNoTracking()
+            .Where(d => d.CommunityId == communityId)
+            .OrderBy(d => d.DocumentCode)
+            .ToListAsync(ct);
+    }
+
+    public async Task<LegalDocumentSource> AddPropertyDocumentAsync(
+        Guid communityId,
+        string documentCode,
+        string title,
+        string category,
+        string verbatimText,
+        WorkspaceSecurityRole actorRole,
+        CancellationToken ct = default)
+    {
+        if (!DataSecurityAndPrivacyGuard.IsManagerRole(actorRole))
+        {
+            throw new UnauthorizedAccessException("Only a Firm Manager or Property Manager may file property documents.");
+        }
+        if (string.IsNullOrWhiteSpace(documentCode))
+        {
+            throw new InvalidOperationException("Document code is required.");
+        }
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            throw new InvalidOperationException("Document title is required.");
+        }
+        var scan = DataSecurityAndPrivacyGuard.InspectAndSanitizeUntrustedInput($"{documentCode} {title} {category} {verbatimText}");
+        if (scan.IsInjectionDetected)
+        {
+            throw new InvalidOperationException("Property document blocked by security guard.");
+        }
+        await using var db = await CreateDbAsync(ct);
+        var community = await LoadCommunityAsync(db, communityId, ct) ?? throw new InvalidOperationException("Community not found.");
+        var code = documentCode.Trim();
+        if (community.LegalDocuments.Any(d => string.Equals(d.DocumentCode, code, StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidOperationException($"Property document '{code}' already exists.");
+        }
+        var kind = Enum.TryParse<LegalDocumentKind>(category, true, out var parsedKind)
+            ? parsedKind
+            : LegalDocumentKind.CommunityStatuteOrCcr;
+        var doc = new LegalDocumentSource
+        {
+            CommunityId = community.Id,
+            Kind = kind,
+            DocumentCode = code,
+            Title = title.Trim(),
+            IssuingAuthority = community.Name,
+            OfficialCitation = code,
+            KeyProvisionsSummary = (verbatimText ?? string.Empty).Trim(),
+            VerbatimLegalText = (verbatimText ?? string.Empty).Trim(),
+            AppliedInModules = "PropertyDocumentsPanel",
+            AcquiredByModel = actorRole.ToString(),
+            AcquiredAtUtc = DateTime.UtcNow
+        };
+        community.LegalDocuments.Add(doc);
+        db.LegalDocuments.Add(doc);
+        await AppendAuditAsync(db, community, actorRole, "PROPERTY_DOCUMENT_ADDED", "Info", $"LegalDocumentSource: {doc.DocumentCode}", $"Property document '{doc.Title}' ({doc.DocumentCode}) filed by {actorRole}.", ct);
+        await db.SaveChangesAsync(ct);
+        return doc;
+    }
+
+    public async Task DeletePropertyDocumentAsync(
+        Guid communityId,
+        Guid documentId,
+        WorkspaceSecurityRole actorRole,
+        CancellationToken ct = default)
+    {
+        if (!DataSecurityAndPrivacyGuard.IsManagerRole(actorRole))
+        {
+            throw new UnauthorizedAccessException("Only a Firm Manager or Property Manager may delete property documents.");
+        }
+        await using var db = await CreateDbAsync(ct);
+        var community = await LoadCommunityAsync(db, communityId, ct) ?? throw new InvalidOperationException("Community not found.");
+        var doc = community.LegalDocuments.FirstOrDefault(d => d.Id == documentId)
+            ?? throw new InvalidOperationException("Property document not found.");
+        DataSecurityAndPrivacyGuard.EnsureCommunityScope(doc, communityId);
+        var label = $"{doc.Title} ({doc.DocumentCode})";
+        community.LegalDocuments.Remove(doc);
+        db.LegalDocuments.Remove(doc);
+        await AppendAuditAsync(db, community, actorRole, "PROPERTY_DOCUMENT_DELETED", "Info", $"LegalDocumentSource: {doc.DocumentCode}", $"Property document '{label}' deleted by {actorRole}.", ct);
+        await db.SaveChangesAsync(ct);
     }
 
     public async Task<string> ScanUtilitySourcesAndWeatherAsync(Guid communityId, CancellationToken ct = default)
@@ -1060,6 +1188,194 @@ public sealed partial class CommonGroundWorkspaceService(
         db.CommunityMessages.Add(msg);
         await db.SaveChangesAsync(ct);
         return msg;
+    }
+
+    // Simple forum-to-task maintenance (no SAM/BOQ, no migration).
+    public async Task<WorkOrder> CreateWorkOrderThreadAsync(
+        Guid communityId,
+        string title,
+        string description,
+        Guid? buildingId = null,
+        string? unitNumber = null,
+        string? photoDataUrl = null,
+        WorkspaceSecurityRole actorRole = WorkspaceSecurityRole.PropertyManager,
+        CancellationToken ct = default)
+    {
+        await using var db = await CreateDbAsync(ct);
+        var community = await LoadCommunityAsync(db, communityId, ct) ?? throw new InvalidOperationException("Community not found.");
+        var scan = DataSecurityAndPrivacyGuard.InspectAndSanitizeUntrustedInput($"{title} {description}");
+        if (scan.IsInjectionDetected)
+        {
+            await AppendAuditAsync(db, community, actorRole, "PROMPT_INJECTION_BLOCKED", "Critical", "WorkOrder forum thread", $"Blocked pattern '{scan.MatchedPattern}' in maintenance report.", ct);
+            await db.SaveChangesAsync(ct);
+            throw new InvalidOperationException($"Report blocked by security guard: pattern '{scan.MatchedPattern}' detected.");
+        }
+
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            throw new InvalidOperationException("Title is required.");
+        }
+
+        var building = buildingId.HasValue
+            ? community.Buildings.FirstOrDefault(b => b.Id == buildingId.Value)
+            : community.Buildings.FirstOrDefault();
+        if (building is null)
+        {
+            throw new InvalidOperationException("No building available for maintenance thread.");
+        }
+
+        Unit? unit = null;
+        if (!string.IsNullOrWhiteSpace(unitNumber))
+        {
+            unit = community.Units.FirstOrDefault(u => string.Equals(u.UnitNumber, unitNumber.Trim(), StringComparison.OrdinalIgnoreCase));
+        }
+
+        var thread = new WorkOrder
+        {
+            CommunityId = community.Id,
+            BuildingId = building.Id,
+            UnitId = unit?.Id,
+            UnitNumber = unit?.UnitNumber ?? (string.IsNullOrWhiteSpace(unitNumber) ? null : unitNumber.Trim()),
+            VerticalStackCode = unit?.VerticalStackCode ?? "STACK-A1",
+            Title = title.Trim(),
+            Description = (description ?? string.Empty).Trim(),
+            OriginalResidentMessage = (description ?? string.Empty).Trim(),
+            OriginalLanguage = "EN",
+            Category = WorkOrderCategory.Plumbing,
+            Priority = WorkOrderPriority.Normal,
+            Boundary = ResponsibilityBoundary.CommonProperty,
+            Status = WorkOrderStatus.Reported,
+            DefectConcept = "forum report",
+            BeforePhotoDataUrl = string.IsNullOrWhiteSpace(photoDataUrl) ? string.Empty : photoDataUrl.Trim()
+        };
+        community.WorkOrders.Add(thread);
+        db.WorkOrders.Add(thread);
+        await AppendAuditAsync(db, community, actorRole, "MAINTENANCE_THREAD_CREATED", "Info", $"WorkOrder: {thread.Title}", $"Forum thread created: '{thread.Title}'.", ct);
+        await db.SaveChangesAsync(ct);
+        return thread;
+    }
+
+    public async Task<WorkOrderMessage> PostWorkOrderMessageAsync(
+        Guid communityId,
+        Guid workOrderId,
+        string senderName,
+        string senderRole,
+        string body,
+        string? attachmentDataUrl = null,
+        WorkspaceSecurityRole actorRole = WorkspaceSecurityRole.PropertyManager,
+        CancellationToken ct = default)
+    {
+        await using var db = await CreateDbAsync(ct);
+        var community = await LoadCommunityAsync(db, communityId, ct) ?? throw new InvalidOperationException("Community not found.");
+        var workOrder = community.WorkOrders.FirstOrDefault(w => w.Id == workOrderId) ?? throw new InvalidOperationException("Work order not found.");
+        DataSecurityAndPrivacyGuard.EnsureCommunityScope(workOrder, communityId);
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            throw new InvalidOperationException("Message body is required.");
+        }
+
+        var scan = DataSecurityAndPrivacyGuard.InspectAndSanitizeUntrustedInput($"{senderName} {body}");
+        if (scan.IsInjectionDetected)
+        {
+            await AppendAuditAsync(db, community, actorRole, "PROMPT_INJECTION_BLOCKED", "Critical", $"WorkOrder: {workOrder.Title}", $"Blocked pattern '{scan.MatchedPattern}' in maintenance reply.", ct);
+            await db.SaveChangesAsync(ct);
+            throw new InvalidOperationException($"Message blocked by security guard: pattern '{scan.MatchedPattern}' detected.");
+        }
+
+        _ = DataSecurityAndPrivacyGuard.RedactPiiForModelPrompt(body, out _);
+        var displayName = string.IsNullOrWhiteSpace(senderName) ? actorRole.ToString() : senderName.Trim();
+        var displayRole = string.IsNullOrWhiteSpace(senderRole) ? actorRole.ToString() : senderRole.Trim();
+        var message = new WorkOrderMessage
+        {
+            WorkOrderId = workOrder.Id,
+            Body = body.Trim(),
+            AttachmentDataUrl = string.IsNullOrWhiteSpace(attachmentDataUrl) ? null : attachmentDataUrl.Trim(),
+            CreatedAtUtc = DateTime.UtcNow
+        };
+        db.WorkOrderMessages.Add(message);
+        await AppendAuditAsync(db, community, actorRole, "MAINTENANCE_MESSAGE_POSTED", "Info", $"WorkOrder: {workOrder.Title}", $"Message posted by {displayName} [{displayRole}].", ct);
+        await db.SaveChangesAsync(ct);
+        return message;
+    }
+
+    public async Task<WorkOrder> AssignWorkOrderVendorAsync(
+        Guid communityId,
+        Guid workOrderId,
+        Guid vendorId,
+        WorkspaceSecurityRole actorRole = WorkspaceSecurityRole.PropertyManager,
+        CancellationToken ct = default)
+    {
+        await using var db = await CreateDbAsync(ct);
+        var community = await LoadCommunityAsync(db, communityId, ct) ?? throw new InvalidOperationException("Community not found.");
+        if (!DataSecurityAndPrivacyGuard.IsManagerRole(actorRole))
+        {
+            await AppendAuditAsync(db, community, actorRole, "WORKORDER_ASSIGN_DENIED", "Warning", $"WorkOrder: {workOrderId}", $"Role {actorRole} attempted to assign contractor and was denied.", ct);
+            await db.SaveChangesAsync(ct);
+            throw new UnauthorizedAccessException("Only a Property Manager or Firm Manager may assign a contractor.");
+        }
+
+        var workOrder = community.WorkOrders.FirstOrDefault(w => w.Id == workOrderId) ?? throw new InvalidOperationException("Work order not found.");
+        DataSecurityAndPrivacyGuard.EnsureCommunityScope(workOrder, communityId);
+        var vendor = community.Vendors.FirstOrDefault(v => v.Id == vendorId) ?? throw new InvalidOperationException("Vendor not found.");
+        DataSecurityAndPrivacyGuard.EnsureCommunityScope(vendor, communityId);
+        workOrder.AssignedVendorId = vendor.Id;
+        workOrder.AssignedVendorName = vendor.Name;
+        workOrder.Status = WorkOrderStatus.AssignedToContractor;
+        await AppendAuditAsync(db, community, actorRole, "WORKORDER_CONTRACTOR_ASSIGNED", "Info", $"WorkOrder: {workOrder.Title}", $"Assigned contractor {vendor.Name} ({vendor.Phone}) to '{workOrder.Title}'.", ct);
+        await db.SaveChangesAsync(ct);
+        return workOrder;
+    }
+
+    public async Task<WorkOrder> UpdateWorkOrderTaskAsync(
+        Guid communityId,
+        Guid workOrderId,
+        string title,
+        WorkOrderCategory category,
+        WorkOrderPriority priority,
+        WorkOrderStatus status,
+        WorkspaceSecurityRole actorRole = WorkspaceSecurityRole.PropertyManager,
+        CancellationToken ct = default)
+    {
+        await using var db = await CreateDbAsync(ct);
+        var community = await LoadCommunityAsync(db, communityId, ct) ?? throw new InvalidOperationException("Community not found.");
+        if (!DataSecurityAndPrivacyGuard.IsManagerRole(actorRole))
+        {
+            await AppendAuditAsync(db, community, actorRole, "WORKORDER_UPDATE_DENIED", "Warning", $"WorkOrder: {workOrderId}", $"Role {actorRole} attempted to convert thread to task and was denied.", ct);
+            await db.SaveChangesAsync(ct);
+            throw new UnauthorizedAccessException("Only a Property Manager or Firm Manager may convert a thread to a task.");
+        }
+
+        var workOrder = community.WorkOrders.FirstOrDefault(w => w.Id == workOrderId) ?? throw new InvalidOperationException("Work order not found.");
+        DataSecurityAndPrivacyGuard.EnsureCommunityScope(workOrder, communityId);
+        if (!string.IsNullOrWhiteSpace(title))
+        {
+            workOrder.Title = title.Trim();
+        }
+
+        workOrder.Category = category;
+        workOrder.Priority = priority;
+        workOrder.Status = status;
+        await AppendAuditAsync(db, community, actorRole, "WORKORDER_TASK_UPDATED", "Info", $"WorkOrder: {workOrder.Title}", $"Thread converted to task: {category}/{priority}/{status}.", ct);
+        await db.SaveChangesAsync(ct);
+        return workOrder;
+    }
+
+    public async Task<WorkOrder?> GetWorkOrderThreadAsync(
+        Guid communityId,
+        Guid workOrderId,
+        CancellationToken ct = default)
+    {
+        await using var db = await CreateDbAsync(ct);
+        var thread = await db.WorkOrders
+            .Include(w => w.Messages)
+            .AsNoTracking()
+            .FirstOrDefaultAsync(w => w.Id == workOrderId && w.CommunityId == communityId, ct);
+        if (thread is not null)
+        {
+            thread.Messages = thread.Messages.OrderBy(m => m.CreatedAtUtc).ToList();
+        }
+
+        return thread;
     }
 }
 

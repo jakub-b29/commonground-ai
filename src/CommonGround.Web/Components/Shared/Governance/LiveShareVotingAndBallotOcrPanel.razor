@@ -2,6 +2,7 @@
 @using CommonGround.Domain.Entities
 @using CommonGround.Domain.Enums
 @inject CommonGroundWorkspaceService Workspace
+@inject WorkspaceAccessService Access
 @inject WorkspaceLocalization Loc
 @implements IDisposable
 
@@ -69,12 +70,109 @@
             </table>
         </div>
 
-        <div class="cg-toolbar">
-            <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="OnDigitize">@Loc.T("action.digitize")</button>
-            <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => CastAsync(VoteChoice.For)">@Loc.T("action.voteFor")</button>
-            <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => CastAsync(VoteChoice.Against)">@Loc.T("action.voteAgainst")</button>
-            <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => CastAsync(VoteChoice.Abstain)">@Loc.T("action.abstain")</button>
+        <div style="margin-block-start: 0.75rem; display: grid; gap: 0.5rem;">
+            <div>
+                <label for="voteUnit">Voting unit (required)</label>
+                <select id="voteUnit" value="@_selectedUnitId" @onchange="OnUnitSelect">
+                    <option value="@Guid.Empty">Select unit</option>
+                    @foreach (var u in VotingUnits.OrderBy(u => u.UnitNumber))
+                    {
+                        <option value="@u.Id" selected="@(_selectedUnitId == u.Id)" @key="u.Id">@u.UnitNumber — @u.PrimaryOwnerName (@u.OwnershipShare.ToString("P4"))</option>
+                    }
+                </select>
+                @if (!_isManager && !string.IsNullOrWhiteSpace(_linkedUnitNumber))
+                {
+                    <div class="cg-text-xs" style="color: var(--text-secondary);">Resident voting is limited to your own unit (@_linkedUnitNumber).</div>
+                }
+            </div>
+            <div class="cg-toolbar">
+                <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => CastAsync(VoteChoice.For)">Vote For</button>
+                <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => CastAsync(VoteChoice.Against)">Vote Against</button>
+                <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="() => CastAsync(VoteChoice.Abstain)">Abstain</button>
+            </div>
         </div>
+
+        @if (_isManager)
+        {
+            <div class="cg-subcard" style="margin-block-start: 0.75rem; display: grid; gap: 0.5rem;">
+                <strong style="font-size: 0.8125rem;">Ballot image upload and OCR (manager only)</strong>
+                <InputFile accept="image/*" OnChange="OnBallotFileSelected" />
+                @if (!string.IsNullOrWhiteSpace(_ballotImageDataUrl))
+                {
+                    <div style="display: flex; gap: 0.75rem; align-items: flex-start;">
+                        <img src="@_ballotImageDataUrl" alt="Ballot preview" style="max-width: 220px; max-height: 160px; border: 1px solid var(--border-subtle); border-radius: 6px;" />
+                        <div class="cg-text-xs mono">@_ballotFileName • @_ballotImageBytes bytes</div>
+                    </div>
+                }
+                <div class="cg-toolbar">
+                    <button type="button" class="cg-btn cg-btn-primary" disabled="@(_isBusy || _selected is null)" @onclick="OnDigitize">Digitize ballot (OCR)</button>
+                    @if (!string.IsNullOrWhiteSpace(_ballotImageDataUrl))
+                    {
+                        <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="ClearBallotImage">Clear image</button>
+                    }
+                </div>
+            </div>
+
+            <div class="cg-subcard" style="margin-block-start: 0.75rem; display: grid; gap: 0.5rem;">
+                <strong style="font-size: 0.8125rem;">Manual vote entry (manager only)</strong>
+                <div style="display: grid; gap: 0.4rem; grid-template-columns: 1fr 1fr 1fr;">
+                    <div>
+                        <label for="manualUnit">Unit number</label>
+                        <input id="manualUnit" type="text" class="cg-input" placeholder="e.g. A/12" @bind="_manualUnitNumber" />
+                    </div>
+                    <div>
+                        <label for="manualVoter">Voter name</label>
+                        <input id="manualVoter" type="text" class="cg-input" placeholder="Owner full name" @bind="_manualVoterName" />
+                    </div>
+                    <div>
+                        <label for="manualChoice">Choice</label>
+                        <select id="manualChoice" @bind="_manualChoice">
+                            @foreach (var c in Enum.GetValues<VoteChoice>())
+                            {
+                                <option value="@c">@c</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+                <div class="cg-toolbar">
+                    <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="OnManualVote">Record manual vote</button>
+                </div>
+            </div>
+
+            <div class="cg-subcard" style="margin-block-start: 0.75rem; display: grid; gap: 0.5rem;">
+                <strong style="font-size: 0.8125rem;">Create resolution (manager only)</strong>
+                <div style="display: grid; gap: 0.4rem; grid-template-columns: 1fr 2fr;">
+                    <div>
+                        <label for="newResNum">Number</label>
+                        <input id="newResNum" type="text" class="cg-input" placeholder="e.g. Res 04/2026" @bind="_newNumber" />
+                    </div>
+                    <div>
+                        <label for="newResTitle">Title</label>
+                        <input id="newResTitle" type="text" class="cg-input" placeholder="Resolution title" @bind="_newTitle" />
+                    </div>
+                </div>
+                <div>
+                    <label for="newResDesc">Description</label>
+                    <input id="newResDesc" type="text" class="cg-input" placeholder="Short description of the decision" @bind="_newDescription" />
+                </div>
+                <div>
+                    <label for="newResRule">Majority rule</label>
+                    <select id="newResRule" @bind="_newRule">
+                        @foreach (var r in Enum.GetValues<VotingMajorityRule>())
+                        {
+                            <option value="@r">@r</option>
+                        }
+                    </select>
+                </div>
+                <div class="cg-toolbar">
+                    <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="OnCreateResolution">Create resolution</button>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="cg-text-xs" style="margin-block-start: 0.5rem; color: var(--text-secondary);">Resolution creation and ballot digitization require a manager role. Residents can vote for their own unit.</div>
+        }
     }
     @if (!string.IsNullOrWhiteSpace(_message))
     {
@@ -89,15 +187,46 @@
     [Parameter] public EventCallback OnChanged { get; set; }
     private Guid _selectedId;
     private Resolution? _selected;
+    private Guid _selectedUnitId = Guid.Empty;
     private bool _isBusy;
+    private bool _isManager;
+    private string _linkedUnitNumber = string.Empty;
     private string _message = string.Empty;
+    private string? _ballotImageDataUrl;
+    private string _ballotFileName = string.Empty;
+    private int _ballotImageBytes;
+    private string _manualUnitNumber = string.Empty;
+    private string _manualVoterName = string.Empty;
+    private VoteChoice _manualChoice = VoteChoice.For;
+    private string _newNumber = string.Empty;
+    private string _newTitle = string.Empty;
+    private string _newDescription = string.Empty;
+    private VotingMajorityRule _newRule = VotingMajorityRule.ShareWeightedMajority;
     private Action? _locHandler;
+
+    private IEnumerable<Unit> VotingUnits
+    {
+        get
+        {
+            if (_isManager || string.IsNullOrWhiteSpace(_linkedUnitNumber)) return Units;
+            var own = Units.Where(u => string.Equals(u.UnitNumber, _linkedUnitNumber, StringComparison.OrdinalIgnoreCase)).ToList();
+            return own.Count > 0 ? own : Units;
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
         _locHandler = () => InvokeAsync(StateHasChanged);
         Loc.OnChange += _locHandler;
         await Loc.EnsureLoadedAsync();
+        try
+        {
+            var role = await Access.GetRoleAsync() ?? WorkspaceSecurityRole.Resident;
+            _isManager = DataSecurityAndPrivacyGuard.IsManagerRole(role);
+        }
+        catch { _isManager = false; }
+        try { _linkedUnitNumber = await Access.GetLinkedUnitAsync() ?? string.Empty; }
+        catch { _linkedUnitNumber = string.Empty; }
     }
 
     protected override void OnParametersSet()
@@ -108,6 +237,17 @@
             _selectedId = preferred.Id;
         }
         _selected = Resolutions.FirstOrDefault(r => r.Id == _selectedId);
+        if (_selectedUnitId == Guid.Empty && Units.Count > 0)
+        {
+            var linked = !string.IsNullOrWhiteSpace(_linkedUnitNumber)
+                ? Units.FirstOrDefault(u => string.Equals(u.UnitNumber, _linkedUnitNumber, StringComparison.OrdinalIgnoreCase))
+                : null;
+            _selectedUnitId = (linked ?? Units.OrderBy(u => u.UnitNumber).First()).Id;
+        }
+        else if (_selectedUnitId != Guid.Empty && Units.All(u => u.Id != _selectedUnitId) && Units.Count > 0)
+        {
+            _selectedUnitId = Units.OrderBy(u => u.UnitNumber).First().Id;
+        }
     }
 
     private Task OnSelect(ChangeEventArgs e)
@@ -120,29 +260,139 @@
         return Task.CompletedTask;
     }
 
+    private Task OnUnitSelect(ChangeEventArgs e)
+    {
+        if (Guid.TryParse(e.Value?.ToString(), out var id))
+        {
+            _selectedUnitId = id;
+        }
+        return Task.CompletedTask;
+    }
+
     private async Task CastAsync(VoteChoice choice)
     {
-        var unit = Units.FirstOrDefault();
-        if (unit is null || _selected is null) return;
+        if (_selected is null) return;
+        if (_selectedUnitId == Guid.Empty)
+        {
+            _message = "Select a voting unit before casting a vote.";
+            return;
+        }
+        var unit = Units.FirstOrDefault(u => u.Id == _selectedUnitId);
+        if (unit is null)
+        {
+            _message = "Selected unit was not found.";
+            return;
+        }
         _isBusy = true;
         try
         {
             await Workspace.CastVoteAsync(CommunityId, _selected.Id, unit.Id, choice);
-            _message = $"{Loc.T("msg.voteRecorded")} {choice} {Loc.T("vote.for")} {unit.UnitNumber}.";
+            _message = $"Vote recorded: {choice} for {unit.UnitNumber}.";
             await OnChanged.InvokeAsync();
         }
         catch (Exception ex) { _message = ex.Message; }
         finally { _isBusy = false; }
     }
 
+    private async Task OnManualVote()
+    {
+        if (!_isManager)
+        {
+            _message = "Manual vote entry requires a manager role.";
+            return;
+        }
+        if (_selected is null) return;
+        var unitNumber = (_manualUnitNumber ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(unitNumber))
+        {
+            _message = "Enter a unit number for the manual vote.";
+            return;
+        }
+        var unit = Units.FirstOrDefault(u => string.Equals(u.UnitNumber, unitNumber, StringComparison.OrdinalIgnoreCase));
+        if (unit is null)
+        {
+            _message = $"Unit {unitNumber} was not found.";
+            return;
+        }
+        _isBusy = true;
+        try
+        {
+            var voter = string.IsNullOrWhiteSpace(_manualVoterName) ? unit.PrimaryOwnerName : _manualVoterName.Trim();
+            await Workspace.CastVoteAsync(CommunityId, _selected.Id, unit.Id, _manualChoice, null, default, voter);
+            _message = $"Manual vote recorded: {_manualChoice} for {unit.UnitNumber} ({voter}).";
+            _manualUnitNumber = string.Empty;
+            _manualVoterName = string.Empty;
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex) { _message = ex.Message; }
+        finally { _isBusy = false; }
+    }
+
+    private async Task OnBallotFileSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file is null) return;
+        _isBusy = true;
+        try
+        {
+            const long maxBytes = 5L * 1024 * 1024;
+            await using var stream = file.OpenReadStream(maxBytes);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            var bytes = ms.ToArray();
+            _ballotImageBytes = bytes.Length;
+            _ballotFileName = file.Name;
+            _ballotImageDataUrl = $"data:{file.ContentType};base64,{Convert.ToBase64String(bytes)}";
+            _message = $"Ballot image loaded: {file.Name} ({bytes.Length} bytes). Preview ready — choose Digitize to run OCR.";
+        }
+        catch (Exception ex) { _message = ex.Message; }
+        finally { _isBusy = false; }
+    }
+
+    private void ClearBallotImage()
+    {
+        _ballotImageDataUrl = null;
+        _ballotFileName = string.Empty;
+        _ballotImageBytes = 0;
+    }
+
     private async Task OnDigitize()
     {
+        if (!_isManager)
+        {
+            _message = "Ballot digitization requires a manager role.";
+            return;
+        }
         if (_selected is null) return;
         _isBusy = true;
         try
         {
-            var tally = await Workspace.DigitizePaperBallotSheetAsync(CommunityId, _selected.Id);
-            _message = $"{Loc.T("msg.ballotsMerged")} Shares for {tally.SharesFor:P2}. Adopted: {tally.IsAdopted}.";
+            var tally = await Workspace.DigitizePaperBallotSheetAsync(CommunityId, _selected.Id, _ballotImageDataUrl);
+            var suffix = string.IsNullOrWhiteSpace(_ballotImageDataUrl) ? string.Empty : $" Image bytes: {_ballotImageBytes}.";
+            _message = $"Ballots merged. Shares for {tally.SharesFor:P2} against {tally.SharesAgainst:P2}. Owners for {tally.OwnersFor} against {tally.OwnersAgainst}. Adopted: {tally.IsAdopted}.{suffix}";
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex) { _message = ex.Message; }
+        finally { _isBusy = false; }
+    }
+
+    private async Task OnCreateResolution()
+    {
+        if (!_isManager)
+        {
+            _message = "Resolution creation requires a manager role.";
+            return;
+        }
+        _isBusy = true;
+        try
+        {
+            var created = await Workspace.CreateResolutionAsync(CommunityId, _newNumber, _newTitle, _newDescription, _newRule);
+            _selectedId = created.Id;
+            _selected = created;
+            _newNumber = string.Empty;
+            _newTitle = string.Empty;
+            _newDescription = string.Empty;
+            _message = $"Resolution {created.Number} created.";
             await OnChanged.InvokeAsync();
         }
         catch (Exception ex) { _message = ex.Message; }

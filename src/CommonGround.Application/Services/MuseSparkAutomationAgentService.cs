@@ -69,7 +69,12 @@ public sealed record ToolObservationResult(
     bool IsSuccess,
     string ObservationJson,
     string Summary,
-    string? DeepLinkUrl = null);
+    string? DeepLinkUrl = null)
+{
+    public bool RequiresClarification { get; init; }
+    public string? ClarificationQuestion { get; init; }
+    public IReadOnlyList<string> ClarificationOptions { get; init; } = Array.Empty<string>();
+}
 
 public sealed class SparkAgentPermissionEvaluator
 {
@@ -249,34 +254,33 @@ public sealed class SparkAgentPermissionEvaluator
                 });
             }
 
-            if (userAcc?.Role == WorkspaceSecurityRole.FirmManager || candidates.Any(c => c.Role == WorkspaceSecurityRole.FirmManager))
-            {
-                role = WorkspaceSecurityRole.FirmManager;
-                status = WorkspaceMembershipStatus.Approved;
-                permissions = (WorkspacePermissionFlags)~0L;
-                if (userAcc?.ManagementFirmId.HasValue == true && userAcc.ManagementFirmId.Value != Guid.Empty)
-                {
-                    firmId = userAcc.ManagementFirmId.Value;
-                }
-            }
-
             if (candidates.Count > 0)
             {
                 var approved = candidates.Where(m => m.Status == WorkspaceMembershipStatus.Approved).ToList();
                 var pool = approved.Count > 0 ? approved : candidates;
 
+                var hasTargetFirm = targetCommunityFirmId.HasValue && targetCommunityFirmId.Value != Guid.Empty;
+                var targetFirmId = hasTargetFirm ? targetCommunityFirmId!.Value : Guid.Empty;
                 List<FirmMembership> propertyMatches;
                 if (effectiveCommunityId.HasValue && effectiveCommunityId.Value != Guid.Empty)
                 {
                     var targetCom = effectiveCommunityId.Value;
                     propertyMatches = pool.Where(m =>
-                        m.PropertyAccesses.Any(pa => pa.CommunityId == targetCom)
+                        (!hasTargetFirm || m.ManagementFirmId == targetFirmId) &&
+                        (m.PropertyAccesses.Any(pa => pa.CommunityId == targetCom)
                         || m.UnitLinks.Any(ul => ul.CommunityId == targetCom)
-                        || (m.Role == WorkspaceSecurityRole.FirmManager && (!targetCommunityFirmId.HasValue || m.ManagementFirmId == targetCommunityFirmId.Value))
-                        || (m.PropertyAccesses.Count == 0 && (!targetCommunityFirmId.HasValue || m.ManagementFirmId == targetCommunityFirmId.Value)))
+                        || (m.Role == WorkspaceSecurityRole.FirmManager && (!hasTargetFirm || m.ManagementFirmId == targetFirmId))
+                        || (m.PropertyAccesses.Count == 0 && (!hasTargetFirm || m.ManagementFirmId == targetFirmId))))
                         .ToList();
 
-                    if (propertyMatches.Count == 0)
+                    if (propertyMatches.Count == 0 && hasTargetFirm)
+                    {
+                        // Prefer any membership in the target firm even when no explicit access row exists.
+                        // Do not fall back to global best rank which may belong to another firm.
+                        var targetFirmMatches = pool.Where(m => m.ManagementFirmId == targetFirmId).ToList();
+                        propertyMatches = targetFirmMatches.Count > 0 ? targetFirmMatches : pool;
+                    }
+                    else if (propertyMatches.Count == 0)
                     {
                         propertyMatches = pool;
                     }
@@ -291,9 +295,64 @@ public sealed class SparkAgentPermissionEvaluator
                     .ThenByDescending(m => m.Id == activeMembershipId ? 1 : 0)
                     .First();
 
+                if (hasTargetFirm && bestMembership.ManagementFirmId != targetFirmId)
+                {
+                    // No target-firm match won: prefer a target-firm membership even with lower rank.
+                    // Never escalate via another firm's FirmManager role.
+                    var targetFirmBest = pool.Where(m => m.ManagementFirmId == targetFirmId)
+                        .OrderByDescending(m => GetRolePrivilegeRank(m.Role))
+                        .ThenByDescending(m => m.Id == activeMembershipId ? 1 : 0)
+                        .FirstOrDefault();
+                    if (targetFirmBest is not null)
+                    {
+                        bestMembership = targetFirmBest;
+                    }
+                    else if (bestMembership.Role == WorkspaceSecurityRole.FirmManager)
+                    {
+                        // User has no membership in the target firm: do not grant FirmManager there.
+                        bestMembership = propertyMatches
+                            .Where(m => m.Role != WorkspaceSecurityRole.FirmManager)
+                            .OrderByDescending(m => GetRolePrivilegeRank(m.Role))
+                            .ThenByDescending(m => m.Id == activeMembershipId ? 1 : 0)
+                            .FirstOrDefault() ?? bestMembership;
+                        if (bestMembership.Role == WorkspaceSecurityRole.FirmManager)
+                        {
+                            role = WorkspaceSecurityRole.Resident;
+                            status = WorkspaceMembershipStatus.PendingApproval;
+                            firmId = targetFirmId;
+                            permissions = WorkspacePermissionPresets.DefaultForRole(role);
+                            activeMembershipId = Guid.Empty;
+                            foreach (var m in pool)
+                            {
+                                foreach (var acc in m.PropertyAccesses)
+                                {
+                                    if (!allowedCommunityIds.Contains(acc.CommunityId))
+                                    {
+                                        allowedCommunityIds.Add(acc.CommunityId);
+                                    }
+                                }
+                            }
+                            var isFirmManagerDenied = false;
+                            return new SparkAgentPermissionContext(
+                                UserId: userId,
+                                FullName: fullName,
+                                Email: email,
+                                ActiveMembershipId: null,
+                                ManagementFirmId: firmId,
+                                Role: role,
+                                MembershipStatus: status,
+                                GrantedPermissions: permissions,
+                                AllowedCommunityIds: allowedCommunityIds,
+                                LinkedUnitId: linkedUnitId,
+                                LinkedUnitNumber: linkedUnitNumber,
+                                IsFirmManager: isFirmManagerDenied);
+                        }
+                    }
+                }
+
                 role = bestMembership.Role;
                 status = bestMembership.Status;
-                firmId = bestMembership.ManagementFirmId != Guid.Empty ? bestMembership.ManagementFirmId : firmId;
+                firmId = hasTargetFirm ? targetFirmId : (bestMembership.ManagementFirmId != Guid.Empty ? bestMembership.ManagementFirmId : firmId);
                 activeMembershipId = bestMembership.Id;
 
                 WorkspacePermissionFlags combinedPermissions = 0;
@@ -407,7 +466,12 @@ public sealed class SparkAgentPermissionEvaluator
             "register_link"
                 or "create_invitation_link"
                 or "create_registration_link"
-                or "create_resident_link" => "generate_registration_link",
+                or "create_resident_link"
+                or "generate_profile_registration_link"
+                or "profile_registration_link"
+                or "send_invitation_email"
+                or "claim_profile"
+                or "claim_resident_profile" => "generate_registration_link",
 
             "query_entities"
                 or "search_entities" => "query_system_entities",
@@ -418,6 +482,23 @@ public sealed class SparkAgentPermissionEvaluator
             "create_property"
                 or "add_community"
                 or "new_community" => "create_community",
+
+            "remove_building"
+                or "delete building"
+                or "remove building" => "delete_building",
+
+            "upload_ballot_ocr"
+                or "digitize_ballot"
+                or "ballot_ocr" => "run_governance_and_voting_workflow",
+
+            "weather"
+                or "get_weather"
+                or "check_weather"
+                or "weather_scan"
+                or "scan_outages"
+                or "check_outages"
+                or "outage_scan"
+                or "outages_and_weather" => "get_weather_and_outages",
 
             _ => raw
         };
@@ -436,7 +517,7 @@ public sealed class SparkAgentPermissionEvaluator
             return new SparkAgentPermissionEvaluationResult(true, 0, 0);
         }
 
-        if (normalizedTool is "execute_database_query" or "query_system_entities" or "get_workspace_overview" or "generate_custom_info_image")
+        if (normalizedTool is "execute_database_query" or "query_system_entities" or "get_workspace_overview" or "generate_custom_info_image" or "get_weather_and_outages")
         {
             var targetComId = ResolveCommunityId(args);
             if (targetComId.HasValue && !context.CanAccessCommunity(targetComId.Value))
@@ -521,7 +602,7 @@ public sealed class SparkAgentPermissionEvaluator
             return new SparkAgentPermissionEvaluationResult(true, 0, 0);
         }
 
-        if (normalizedTool is "update_community_profile" or "upsert_community_contact" or "delete_community_contact")
+        if (normalizedTool is "update_community_profile" or "upsert_community_contact" or "delete_community_contact" or "add_property_document")
         {
             const WorkspacePermissionFlags required = WorkspacePermissionFlags.ManagePropertySettings;
             if (!context.HasFlag(required))
@@ -544,9 +625,23 @@ public sealed class SparkAgentPermissionEvaluator
             return new SparkAgentPermissionEvaluationResult(true, required, 0);
         }
 
+        if (normalizedTool is "check_property_documents")
+        {
+            var targetComId = ResolveCommunityId(args);
+            if (targetComId.HasValue && !context.CanAccessCommunity(targetComId.Value))
+            {
+                return new SparkAgentPermissionEvaluationResult(
+                    false,
+                    0,
+                    0,
+                    $"Community '{targetComId}' is outside your allowed community scope.");
+            }
+            return new SparkAgentPermissionEvaluationResult(true, 0, 0);
+        }
+
         // CATEGORY D: Buildings & Units (Strictly Manager Only)
         if (normalizedTool is "create_building" or "upsert_riser_stack_or_structure" or "create_unit_wizard"
-            or "update_unit_details" or "bulk_generate_floor_units" or "delete_unit")
+            or "update_unit_details" or "bulk_generate_floor_units" or "delete_unit" or "delete_building")
         {
             const WorkspacePermissionFlags required = WorkspacePermissionFlags.ManageUnitsAndInfrastructure;
             if (context.Role == WorkspaceSecurityRole.Resident || !context.HasFlag(required))
@@ -690,7 +785,7 @@ public sealed class SparkAgentPermissionEvaluator
             return new SparkAgentPermissionEvaluationResult(true, required, 0);
         }
 
-        if (normalizedTool is "match_bank_transfers" or "run_inflation_and_power_audit")
+        if (normalizedTool is "match_bank_transfers" or "run_inflation_and_power_audit" or "generate_czynsz_assessment")
         {
             const WorkspacePermissionFlags required = WorkspacePermissionFlags.ManageFinancialsAndLedger;
             if (context.Role == WorkspaceSecurityRole.Resident || !context.HasFlag(required))
@@ -767,6 +862,39 @@ public sealed class SparkAgentPermissionEvaluator
                 WorkspacePermissionFlags.ManageWorkOrdersAndInspections,
                 WorkspacePermissionFlags.ManageWorkOrdersAndInspections,
                 "Reporting maintenance requires ManageWorkOrdersAndInspections or ResidentReportMaintenance.");
+        }
+
+        if (normalizedTool is "post_maintenance_message")
+        {
+            if (context.HasFlag(WorkspacePermissionFlags.ManageWorkOrdersAndInspections))
+            {
+                return new SparkAgentPermissionEvaluationResult(true, WorkspacePermissionFlags.ManageWorkOrdersAndInspections, 0);
+            }
+            if (context.HasFlag(WorkspacePermissionFlags.ResidentReportMaintenance)
+                || context.HasFlag(WorkspacePermissionFlags.ResidentCommunityAndMessages)
+                || context.HasFlag(WorkspacePermissionFlags.ContractorDirectMessaging))
+            {
+                return new SparkAgentPermissionEvaluationResult(true, WorkspacePermissionFlags.ResidentReportMaintenance, 0);
+            }
+            return new SparkAgentPermissionEvaluationResult(
+                false,
+                WorkspacePermissionFlags.ManageWorkOrdersAndInspections,
+                WorkspacePermissionFlags.ManageWorkOrdersAndInspections,
+                "Posting maintenance thread messages requires ManageWorkOrdersAndInspections or ResidentReportMaintenance.");
+        }
+
+        if (normalizedTool is "assign_maintenance_contractor")
+        {
+            const WorkspacePermissionFlags required = WorkspacePermissionFlags.ManageWorkOrdersAndInspections;
+            if (!context.HasFlag(required))
+            {
+                return new SparkAgentPermissionEvaluationResult(
+                    false,
+                    required,
+                    required,
+                    "Assigning a maintenance contractor requires ManageWorkOrdersAndInspections permission.");
+            }
+            return new SparkAgentPermissionEvaluationResult(true, required, 0);
         }
 
         if (normalizedTool is "run_vision_inspection_or_verify_repair")
@@ -1086,6 +1214,25 @@ public sealed class SparkAgentToolExecutor(
                     $"/properties/{snapshot.Community.Id}/overview");
                 }
 
+                // A6b. get_weather_and_outages (live outage + weather radar via workspace scan)
+                case "get_weather_and_outages":
+                {
+                    var summary = await workspace.ScanUtilitySourcesAndWeatherAsync(comId, ct);
+                    await using var weatherDb = await dbFactory.CreateDbContextAsync(ct);
+                    var outageRows = await weatherDb.UtilityOutages.AsNoTracking()
+                        .Where(o => o.CommunityId == comId && o.IsActive)
+                        .OrderByDescending(o => o.StartAt)
+                        .Take(10)
+                        .Select(o => new { o.UtilityKind, o.ProviderName, o.Summary, o.StartAt, o.EstimatedEndAt })
+                        .ToListAsync(ct);
+                    return MakeResult(new
+                    {
+                        communityId = comId,
+                        summary,
+                        activeOutages = outageRows
+                    }, summary, $"/properties/{comId}/utilities");
+                }
+
                 // A7. switch_ui_context_or_navigate
                 case "switch_ui_context_or_navigate":
                 {
@@ -1230,6 +1377,8 @@ public sealed class SparkAgentToolExecutor(
                         mode,
                         args.GetValueOrDefault("taxId") ?? "0000000000",
                         context.EffectiveRole,
+                        context.UserId == Guid.Empty ? null : context.UserId,
+                        context.ActiveMembershipId,
                         ct);
                     return MakeResult(new
                     {
@@ -1263,6 +1412,8 @@ public sealed class SparkAgentToolExecutor(
                             dossier.SuggestedOperatingMode,
                             "DISCOVERED-TIN",
                             context.EffectiveRole,
+                            context.UserId == Guid.Empty ? null : context.UserId,
+                            context.ActiveMembershipId,
                             ct);
                     }
                     return MakeResult(new
@@ -1346,6 +1497,64 @@ public sealed class SparkAgentToolExecutor(
                     return MakeError("Valid contactId is required.");
                 }
 
+                // C17b. check_property_documents (read allowed for every WorkspaceMember with property access)
+                case "check_property_documents":
+                {
+                    var docs = await workspace.GetPropertyDocumentsAsync(comId, ct);
+                    var search = args.GetValueOrDefault("searchTerm") ?? args.GetValueOrDefault("searchText") ?? string.Empty;
+                    var category = args.GetValueOrDefault("category") ?? string.Empty;
+                    var filtered = docs.AsEnumerable();
+                    if (!string.IsNullOrWhiteSpace(category)
+                        && Enum.TryParse<LegalDocumentKind>(category, true, out var kind))
+                    {
+                        filtered = filtered.Where(d => d.Kind == kind);
+                    }
+                    if (!string.IsNullOrWhiteSpace(search))
+                    {
+                        filtered = filtered.Where(d =>
+                            d.DocumentCode.Contains(search, StringComparison.OrdinalIgnoreCase)
+                            || d.Title.Contains(search, StringComparison.OrdinalIgnoreCase)
+                            || d.VerbatimLegalText.Contains(search, StringComparison.OrdinalIgnoreCase));
+                    }
+                    var rows = filtered.OrderBy(d => d.DocumentCode).Take(20).Select(d => new
+                    {
+                        documentId = d.Id,
+                        documentCode = d.DocumentCode,
+                        title = d.Title,
+                        category = d.Kind.ToString(),
+                        excerpt = d.VerbatimLegalText.Length > 240 ? d.VerbatimLegalText[..240] + "..." : d.VerbatimLegalText
+                    }).ToList();
+                    return MakeResult(new { communityId = comId, totalCount = rows.Count, documents = rows },
+                        $"Checked property documents panel: {rows.Count} document(s) on file ({string.Join(", ", rows.Select(r => r.documentCode))})",
+                        $"/properties/{comId}/governance");
+                }
+
+                // C17c. add_property_document (write requires ManagePropertySettings)
+                case "add_property_document":
+                {
+                    var code = args.GetValueOrDefault("documentCode") ?? string.Empty;
+                    var title = args.GetValueOrDefault("title") ?? string.Empty;
+                    if (string.IsNullOrWhiteSpace(code) || string.IsNullOrWhiteSpace(title))
+                    {
+                        return MakeError("documentCode and title are required to file a property document.");
+                    }
+                    var doc = await workspace.AddPropertyDocumentAsync(
+                        comId,
+                        code,
+                        title,
+                        args.GetValueOrDefault("category") ?? LegalDocumentKind.CommunityStatuteOrCcr.ToString(),
+                        args.GetValueOrDefault("verbatimText") ?? args.GetValueOrDefault("notes") ?? string.Empty,
+                        context.EffectiveRole,
+                        ct);
+                    return MakeResult(new
+                    {
+                        documentId = doc.Id,
+                        documentCode = doc.DocumentCode,
+                        title = doc.Title,
+                        category = doc.Kind.ToString()
+                    }, $"Filed property document '{doc.Title}' ({doc.DocumentCode})", $"/properties/{comId}/governance");
+                }
+
                 // D18. create_building
                 case "create_building":
                 {
@@ -1383,8 +1592,8 @@ public sealed class SparkAgentToolExecutor(
                     var stackCode = args.GetValueOrDefault("stackCode") ?? "STACK-A1";
                     var loc = args.GetValueOrDefault("shutoffLocation") ?? "Basement Main Lever";
                     var stack = await workspace.UpsertRiserStackAsync(comId, bldId, stackCode, loc, context.EffectiveRole, ct);
-                    return MakeResult(new { stackId = stack.Id, stackCode = stack.Code, shutoff = stack.ShutoffValveLocation },
-                        $"Upserted vertical riser stack '{stack.Code}' at {stack.ShutoffValveLocation}");
+                    return MakeResult(new { stackId = stack.Id, buildingId = bldId, stackCode = stack.Code, shutoff = stack.ShutoffValveLocation },
+                        $"Upserted vertical riser stack '{stack.Code}' at {stack.ShutoffValveLocation}", $"/properties/{comId}/infrastructure");
                 }
 
                 // D20. create_unit_wizard
@@ -1522,6 +1731,32 @@ public sealed class SparkAgentToolExecutor(
                     return MakeResult(new { deletedUnitId = unitId, status = "Removed" }, $"Deleted unit {unitId}");
                 }
 
+                // D23b. delete_building
+                case "delete_building":
+                {
+                    var target = await ResolveBuildingDeleteTargetAsync(args, context, comId, ct);
+                    if (!target.IsResolved)
+                    {
+                        return target.Clarification!;
+                    }
+
+                    var confirmed = bool.TryParse(args.GetValueOrDefault("confirm"), out var c) && c;
+                    if (!confirmed)
+                    {
+                        return MakeClarification(
+                            $"Building '{target.BuildingName}' requires explicit confirmation before deletion.",
+                            $"Delete building '{target.BuildingName}' ({target.UnitCount} units)? Buildings with units cannot be deleted. Reply with confirm=true to delete this empty building.",
+                            [$"{target.BuildingName}"],
+                            "confirm",
+                            resolvedBuildingId: target.BuildingId,
+                            resolvedBuildingName: target.BuildingName);
+                    }
+
+                    await workspace.DeleteBuildingAsync(target.CommunityId, target.BuildingId, context.EffectiveRole, false, ct);
+                    return MakeResult(new { deletedBuildingId = target.BuildingId, buildingName = target.BuildingName, status = "Deleted" },
+                        $"Deleted building '{target.BuildingName}'", $"/properties/{target.CommunityId}/infrastructure");
+                }
+
                 // E24. create_or_update_resident_profile
                 case "create_or_update_resident_profile":
                 {
@@ -1561,12 +1796,23 @@ public sealed class SparkAgentToolExecutor(
                             $"Updated resident profile {updated.FullName} ({updated.ResidentAccountNumber})", $"/admin/residents/{updated.Id}");
                     }
 
+                    var requestedEmail = (args.GetValueOrDefault("email") ?? "resident@example.local").Trim();
+                    // Only reuse the caller identity when creating the caller own profile.
+                    // Manager-created profiles for other people must not inherit the manager UserId.
+                    Guid? profileUserId = null;
+                    if (!string.IsNullOrWhiteSpace(requestedEmail)
+                        && !string.IsNullOrWhiteSpace(context.Email)
+                        && string.Equals(requestedEmail, context.Email.Trim(), StringComparison.OrdinalIgnoreCase)
+                        && context.UserId != Guid.Empty)
+                    {
+                        profileUserId = context.UserId;
+                    }
                     var created = await workspace.CreateOrGetResidentProfileAsync(
                         context.ManagementFirmId,
-                        context.UserId,
+                        profileUserId,
                         first,
                         last,
-                        args.GetValueOrDefault("email") ?? "resident@example.local",
+                        requestedEmail,
                         args.GetValueOrDefault("phone") ?? "+48 000 000 000",
                         args.GetValueOrDefault("preferredLanguage") ?? "EN",
                         args.GetValueOrDefault("emergencyContactName") ?? string.Empty,
@@ -1645,13 +1891,37 @@ public sealed class SparkAgentToolExecutor(
                         ConflictOverrideReason: args.GetValueOrDefault("conflictOverrideReason"));
 
                     var result = await workspace.AssignResidentToUnitManualAsync(req, context.EffectiveRole, context.FullName, context.ActiveMembershipId, ct);
+                    string? assignedUnitNumber = null;
+                    string? assignedBuildingName = null;
+                    Guid assignedBuildingId = result.BuildingId;
+                    await using (var assignmentDb = await dbFactory.CreateDbContextAsync(ct))
+                    {
+                        var assignedUnit = await assignmentDb.Units.AsNoTracking()
+                            .Where(u => u.Id == result.UnitId && u.CommunityId == comId)
+                            .Select(u => new
+                            {
+                                u.UnitNumber,
+                                u.BuildingId,
+                                BuildingName = assignmentDb.Buildings.Where(b => b.Id == u.BuildingId).Select(b => b.Name).FirstOrDefault()
+                            })
+                            .FirstOrDefaultAsync(ct);
+                        assignedUnitNumber = assignedUnit?.UnitNumber;
+                        assignedBuildingName = assignedUnit?.BuildingName;
+                        if (assignedBuildingId == Guid.Empty && assignedUnit is not null)
+                        {
+                            assignedBuildingId = assignedUnit.BuildingId;
+                        }
+                    }
                     return MakeResult(new
                     {
                         assignmentId = result.Id,
                         unitId = result.UnitId,
+                        unitNumber = assignedUnitNumber,
+                        buildingId = assignedBuildingId,
+                        buildingName = assignedBuildingName,
                         residentProfileId = result.ResidentProfileId,
                         status = result.Status.ToString()
-                    }, $"Assigned resident to unit {unitId} (Status: {result.Status})", $"/properties/{comId}/units/{unitId}");
+                    }, $"Assigned resident to Unit {assignedUnitNumber ?? result.UnitId.ToString()} in {assignedBuildingName ?? "the selected building"} (Status: {result.Status})", $"/properties/{comId}/units/{result.UnitId}");
                 }
 
                 // E26. execute_resident_move_out
@@ -1666,11 +1936,16 @@ public sealed class SparkAgentToolExecutor(
                 // E27. generate_registration_link
                 case "generate_registration_link":
                 {
-                    var unitId = Guid.TryParse(args.GetValueOrDefault("targetUnitId") ?? args.GetValueOrDefault("unitId"), out var tuid) ? tuid : Guid.Empty;
+                    var target = await ResolveRegistrationTargetAsync(args, context, comId, ct);
+                    if (!target.IsResolved)
+                    {
+                        return target.Clarification!;
+                    }
+
                     var mode = ParseEnum(args.GetValueOrDefault("approvalMode"), RegistrationApprovalMode.AutomaticAuthorized);
                     var linkGen = await workspace.GenerateResidentRegistrationLinkAsync(
-                        comId,
-                        unitId,
+                        target.CommunityId,
+                        target.UnitId,
                         mode,
                         ParseEnum(args.GetValueOrDefault("intendedAssignmentType"), ResidentAssignmentType.Tenant),
                         DateTime.UtcNow.AddDays(int.TryParse(args.GetValueOrDefault("expiresInDays"), out var exp) ? exp : 14),
@@ -1680,14 +1955,39 @@ public sealed class SparkAgentToolExecutor(
                         context.FullName,
                         context.ActiveMembershipId,
                         ct);
+                    // Defense-in-depth: never return an empty or Guid.Empty deep link.
+                    if (linkGen.TokenRecord is null
+                        || linkGen.TokenRecord.Id == Guid.Empty
+                        || linkGen.TokenRecord.TargetUnitId == Guid.Empty
+                        || linkGen.TokenRecord.BuildingId == Guid.Empty
+                        || linkGen.TokenRecord.CommunityId == Guid.Empty
+                        || string.IsNullOrWhiteSpace(linkGen.PlaintextToken)
+                        || string.IsNullOrWhiteSpace(linkGen.RelativeUrl))
+                    {
+                        return MakeClarification(
+                            "Registration-link generation returned an empty token, unit, building, or URL.",
+                            "The registration link could not be generated because the generated token or target ID was empty. Which building and unit should receive the link? Please confirm the exact building and unit before retrying.",
+                            [$"{target.BuildingName} — Unit {target.UnitNumber}"],
+                            "unitId",
+                            target.UnitId,
+                            target.UnitNumber,
+                            target.BuildingId,
+                            target.BuildingName);
+                    }
+
                     return MakeResult(new
                     {
                         tokenId = linkGen.TokenRecord.Id,
+                        communityId = target.CommunityId,
+                        buildingId = target.BuildingId,
+                        buildingName = target.BuildingName,
+                        unitId = target.UnitId,
+                        unitNumber = target.UnitNumber,
                         plainToken = linkGen.PlaintextToken,
                         registrationUrl = linkGen.RelativeUrl,
                         approvalMode = linkGen.TokenRecord.ApprovalMode.ToString(),
                         expiresAtUtc = linkGen.TokenRecord.ExpiresAtUtc
-                    }, $"Generated Mode {(mode == RegistrationApprovalMode.AutomaticAuthorized ? "A" : "B")} registration link: {linkGen.RelativeUrl}", linkGen.RelativeUrl);
+                    }, $"Generated Mode {(mode == RegistrationApprovalMode.AutomaticAuthorized ? "A" : "B")} registration link for Unit {target.UnitNumber} in {target.BuildingName}: {linkGen.RelativeUrl}", linkGen.RelativeUrl);
                 }
 
                 // E28. revoke_registration_link
@@ -1859,7 +2159,49 @@ public sealed class SparkAgentToolExecutor(
                     }, $"Inflation simulation average increase {sim.AverageIncreasePct:N1}% (Cap exceeded: {sim.ExceedsUsHoaStatutory20PercentCap}). Power audit: {powerResult.Summary}");
                 }
 
-                // F36. generate_arrears_or_mediation_action
+                // F36. generate_czynsz_assessment
+                case "generate_czynsz_assessment":
+                {
+                    var unitId = Guid.TryParse(args.GetValueOrDefault("unitId"), out var cuid) ? cuid : Guid.Empty;
+                    var unitNumber = args.GetValueOrDefault("unitNumber") ?? string.Empty;
+                    var period = (args.GetValueOrDefault("period") ?? DateTime.UtcNow.ToString("yyyy-MM")).Trim();
+                    if (unitId == Guid.Empty && !string.IsNullOrWhiteSpace(unitNumber))
+                    {
+                        await using var lookupDb = await dbFactory.CreateDbContextAsync(ct);
+                        unitId = await lookupDb.Units.AsNoTracking()
+                            .Where(u => u.CommunityId == comId
+                                && u.UnitNumber.ToUpper() == unitNumber.Trim().ToUpperInvariant())
+                            .Select(u => u.Id)
+                            .FirstOrDefaultAsync(ct);
+                    }
+
+                    if (unitId == Guid.Empty)
+                    {
+                        return MakeError("Valid unitId or unitNumber is required for generate_czynsz_assessment.");
+                    }
+
+                    var czynszLines = CommonGroundWorkspaceService.RecomputeCzynszLines(
+                        ParseCzynszLines(args.GetValueOrDefault("lines")));
+                    var saved = await workspace.SaveCzynszAssessmentAsync(
+                        comId, unitId, period, czynszLines, context.EffectiveRole, ct);
+                    return MakeResult(new
+                    {
+                        assessmentId = saved.Id,
+                        unitId = saved.UnitId,
+                        unitNumber = saved.UnitNumber,
+                        period = saved.Period,
+                        operatingFee = saved.OperatingFee,
+                        repairFundFee = saved.RepairFundFee,
+                        wasteFee = saved.WasteFee,
+                        coldWaterAdvance = saved.ColdWaterAdvance,
+                        hotWaterAdvance = saved.HotWaterAdvance,
+                        heatingAdvance = saved.HeatingAdvance,
+                        commercialRevenueCredit = saved.CommercialRevenueCredit,
+                        total = saved.TotalAssessment
+                    }, $"Generated czynsz assessment for unit {saved.UnitNumber} period {saved.Period}: total {saved.TotalAssessment:N2}", $"/properties/{comId}/financials");
+                }
+
+                // F37. generate_arrears_or_mediation_action
                 case "generate_arrears_or_mediation_action":
                 {
                     var actionType = (args.GetValueOrDefault("actionType") ?? "arrears_action").ToLowerInvariant();
@@ -1945,6 +2287,58 @@ public sealed class SparkAgentToolExecutor(
                     }, $"Submitted maintenance ticket '{wo.Title}' [Boundary: {wo.Boundary}, BOQ: {wo.InvestorBoqEstimateAmount:N2}]", $"/properties/{comId}/maintenance");
                 }
 
+                // G38a. post_maintenance_message (simple forum reply with optional photo)
+                case "post_maintenance_message":
+                {
+                    if (!Guid.TryParse(args.GetValueOrDefault("workOrderId"), out var threadId) || threadId == Guid.Empty)
+                    {
+                        return MakeError("Valid workOrderId is required.");
+                    }
+                    var body = args.GetValueOrDefault("body") ?? args.GetValueOrDefault("messageText") ?? string.Empty;
+                    if (string.IsNullOrWhiteSpace(body))
+                    {
+                        return MakeError("Message body is required.");
+                    }
+                    var posted = await workspace.PostWorkOrderMessageAsync(
+                        comId,
+                        threadId,
+                        context.FullName,
+                        context.EffectiveRole.ToString(),
+                        body,
+                        args.GetValueOrDefault("attachmentDataUrl"),
+                        context.EffectiveRole,
+                        ct);
+                    return MakeResult(new
+                    {
+                        workOrderId = threadId,
+                        messageId = posted.Id,
+                        hasPhoto = !string.IsNullOrWhiteSpace(posted.AttachmentDataUrl),
+                        sentAtUtc = posted.CreatedAtUtc
+                    }, $"Posted maintenance thread message in {threadId}", $"/properties/{comId}/maintenance");
+                }
+
+                // G38b. assign_maintenance_contractor (manager converts forum thread to task)
+                case "assign_maintenance_contractor":
+                {
+                    if (!Guid.TryParse(args.GetValueOrDefault("workOrderId"), out var assignThreadId) || assignThreadId == Guid.Empty)
+                    {
+                        return MakeError("Valid workOrderId is required.");
+                    }
+                    if (!Guid.TryParse(args.GetValueOrDefault("vendorId"), out var assignVendorId) || assignVendorId == Guid.Empty)
+                    {
+                        return MakeError("Valid vendorId is required.");
+                    }
+                    var assigned = await workspace.AssignWorkOrderVendorAsync(comId, assignThreadId, assignVendorId, context.EffectiveRole, ct);
+                    return MakeResult(new
+                    {
+                        workOrderId = assigned.Id,
+                        title = assigned.Title,
+                        vendorId = assigned.AssignedVendorId,
+                        vendorName = assigned.AssignedVendorName,
+                        status = assigned.Status.ToString()
+                    }, $"Assigned contractor {assigned.AssignedVendorName} to '{assigned.Title}'", $"/properties/{comId}/maintenance");
+                }
+
                 // G39. run_vision_inspection_or_verify_repair
                 case "run_vision_inspection_or_verify_repair":
                 {
@@ -2025,7 +2419,12 @@ public sealed class SparkAgentToolExecutor(
                 // G41. run_governance_and_voting_workflow
                 case "run_governance_and_voting_workflow":
                 {
-                    var workflowType = (args.GetValueOrDefault("workflowType") ?? "meeting_autopilot").ToLowerInvariant();
+                    var workflowTypeRaw = args.GetValueOrDefault("workflowType");
+                    if (string.IsNullOrWhiteSpace(workflowTypeRaw) && string.Equals(toolName?.Trim(), "upload_ballot_ocr", StringComparison.OrdinalIgnoreCase))
+                    {
+                        workflowTypeRaw = "digitize";
+                    }
+                    var workflowType = (workflowTypeRaw ?? "meeting_autopilot").ToLowerInvariant();
                     if (workflowType == "cast_vote")
                     {
                         var resId = Guid.TryParse(args.GetValueOrDefault("resolutionId"), out var rid) ? rid : Guid.Empty;
@@ -2073,11 +2472,15 @@ public sealed class SparkAgentToolExecutor(
                             "Rendered architectural renovation previews and stairwell QR poster");
                     }
 
-                    if (workflowType.Contains("ballot"))
+                    if (workflowType.Contains("ballot") || workflowType.Contains("upload_ballot_ocr") || workflowType.Contains("digitize"))
                     {
                         var resId = Guid.TryParse(args.GetValueOrDefault("resolutionId"), out var rid) ? rid : Guid.Empty;
-                        var tally = await workspace.DigitizePaperBallotSheetAsync(comId, resId, ct);
-                        return MakeResult(new { isAdopted = tally.IsAdopted, sharesFor = tally.SharesFor, sharesAgainst = tally.SharesAgainst },
+                        var ballotImageDataUrl = args.GetValueOrDefault("ballotImageDataUrl");
+                        var tally = await workspace.DigitizePaperBallotSheetAsync(comId, resId, ballotImageDataUrl, ct);
+                        var truncatedImage = string.IsNullOrWhiteSpace(ballotImageDataUrl)
+                            ? string.Empty
+                            : ballotImageDataUrl.Length > 64 ? ballotImageDataUrl[..64] + "..." : ballotImageDataUrl;
+                        return MakeResult(new { isAdopted = tally.IsAdopted, sharesFor = tally.SharesFor, sharesAgainst = tally.SharesAgainst, ballotImagePrefix = truncatedImage },
                             $"Digitized paper ballot sheets: shares for {tally.SharesFor:P2}. Adopted: {tally.IsAdopted}");
                     }
 
@@ -2498,9 +2901,55 @@ public sealed class SparkAgentToolExecutor(
                 return MakeResult(new { entity = "utility_meters", count = list.Count, rows = list }, $"Retrieved {list.Count} utility meters");
             }
 
+            case "legal_documents":
+            case "legaldocuments":
+            case "property_documents":
+            case "documents":
+            {
+                var q = db.LegalDocuments.AsNoTracking().AsQueryable();
+                if (communityId != Guid.Empty)
+                {
+                    q = q.Where(d => d.CommunityId == communityId);
+                }
+                else if (context.AllowedCommunityIds.Count > 0)
+                {
+                    q = q.Where(d => context.AllowedCommunityIds.Contains(d.CommunityId));
+                }
+                else if (!(context.IsFirmManager && context.ManagementFirmId.HasValue))
+                {
+                    q = q.Where(d => false);
+                }
+                if (!string.IsNullOrWhiteSpace(filterField) && !string.IsNullOrWhiteSpace(filterVal))
+                {
+                    if (filterField.Equals("DocumentCode", StringComparison.OrdinalIgnoreCase))
+                    {
+                        q = q.Where(d => d.DocumentCode == filterVal);
+                    }
+                    else if (filterField.Equals("Title", StringComparison.OrdinalIgnoreCase))
+                    {
+                        q = q.Where(d => d.Title.Contains(filterVal));
+                    }
+                    else if (filterField.Equals("Kind", StringComparison.OrdinalIgnoreCase)
+                        && Enum.TryParse<LegalDocumentKind>(filterVal, true, out var kind))
+                    {
+                        q = q.Where(d => d.Kind == kind);
+                    }
+                }
+                var docs = await q.OrderBy(d => d.DocumentCode).Take(take).Select(d => new
+                {
+                    d.Id,
+                    d.CommunityId,
+                    documentCode = d.DocumentCode,
+                    title = d.Title,
+                    category = d.Kind.ToString(),
+                    d.OfficialCitation
+                }).ToListAsync(ct);
+                return MakeResult(new { entity = "legal_documents", count = docs.Count, rows = docs }, $"Retrieved {docs.Count} property documents");
+            }
+
             default:
             {
-                return MakeError($"Entity '{entityName}' is not indexed for dynamic database queries. Supported entities: units, communities, work_orders, resolutions, utility_meters.");
+                return MakeError($"Entity '{entityName}' is not indexed for dynamic database queries. Supported entities: units, communities, work_orders, resolutions, utility_meters, legal_documents.");
             }
         }
     }
@@ -2608,6 +3057,92 @@ public sealed class SparkAgentToolExecutor(
                 $"Found {comms.Count} communities matching '{searchTerm}'");
         }
 
+        if (norm is "legal_documents" or "legaldocuments" or "property_documents" or "propertydocuments" or "documents")
+        {
+            var scoped = communityId != Guid.Empty
+                && (context.IsFirmManager || context.CanAccessCommunity(communityId));
+            if (!scoped && context.AllowedCommunityIds.Count == 0)
+            {
+                return MakeResult(new { entityType = "legal_documents", totalCount = 0, records = Array.Empty<object>() },
+                    $"No property documents visible in the current access scope.");
+            }
+            var q = db.LegalDocuments.AsNoTracking().AsQueryable();
+            if (communityId != Guid.Empty)
+            {
+                q = q.Where(d => d.CommunityId == communityId);
+            }
+            else if (context.AllowedCommunityIds.Count > 0)
+            {
+                q = q.Where(d => context.AllowedCommunityIds.Contains(d.CommunityId));
+            }
+            if (!string.IsNullOrWhiteSpace(searchTerm))
+            {
+                q = q.Where(d => d.DocumentCode.Contains(searchTerm) || d.Title.Contains(searchTerm) || d.VerbatimLegalText.Contains(searchTerm));
+            }
+            var docs = await q.OrderBy(d => d.DocumentCode).Take(20).Select(d => new
+            {
+                d.Id,
+                d.CommunityId,
+                documentCode = d.DocumentCode,
+                title = d.Title,
+                category = d.Kind.ToString(),
+                d.OfficialCitation,
+                excerpt = d.VerbatimLegalText.Length > 240 ? d.VerbatimLegalText.Substring(0, 240) + "..." : d.VerbatimLegalText
+            }).ToListAsync(ct);
+            return MakeResult(new { entityType = "legal_documents", totalCount = docs.Count, records = docs },
+                $"Found {docs.Count} property documents matching '{searchTerm}' ({string.Join(", ", docs.Select(d => d.documentCode))})");
+        }
+
+        if (norm is "buildings" or "building")
+        {
+            var scoped = communityId != Guid.Empty
+                && (context.IsFirmManager || context.CanAccessCommunity(communityId));
+            if (!scoped && context.AllowedCommunityIds.Count == 0)
+            {
+                return MakeResult(new { entityType = "buildings", totalCount = 0, records = Array.Empty<object>() },
+                    "No buildings visible in the current access scope.");
+            }
+            var q = db.Buildings.AsNoTracking().AsQueryable();
+            if (communityId != Guid.Empty)
+            {
+                q = q.Where(b => b.CommunityId == communityId);
+            }
+            else if (context.AllowedCommunityIds.Count > 0)
+            {
+                q = q.Where(b => context.AllowedCommunityIds.Contains(b.CommunityId));
+            }
+            if (!string.IsNullOrWhiteSpace(searchTerm))
+            {
+                q = q.Where(b => b.Name.Contains(searchTerm));
+            }
+            var buildingRows = await q.OrderBy(b => b.Name).Take(20).Select(b => new
+            {
+                b.Id,
+                b.CommunityId,
+                b.Name,
+                b.FloorsCount,
+                b.StairwellsCount
+            }).ToListAsync(ct);
+            var buildingIds = buildingRows.Select(b => b.Id).ToList();
+            var unitCounts = await db.Units.AsNoTracking()
+                .Where(u => buildingIds.Contains(u.BuildingId))
+                .GroupBy(u => u.BuildingId)
+                .Select(g => new { BuildingId = g.Key, Count = g.Count() })
+                .ToDictionaryAsync(g => g.BuildingId, g => g.Count, ct);
+            var rows = buildingRows.Select(b => new
+            {
+                id = b.Id,
+                communityId = b.CommunityId,
+                name = b.Name,
+                floorsCount = b.FloorsCount,
+                stairwellsCount = b.StairwellsCount,
+                unitCount = unitCounts.TryGetValue(b.Id, out var count) ? count : 0
+            }).ToList();
+            return MakeResult(new { entityType = "buildings", totalCount = rows.Count, records = rows },
+                $"Found {rows.Count} buildings matching '{searchTerm}' ({string.Join(", ", rows.Select(r => r.name))})",
+                communityId == Guid.Empty ? null : $"/properties/{communityId}/infrastructure");
+        }
+
         // Generic entity inspection
         return MakeResult(new { entityType, totalCount = 0, records = Array.Empty<object>() },
             $"Inspected system entity set '{entityType}'");
@@ -2645,6 +3180,55 @@ public sealed class SparkAgentToolExecutor(
         return null;
     }
 
+    private static IReadOnlyList<CzynszLineItem> ParseCzynszLines(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return [];
+        }
+
+        try
+        {
+            var parsed = JsonSerializer.Deserialize<List<CzynszLinePayload>>(raw, JsonOpts);
+            if (parsed is null || parsed.Count == 0)
+            {
+                return [];
+            }
+
+            var result = new List<CzynszLineItem>();
+            foreach (var p in parsed.Take(50))
+            {
+                var kind = Enum.TryParse<CzynszLineKind>(p.Kind, true, out var k) ? k : CzynszLineKind.Fixed;
+                var qty = Math.Max(0m, p.Quantity);
+                var price = Math.Max(0m, p.UnitPrice);
+                result.Add(new CzynszLineItem(
+                    string.IsNullOrWhiteSpace(p.Key) ? $"custom-{result.Count + 1}" : p.Key.Trim(),
+                    string.IsNullOrWhiteSpace(p.Label) ? "Custom line" : p.Label.Trim(),
+                    kind,
+                    Math.Round(qty, 3),
+                    Math.Round(price, 4),
+                    Math.Round(qty * price, 2),
+                    p.IsCredit));
+            }
+
+            return result;
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    private sealed class CzynszLinePayload
+    {
+        public string? Key { get; set; }
+        public string? Label { get; set; }
+        public string? Kind { get; set; }
+        public decimal Quantity { get; set; }
+        public decimal UnitPrice { get; set; }
+        public bool IsCredit { get; set; }
+    }
+
     private static IReadOnlyList<string> ParseOptions(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw)) return Array.Empty<string>();
@@ -2655,6 +3239,438 @@ public sealed class SparkAgentToolExecutor(
         }
         catch { }
         return raw.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries).Select(s => s.Trim()).ToList();
+    }
+
+    private ToolObservationResult MakeClarification(
+        string reason,
+        string question,
+        IReadOnlyList<string> options,
+        string? field = null,
+        Guid? resolvedUnitId = null,
+        string? resolvedUnitNumber = null,
+        Guid? resolvedBuildingId = null,
+        string? resolvedBuildingName = null)
+    {
+        return new ToolObservationResult(
+            false,
+            JsonSerializer.Serialize(new
+            {
+                error = "CLARIFICATION_REQUIRED",
+                status = "ClarificationRequired",
+                code = "CLARIFICATION_REQUIRED",
+                reason,
+                question,
+                options,
+                clarificationRequired = true,
+                requiredQuestion = question,
+                field,
+                buildingId = resolvedBuildingId,
+                buildingName = resolvedBuildingName,
+                unitId = resolvedUnitId,
+                unitNumber = resolvedUnitNumber
+            }, JsonOpts),
+            question)
+        {
+            RequiresClarification = true,
+            ClarificationQuestion = question,
+            ClarificationOptions = options
+        };
+    }
+
+    private async Task<(Guid? CommunityId, bool HasAmbiguity)> ResolveClarificationCommunityAsync(
+        Guid resolvedCommunityId,
+        SparkAgentPermissionContext context,
+        CancellationToken ct)
+    {
+        if (resolvedCommunityId != Guid.Empty)
+        {
+            return (resolvedCommunityId, false);
+        }
+
+        if (context.AllowedCommunityIds.Count == 1)
+        {
+            return (context.AllowedCommunityIds[0], false);
+        }
+
+        if (context.AllowedCommunityIds.Count > 1)
+        {
+            var scopedIds = context.AllowedCommunityIds.Where(id => id != Guid.Empty).Distinct().ToList();
+            if (scopedIds.Count == 1)
+            {
+                return (scopedIds[0], false);
+            }
+
+            if (!context.ManagementFirmId.HasValue || context.ManagementFirmId.Value == Guid.Empty)
+            {
+                return (null, scopedIds.Count > 1);
+            }
+
+            await using var db = await dbFactory.CreateDbContextAsync(ct);
+            var scopedCommunities = await db.Communities.AsNoTracking()
+                .Where(c => scopedIds.Contains(c.Id) && c.ManagementFirmId == context.ManagementFirmId.Value)
+                .Select(c => c.Id)
+                .ToListAsync(ct);
+            return scopedCommunities.Count == 1 ? (scopedCommunities[0], false) : (null, true);
+        }
+
+        if (!context.ManagementFirmId.HasValue || context.ManagementFirmId.Value == Guid.Empty)
+        {
+            return (null, false);
+        }
+
+        await using var lookupDb = await dbFactory.CreateDbContextAsync(ct);
+        var firmCommunities = await lookupDb.Communities.AsNoTracking()
+            .Where(c => c.ManagementFirmId == context.ManagementFirmId.Value)
+            .Select(c => c.Id)
+            .Take(2)
+            .ToListAsync(ct);
+        return firmCommunities.Count == 1 ? (firmCommunities[0], false) : (null, firmCommunities.Count > 1);
+    }
+
+    private sealed record BuildingDeleteTargetResolution(
+        bool IsResolved,
+        ToolObservationResult? Clarification,
+        Guid CommunityId,
+        Guid BuildingId,
+        string BuildingName,
+        int UnitCount);
+
+    /// <summary>
+    /// Deterministically resolves the exact building before a building delete.
+    /// An empty or ambiguous buildingId is never replaced with a guessed building.
+    /// </summary>
+    private async Task<BuildingDeleteTargetResolution> ResolveBuildingDeleteTargetAsync(
+        IReadOnlyDictionary<string, string> args,
+        SparkAgentPermissionContext context,
+        Guid resolvedCommunityId,
+        CancellationToken ct)
+    {
+        ToolObservationResult Clarification(string reason, string question, IReadOnlyList<string> options, string? field = null, Guid? buildingId = null, string? buildingName = null)
+            => MakeClarification(reason, question, options, field, resolvedBuildingId: buildingId, resolvedBuildingName: buildingName);
+        BuildingDeleteTargetResolution Needs(ToolObservationResult clarification)
+            => new(false, clarification, resolvedCommunityId, Guid.Empty, string.Empty, 0);
+
+        Guid? explicitBuildingId = null;
+        if (args.TryGetValue("buildingId", out var buildingValue) && !string.IsNullOrWhiteSpace(buildingValue))
+        {
+            if (!Guid.TryParse(buildingValue, out var parsedBuildingId) || parsedBuildingId == Guid.Empty)
+            {
+                return Needs(Clarification(
+                    $"The supplied buildingId '{buildingValue}' is empty or invalid.",
+                    "Which building should be deleted? The supplied building ID is empty or invalid. Please choose the building; do not leave buildingId empty.",
+                    Array.Empty<string>(), "buildingId"));
+            }
+            explicitBuildingId = parsedBuildingId;
+        }
+
+        var communityResolution = await ResolveClarificationCommunityAsync(
+            resolvedCommunityId,
+            context,
+            ct);
+        if (!communityResolution.CommunityId.HasValue || communityResolution.CommunityId.Value == Guid.Empty)
+        {
+            return Needs(Clarification(
+                "No communityId is available for building deletion.",
+                "Which housing association owns the building to delete? Please choose the property or provide its exact community ID.",
+                Array.Empty<string>(), "communityId"));
+        }
+
+        var communityId = communityResolution.CommunityId.Value;
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        var communityExists = await db.Communities.AsNoTracking().AnyAsync(c => c.Id == communityId, ct);
+        if (!communityExists)
+        {
+            return Needs(Clarification(
+                $"Community '{communityId}' was not found.",
+                "Which housing association owns the building to delete? The supplied community was not found. Please choose an existing property.",
+                Array.Empty<string>(), "communityId"));
+        }
+
+        var buildingName = (args.GetValueOrDefault("buildingName") ?? args.GetValueOrDefault("building"))?.Trim() ?? string.Empty;
+
+        if (!explicitBuildingId.HasValue && string.IsNullOrWhiteSpace(buildingName))
+        {
+            var buildings = await db.Buildings.AsNoTracking()
+                .Where(b => b.CommunityId == communityId)
+                .OrderBy(b => b.Name)
+                .Select(b => b.Name)
+                .ToListAsync(ct);
+            return Needs(Clarification(
+                "No buildingId or buildingName was supplied for building deletion.",
+                "Which building should be deleted? Please choose the building; do not leave buildingId empty.",
+                buildings, "buildingId"));
+        }
+
+        var buildingQuery = db.Buildings.AsNoTracking().Where(b => b.CommunityId == communityId);
+        if (explicitBuildingId.HasValue)
+        {
+            buildingQuery = buildingQuery.Where(b => b.Id == explicitBuildingId.Value);
+        }
+        else
+        {
+            var normalizedName = buildingName.ToUpperInvariant();
+            buildingQuery = buildingQuery.Where(b => b.Name.ToUpper() == normalizedName);
+        }
+
+        var candidates = await buildingQuery
+            .OrderBy(b => b.Name)
+            .Select(b => new
+            {
+                b.Id,
+                b.Name,
+                b.CommunityId,
+                UnitCount = db.Units.Count(u => u.BuildingId == b.Id)
+            })
+            .Take(26)
+            .ToListAsync(ct);
+
+        if (candidates.Count == 0)
+        {
+            var buildings = await db.Buildings.AsNoTracking()
+                .Where(b => b.CommunityId == communityId)
+                .OrderBy(b => b.Name)
+                .Select(b => b.Name)
+                .ToListAsync(ct);
+            var lookedUp = explicitBuildingId.HasValue ? $"building ID '{explicitBuildingId.Value}'" : $"building name '{buildingName}'";
+            return Needs(Clarification(
+                $"No building matching {lookedUp} was found in the selected housing association.",
+                $"I could not find {lookedUp}. Which building should be deleted? Please choose the building from the options.",
+                buildings, "buildingId"));
+        }
+
+        if (candidates.Count > 1)
+        {
+            var options = candidates.Select(c => c.Name).Distinct(StringComparer.OrdinalIgnoreCase).Take(25).ToList();
+            return Needs(Clarification(
+                $"Building name '{buildingName}' matches {candidates.Count} buildings.",
+                $"Building name '{buildingName}' is ambiguous. Which building should be deleted?",
+                options, "buildingId"));
+        }
+
+        var candidate = candidates[0];
+        return new BuildingDeleteTargetResolution(
+            true,
+            null,
+            candidate.CommunityId,
+            candidate.Id,
+            candidate.Name,
+            candidate.UnitCount);
+    }
+
+    private sealed record RegistrationTargetResolution(
+        bool IsResolved,
+        ToolObservationResult? Clarification,
+        Guid CommunityId,
+        Guid UnitId,
+        string UnitNumber,
+        Guid BuildingId,
+        string BuildingName);
+
+    /// <summary>
+    /// Deterministically resolves the exact community, building, and unit before a
+    /// registration link can be issued. A housing association can contain many
+    /// buildings and a unit number can repeat across them, so an empty ID is
+    /// never replaced with a guessed building or unit.
+    /// </summary>
+    private async Task<RegistrationTargetResolution> ResolveRegistrationTargetAsync(
+        IReadOnlyDictionary<string, string> args,
+        SparkAgentPermissionContext context,
+        Guid resolvedCommunityId,
+        CancellationToken ct)
+    {
+        ToolObservationResult Clarification(string reason, string question, IReadOnlyList<string> options, string? field = null, Guid? unitId = null, string? unitNumber = null, Guid? buildingId = null, string? buildingName = null)
+            => MakeClarification(reason, question, options, field, unitId, unitNumber, buildingId, buildingName);
+        RegistrationTargetResolution Needs(ToolObservationResult clarification)
+            => new(false, clarification, resolvedCommunityId, Guid.Empty, string.Empty, Guid.Empty, string.Empty);
+
+        Guid? explicitCommunityId = null;
+        Guid? explicitBuildingId = null;
+        Guid? explicitUnitId = null;
+
+        if (args.TryGetValue("communityId", out var communityValue) && !string.IsNullOrWhiteSpace(communityValue))
+        {
+            if (!Guid.TryParse(communityValue, out var parsedCommunityId))
+            {
+                return Needs(Clarification(
+                    $"The supplied communityId '{communityValue}' is not a valid community GUID.",
+                    "Which housing association should receive this registration link? The supplied community ID is invalid. Please choose the property or provide its exact community ID.",
+                    Array.Empty<string>(), "communityId"));
+            }
+            explicitCommunityId = parsedCommunityId;
+        }
+        else if (args.TryGetValue("targetCommunityId", out var targetCommunityValue) && !string.IsNullOrWhiteSpace(targetCommunityValue))
+        {
+            if (!Guid.TryParse(targetCommunityValue, out var parsedCommunityId))
+            {
+                return Needs(Clarification(
+                    $"The supplied targetCommunityId '{targetCommunityValue}' is not a valid community GUID.",
+                    "Which housing association should receive this registration link? The supplied community ID is invalid. Please choose the property or provide its exact community ID.",
+                    Array.Empty<string>(), "communityId"));
+            }
+            explicitCommunityId = parsedCommunityId;
+        }
+
+        if (args.TryGetValue("buildingId", out var buildingValue) && !string.IsNullOrWhiteSpace(buildingValue)
+            && (!Guid.TryParse(buildingValue, out var parsedBuildingId) || parsedBuildingId == Guid.Empty))
+        {
+            return Needs(Clarification(
+                $"The supplied buildingId '{buildingValue}' is empty or invalid.",
+                "Which building should receive this registration link? The supplied building ID is empty or invalid. Please choose the building; do not leave buildingId empty.",
+                Array.Empty<string>(), "buildingId"));
+        }
+        else if (Guid.TryParse(buildingValue, out var validBuildingId) && validBuildingId != Guid.Empty)
+        {
+            explicitBuildingId = validBuildingId;
+        }
+
+        foreach (var unitKey in new[] { "targetUnitId", "unitId", "targetUnitID" })
+        {
+            if (!args.TryGetValue(unitKey, out var unitValue) || string.IsNullOrWhiteSpace(unitValue))
+            {
+                continue;
+            }
+
+            if (!Guid.TryParse(unitValue, out var parsedUnitId) || parsedUnitId == Guid.Empty)
+            {
+                return Needs(Clarification(
+                    $"The supplied {unitKey} '{unitValue}' is empty or invalid.",
+                    "Which unit should receive this registration link? The supplied unit ID is empty or invalid. Please choose the building and unit, or provide the exact unit ID.",
+                    Array.Empty<string>(), "unitId"));
+            }
+
+            explicitUnitId = parsedUnitId;
+            break;
+        }
+
+        var communityResolution = await ResolveClarificationCommunityAsync(
+            explicitCommunityId ?? resolvedCommunityId,
+            context,
+            ct);
+        if (!communityResolution.CommunityId.HasValue || communityResolution.CommunityId.Value == Guid.Empty)
+        {
+            if (context.AllowedCommunityIds.Count > 1)
+            {
+                await using var db = await dbFactory.CreateDbContextAsync(ct);
+                var names = await db.Communities.AsNoTracking()
+                    .Where(c => context.AllowedCommunityIds.Contains(c.Id))
+                    .OrderBy(c => c.Name)
+                    .Select(c => c.Name)
+                    .ToListAsync(ct);
+                return Needs(Clarification(
+                    "More than one housing association is in scope and no communityId was supplied.",
+                    "Which housing association should receive this registration link? Please choose the property before a link is generated.",
+                    names, "communityId"));
+            }
+
+            return Needs(Clarification(
+                "No communityId is available for registration-link generation.",
+                "Which housing association should receive this registration link? Please choose the property or provide its exact community ID.",
+                Array.Empty<string>(), "communityId"));
+        }
+
+        var communityId = communityResolution.CommunityId.Value;
+        await using var targetDb = await dbFactory.CreateDbContextAsync(ct);
+        var communityExists = await targetDb.Communities.AsNoTracking().AnyAsync(c => c.Id == communityId, ct);
+        if (!communityExists)
+        {
+            return Needs(Clarification(
+                $"Community '{communityId}' was not found.",
+                "Which housing association should receive this registration link? The supplied community was not found. Please choose an existing property.",
+                Array.Empty<string>(), "communityId"));
+        }
+
+        var unitNumber = (args.GetValueOrDefault("unitNumber") ?? args.GetValueOrDefault("unit_number"))?.Trim() ?? string.Empty;
+        var buildingName = (args.GetValueOrDefault("buildingName") ?? args.GetValueOrDefault("building"))?.Trim() ?? string.Empty;
+
+        if (string.IsNullOrWhiteSpace(buildingName) && explicitBuildingId.HasValue)
+        {
+            buildingName = await targetDb.Buildings.AsNoTracking()
+                .Where(b => b.Id == explicitBuildingId.Value && b.CommunityId == communityId)
+                .Select(b => b.Name)
+                .FirstOrDefaultAsync(ct) ?? string.Empty;
+        }
+
+        var unitQuery = targetDb.Units.AsNoTracking().Where(u => u.CommunityId == communityId);
+        if (explicitUnitId.HasValue)
+        {
+            unitQuery = unitQuery.Where(u => u.Id == explicitUnitId.Value);
+        }
+        else if (!string.IsNullOrWhiteSpace(unitNumber))
+        {
+            var normalizedUnitNumber = unitNumber.ToUpperInvariant();
+            unitQuery = unitQuery.Where(u => u.UnitNumber.ToUpper() == normalizedUnitNumber);
+        }
+        else
+        {
+            return Needs(Clarification(
+                "No targetUnitId, unitId, or unitNumber was supplied.",
+                "Which unit should receive this registration link? Please choose the building and unit, or provide the exact unit ID or unit number.",
+                Array.Empty<string>(), "unitId", buildingId: explicitBuildingId, buildingName: string.IsNullOrWhiteSpace(buildingName) ? null : buildingName));
+        }
+
+        if (explicitBuildingId.HasValue)
+        {
+            unitQuery = unitQuery.Where(u => u.BuildingId == explicitBuildingId.Value);
+        }
+        else if (!string.IsNullOrWhiteSpace(buildingName))
+        {
+            var normalizedBuildingName = buildingName.ToUpperInvariant();
+            unitQuery = unitQuery.Where(u => targetDb.Buildings.Any(b => b.Id == u.BuildingId && b.CommunityId == communityId && b.Name.ToUpper() == normalizedBuildingName));
+        }
+
+        var candidates = await unitQuery
+            .OrderBy(u => u.UnitNumber)
+            .Select(u => new
+            {
+                u.Id,
+                u.UnitNumber,
+                u.BuildingId,
+                BuildingName = targetDb.Buildings.Where(b => b.Id == u.BuildingId).Select(b => b.Name).FirstOrDefault()
+            })
+            .Take(26)
+            .ToListAsync(ct);
+
+        if (candidates.Count == 0)
+        {
+            var buildings = await targetDb.Buildings.AsNoTracking()
+                .Where(b => b.CommunityId == communityId)
+                .OrderBy(b => b.Name)
+                .Select(b => b.Name)
+                .ToListAsync(ct);
+            var lookedUp = explicitUnitId.HasValue ? $"unit ID '{explicitUnitId.Value}'" : $"unit number '{unitNumber}'";
+            return Needs(Clarification(
+                $"No unit matching {lookedUp} was found in the selected housing association{(string.IsNullOrWhiteSpace(buildingName) ? string.Empty : $" and building '{buildingName}'")}.",
+                $"I could not find {lookedUp} for this registration link. Which building and unit should be used? Please choose the building {(buildings.Count == 0 ? string.Empty : "from the options ")}and provide the unit number.",
+                buildings, "unitId", buildingId: explicitBuildingId, buildingName: string.IsNullOrWhiteSpace(buildingName) ? null : buildingName));
+        }
+
+        if (candidates.Count > 1)
+        {
+            var options = candidates.Select(c => $"{c.BuildingName} — Unit {c.UnitNumber}").Distinct(StringComparer.OrdinalIgnoreCase).Take(25).ToList();
+            var label = string.IsNullOrWhiteSpace(unitNumber) ? "That unit ID" : $"Unit number '{unitNumber}'";
+            return Needs(Clarification(
+                $"{label} matches {candidates.Count} units in different buildings.",
+                $"{label} exists in more than one building in this housing association. Which building should receive the registration link?",
+                options, "buildingId", candidates[0].Id, candidates[0].UnitNumber, candidates[0].BuildingId, candidates[0].BuildingName));
+        }
+
+        var candidate = candidates[0];
+        if (explicitBuildingId.HasValue && explicitBuildingId.Value != candidate.BuildingId)
+        {
+            return Needs(Clarification(
+                "The supplied buildingId does not match the selected unit's building.",
+                $"The selected unit is in {candidate.BuildingName}, not the supplied building. Which building and unit should receive this registration link?",
+                [$"{candidate.BuildingName} — Unit {candidate.UnitNumber}"], "buildingId", candidate.Id, candidate.UnitNumber, candidate.BuildingId, candidate.BuildingName));
+        }
+
+        return new RegistrationTargetResolution(
+            true,
+            null,
+            communityId,
+            candidate.Id,
+            candidate.UnitNumber,
+            candidate.BuildingId,
+            candidate.BuildingName ?? string.Empty);
     }
 
     private static ToolObservationResult MakeResult(object data, string summary, string? deepLink = null)
@@ -2819,6 +3835,11 @@ public sealed class MuseSparkAutomationAgentService(
             if (turnResult.IsFinalAnswer)
             {
                 finalMarkdown = CleanMarkdownOutput(turnResult.FinalResponseMarkdown);
+                if (ContainsRegistrationLinkReference(finalMarkdown)
+                    && !ObservationsContainRegistrationLink(scratchpad))
+                {
+                    finalMarkdown = "I did not generate a registration link because no successful registration-link result is available in this run. Which building and unit should receive the link? Please confirm the housing association, building, and unit so the link can be generated from a verified target.";
+                }
                 var finalEv = new SparkAgentLiveStepEvent(
                     RunId: run.Id,
                     StepNumber: stepCounter,
@@ -3017,8 +4038,70 @@ public sealed class MuseSparkAutomationAgentService(
                         EffectivePropertyName: effectivePropertyName);
                 }
 
-                // Execute Tool
+                // Execute Tool. A deterministic clarification-required result is
+                // structural (not model text), so convert it to the existing
+                // ask_user_clarification pause instead of rendering an error.
                 var toolObs = await toolExecutor.ExecuteToolAsync(toolCall.ToolName, toolCall.Arguments, permContext, targetCommunityId, ct);
+                if (toolObs.RequiresClarification)
+                {
+                    var clarificationQuestion = string.IsNullOrWhiteSpace(toolObs.ClarificationQuestion)
+                        ? toolObs.Summary
+                        : toolObs.ClarificationQuestion;
+                    var clarificationEv = new SparkAgentLiveStepEvent(
+                        RunId: run.Id,
+                        StepNumber: stepCounter,
+                        Phase: "AwaitingClarification",
+                        Thought: toolCall.Thought,
+                        ToolName: "ask_user_clarification",
+                        ToolArgumentsJson: argsJson,
+                        PermissionGranted: true,
+                        PermissionBadgeText: "AWAITING_INPUT",
+                        ObservationJson: toolObs.ObservationJson,
+                        FinalMarkdown: null,
+                        DeepLinkUrl: null,
+                        LatencyMs: 10,
+                        ClarificationOptions: toolObs.ClarificationOptions,
+                        HumanInputSummary: humanInputSummary,
+                        ObservationSummary: clarificationQuestion);
+                    stepsLog.Add(clarificationEv);
+                    progress?.Report(clarificationEv);
+
+                    run.Steps.Add(new AgentStep
+                    {
+                        AgentRunId = run.Id,
+                        StepOrder = stepCounter,
+                        StepTitle = "Ask User Clarification",
+                        ModelOrToolName = "ask_user_clarification",
+                        Detail = $"Clarification: {clarificationQuestion}",
+                        LatencyMs = 10
+                    });
+
+                    scratchpad.Add(new ScratchpadStepRecord(
+                        Iteration: stepCounter,
+                        Thought: toolCall.Thought,
+                        ToolName: toolCall.ToolName,
+                        Arguments: toolCall.Arguments,
+                        IsPermitted: true,
+                        DenialReason: null,
+                        ObservationJson: toolObs.ObservationJson,
+                        ObservationSummary: clarificationQuestion));
+
+                    await PersistRunTraceAsync(db, run, totalLatencyMs, usedLiveApi, ct);
+
+                    return new AgentRunResult(
+                        RunId: run.Id,
+                        UserGoal: userGoal,
+                        IsCompleted: false,
+                        FinalResponseMarkdown: string.Empty,
+                        Steps: stepsLog,
+                        TotalLatencyMs: totalLatencyMs,
+                        UsedLiveApi: usedLiveApi,
+                        IsAwaitingClarification: true,
+                        ClarificationQuestion: clarificationQuestion,
+                        ClarificationOptions: toolObs.ClarificationOptions,
+                        EffectiveRole: permContext.Role.ToString(),
+                        EffectivePropertyName: effectivePropertyName);
+                }
                 var (highlights, generatedImageDataUrl, generatedImageMetaSummary) = ExtractObservationHighlightsAndImage(toolObs.ObservationJson);
                 var execEv = new SparkAgentLiveStepEvent(
                     RunId: run.Id,
@@ -3097,6 +4180,49 @@ public sealed class MuseSparkAutomationAgentService(
         var cleaned = Regex.Replace(raw, @"\[JSON-BEGIN\][\s\S]*?\[JSON-END\]", string.Empty, RegexOptions.IgnoreCase).Trim();
         cleaned = Regex.Replace(cleaned, @"```json[\s\S]*?```", string.Empty, RegexOptions.IgnoreCase).Trim();
         return string.IsNullOrWhiteSpace(cleaned) ? raw.Trim() : cleaned;
+    }
+
+    private static bool ContainsRegistrationLinkReference(string? markdown)
+        => !string.IsNullOrWhiteSpace(markdown)
+           && markdown.Contains("/register-resident/", StringComparison.OrdinalIgnoreCase);
+
+    private static bool ObservationsContainRegistrationLink(IReadOnlyList<ScratchpadStepRecord> scratchpad)
+    {
+        foreach (var step in scratchpad)
+        {
+            if (string.IsNullOrWhiteSpace(step.ObservationJson))
+            {
+                continue;
+            }
+
+            try
+            {
+                using var doc = JsonDocument.Parse(step.ObservationJson);
+                if (doc.RootElement.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                if (doc.RootElement.TryGetProperty("registrationUrl", out var url)
+                    && url.ValueKind == JsonValueKind.String
+                    && !string.IsNullOrWhiteSpace(url.GetString()))
+                {
+                    return true;
+                }
+
+                if (doc.RootElement.TryGetProperty("plainToken", out var token)
+                    && token.ValueKind == JsonValueKind.String
+                    && !string.IsNullOrWhiteSpace(token.GetString()))
+                {
+                    return true;
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        return false;
     }
 
     private static string BuildHumanInputSummary(IReadOnlyDictionary<string, string> args)
@@ -3290,10 +4416,10 @@ public sealed class MuseSparkAutomationAgentService(
             new
             {
                 name = "execute_database_query",
-                description = "Queries real database entities to look up IDs, statuses, or fields. Supported entities: units, communities, work_orders, resolutions, meters.",
+                description = "Queries real database entities to look up IDs, statuses, or fields. Supported entities: units, communities, work_orders, resolutions, meters, legal_documents.",
                 parameters = new
                 {
-                    entityName = "string ('units'|'communities'|'work_orders'|'resolutions'|'meters')",
+                    entityName = "string ('units'|'communities'|'work_orders'|'resolutions'|'meters'|'legal_documents')",
                     filter = "string (optional predicate, e.g. 'UnitNumber == \"A-101\"')",
                     communityId = "string (optional property guid)"
                 }
@@ -3304,7 +4430,7 @@ public sealed class MuseSparkAutomationAgentService(
                 description = "Searches system entities by search term, status, or property.",
                 parameters = new
                 {
-                    entityName = "string ('units'|'communities'|'work_orders'|'resolutions'|'meters')",
+                    entityName = "string ('units'|'communities'|'buildings'|'work_orders'|'resolutions'|'meters'|'legal_documents')",
                     searchTerm = "string (e.g. '101' or 'Oakridge')",
                     status = "string (optional filter)",
                     communityId = "string (optional property guid)"
@@ -3314,6 +4440,12 @@ public sealed class MuseSparkAutomationAgentService(
             {
                 name = "get_workspace_overview",
                 description = "Retrieves high-level property and portfolio KPIs, unit counts, arrears, and active work orders.",
+                parameters = new { communityId = "string (optional property guid)" }
+            },
+            new
+            {
+                name = "get_weather_and_outages",
+                description = "Checks live utility outages and weather radar for a property via ScanUtilitySourcesAndWeatherAsync. Use for any weather, outage, storm, snow, or grid question. (Aliases: weather, get_weather, check_weather, scan_outages.)",
                 parameters = new { communityId = "string (optional property guid)" }
             },
             new
@@ -3431,6 +4563,30 @@ public sealed class MuseSparkAutomationAgentService(
             },
             new
             {
+                name = "check_property_documents",
+                description = "Lists property documents (statutes, fee schedules, house rules) filed in the property documents panel so answers can cite document codes and titles.",
+                parameters = new
+                {
+                    communityId = "string (optional property guid)",
+                    searchTerm = "string (optional code/title/text filter)",
+                    category = "string (optional LegalDocumentKind filter)"
+                }
+            },
+            new
+            {
+                name = "add_property_document",
+                description = "Files a property document (title, code, category, verbatim excerpt). Requires ManagePropertySettings.",
+                parameters = new
+                {
+                    communityId = "string (optional property guid)",
+                    documentCode = "string (e.g. 'HOUSE-RULES-2026')",
+                    title = "string",
+                    category = "string (LegalDocumentKind enum name)",
+                    verbatimText = "string (excerpt, file name or notes)"
+                }
+            },
+            new
+            {
                 name = "create_building",
                 description = "Adds a building to a community with floors and stairwells.",
                 parameters = new
@@ -3496,6 +4652,18 @@ public sealed class MuseSparkAutomationAgentService(
             },
             new
             {
+                name = "delete_building",
+                description = "Deletes an empty building. Buildings with units cannot be deleted; delete units first. Call query_system_entities with entityType 'buildings' first to list building Id and Name.",
+                parameters = new
+                {
+                    communityId = "string (guid; ask instead of guessing if empty or ambiguous)",
+                    buildingId = "string (guid; ask instead of guessing if empty or ambiguous)",
+                    buildingName = "string (required when the name is ambiguous)",
+                    confirm = "bool (must be true to delete)"
+                }
+            },
+            new
+            {
                 name = "create_or_update_resident_profile",
                 description = "Creates or updates a resident profile in the directory, and optionally links/assigns them to an apartment unit. (Aliases: create_resident_profile, create_resident, create_resident_wizard, register_resident, add_resident).",
                 parameters = new
@@ -3539,9 +4707,12 @@ public sealed class MuseSparkAutomationAgentService(
                 description = "Issues a single-use self-registration URL with a 32-byte zero-disclosure token for a resident.",
                 parameters = new
                 {
-                    communityId = "string",
-                    unitNumber = "string (e.g. 'A-101')",
-                    unitId = "string (optional guid)",
+                    communityId = "string (guid; ask instead of guessing if empty or ambiguous)",
+                    buildingId = "string (guid; ask instead of guessing if empty or ambiguous)",
+                    buildingName = "string (required when a unit number exists in multiple buildings)",
+                    unitNumber = "string (e.g. 'A-101'; ask instead of guessing if empty)",
+                    unitId = "string (guid; prefer the exact unitId from a prior tool observation, never Guid.Empty)",
+                    targetUnitId = "string (guid alias for unitId; prefer the exact unitId from a prior tool observation, never Guid.Empty)",
                     residentName = "string",
                     residentEmail = "string"
                 }
@@ -3621,6 +4792,18 @@ public sealed class MuseSparkAutomationAgentService(
             },
             new
             {
+                name = "generate_czynsz_assessment",
+                description = "Generates and saves an editable per-unit czynsz (rent/maintenance fee) assessment with standard Polish components and custom lines.",
+                parameters = new
+                {
+                    unitId = "string (guid)",
+                    unitNumber = "string (e.g. 'A-101'; resolved when unitId is empty)",
+                    period = "string (yyyy-MM, e.g. '2026-11')",
+                    lines = "string (JSON array of {key,label,kind,quantity,unitPrice,isCredit})"
+                }
+            },
+            new
+            {
                 name = "generate_arrears_or_mediation_action",
                 description = "Drafts polite arrears reminders, installment agreements, or neighbor mediation notices.",
                 parameters = new
@@ -3645,6 +4828,29 @@ public sealed class MuseSparkAutomationAgentService(
                     unitNumber = "string",
                     messageText = "string",
                     category = "string ('Plumbing'|'Electrical'|'HVAC'|'Structure')"
+                }
+            },
+            new
+            {
+                name = "post_maintenance_message",
+                description = "Posts a forum reply with optional photo to an existing maintenance thread.",
+                parameters = new
+                {
+                    communityId = "string",
+                    workOrderId = "string (guid)",
+                    body = "string",
+                    attachmentDataUrl = "string (optional data URL photo)"
+                }
+            },
+            new
+            {
+                name = "assign_maintenance_contractor",
+                description = "Assigns a contractor vendor to a maintenance thread and converts it to a task.",
+                parameters = new
+                {
+                    communityId = "string",
+                    workOrderId = "string (guid)",
+                    vendorId = "string (guid)"
                 }
             },
             new
@@ -3678,6 +4884,18 @@ public sealed class MuseSparkAutomationAgentService(
                     communityId = "string",
                     resolutionId = "string (guid)",
                     action = "string ('CheckQuorum'|'Tally'|'Adopt')"
+                }
+            },
+            new
+            {
+                name = "upload_ballot_ocr",
+                description = "Alias of run_governance_and_voting_workflow with workflowType=digitize; digitizes uploaded paper ballot images via OCR.",
+                parameters = new
+                {
+                    communityId = "string",
+                    resolutionId = "string (guid)",
+                    workflowType = "string ('digitize')",
+                    ballotImageDataUrl = "string (data URL, truncated in observation)"
                 }
             },
             new

@@ -1,5 +1,6 @@
 @page "/properties/{id:guid}/governance"
 @attribute [Authorize(Policy = "WorkspaceMember")]
+@using CommonGround.Web.Components.Shared.Documents
 @using CommonGround.Web.Components.Shared.Governance
 @inject WorkspaceLocalization Loc
 @inject CommonGroundWorkspaceService Workspace
@@ -37,6 +38,9 @@
         </div>
         <div style="margin-block-start: 1rem;">
             <BallotVisualizerAndMinutesPanel Resolutions="_snapshot.Community.Resolutions" CommunityId="_snapshot.Community.Id" OnChanged="ReloadAsync" />
+        </div>
+        <div style="margin-block-start: 1rem;">
+            <PropertyDocumentsPanel CommunityId="_snapshot.Community.Id" Documents="_snapshot.Community.LegalDocuments" OnChanged="ReloadAsync" />
         </div>
         <div style="margin-block-start: 1rem;">
             <RegulationsAndMediationPanel Documents="_snapshot.Community.LegalDocuments" CommunityId="_snapshot.Community.Id" OnChanged="ReloadAsync" />

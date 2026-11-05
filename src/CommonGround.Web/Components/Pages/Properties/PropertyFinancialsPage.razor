@@ -66,6 +66,43 @@
         <div style="margin-block-start: 1rem;">
             <ArrearsAndLegalDossierTable Snapshot="_snapshot" />
         </div>
+        <div style="margin-block-start: 1rem;">
+            <div class="cg-card">
+                <div class="cg-section-header">
+                    <h2>Czynsz generator (per unit)</h2>
+                    <span class="cg-badge cg-badge-info">Editable czynsz</span>
+                </div>
+                <div>
+                    <label for="czynsz-unit-select">Unit</label>
+                    <select id="czynsz-unit-select" value="@_czynszUnitId" @onchange="OnCzynszUnitChanged">
+                        <option value="@Guid.Empty">Select unit</option>
+                        @foreach (var u in _snapshot.Community.Units.OrderBy(u => u.UnitNumber))
+                        {
+                            <option value="@u.Id" selected="@(_czynszUnitId == u.Id)">@u.UnitNumber — @u.PrimaryOwnerName (@u.FloorAreaM2.ToString("N1") m²)</option>
+                        }
+                    </select>
+                </div>
+                @if (_czynszUnit is not null)
+                {
+                    <div style="margin-block-start: 0.75rem;">
+                        <CzynszGeneratorPanel CommunityId="_snapshot.Community.Id"
+                                             UnitId="_czynszUnit.Id"
+                                             UnitNumber="@_czynszUnit.UnitNumber"
+                                             FloorAreaM2="@_czynszUnit.FloorAreaM2"
+                                             OccupantsCount="@_czynszUnit.DeclaredOccupants"
+                                             OperatingRatePerM2="@_snapshot.Community.OperatingRatePerM2"
+                                             RepairFundRatePerM2="@_snapshot.Community.RepairFundRatePerM2"
+                                             WasteFeePerOccupant="@_snapshot.Community.WasteFeePerOccupant"
+                                             ColdWaterTariffPerM3="@_snapshot.Community.ColdWaterTariffPerM3"
+                                             HotWaterTariffPerM3="@_snapshot.Community.HotWaterHeatingCostPerM3"
+                                             HeatingTariffPerGj="@_snapshot.Community.DistrictHeatingTariffPerGj"
+                                             CurrencyCode="@_snapshot.Community.CurrencyCode"
+                                             Period="@DateTime.UtcNow.ToString("yyyy-MM")"
+                                             OnSaved="OnCzynszSaved" />
+                    </div>
+                }
+            </div>
+        </div>
     }
     @if (!string.IsNullOrWhiteSpace(_message))
     {
@@ -79,6 +116,7 @@
     private bool _loaded;
     private string _message = string.Empty;
     private Action? _locHandler;
+    private Guid _czynszUnitId = Guid.Empty;
 
     protected override async Task OnInitializedAsync()
     {
@@ -88,6 +126,20 @@
         try { _snapshot = await Workspace.GetSnapshotAsync(Id); }
         catch (Exception ex) { _message = ex.Message; }
         finally { _loaded = true; }
+    }
+
+    private Unit? _czynszUnit => _snapshot?.Community.Units.FirstOrDefault(u => u.Id == _czynszUnitId);
+
+    private void OnCzynszUnitChanged(ChangeEventArgs e)
+    {
+        _czynszUnitId = Guid.TryParse(e.Value?.ToString(), out var id) ? id : Guid.Empty;
+    }
+
+    private async Task OnCzynszSaved(MonthlyAssessment saved)
+    {
+        _message = $"Saved czynsz for unit {saved.UnitNumber} period {saved.Period}: total {saved.TotalAssessment:N2}.";
+        try { _snapshot = await Workspace.GetSnapshotAsync(Id); }
+        catch (Exception ex) { _message = ex.Message; }
     }
 
     public void Dispose()

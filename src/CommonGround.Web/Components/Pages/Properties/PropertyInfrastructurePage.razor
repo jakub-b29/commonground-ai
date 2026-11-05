@@ -3,6 +3,8 @@
 @using CommonGround.Web.Components.Shared.Units
 @inject WorkspaceLocalization Loc
 @inject CommonGroundWorkspaceService Workspace
+@inject WorkspaceAccessService Access
+@inject IJSRuntime JS
 @implements IDisposable
 
 <PageTitle>@Loc.T("property.infra.pageTitle")</PageTitle>
@@ -32,6 +34,43 @@
             </Actions>
         </PageHeader>
 
+        <div class="cg-card" style="margin-bottom: 1rem;">
+            <div class="cg-section-header">
+                <h2>Buildings (@_snapshot.Community.Buildings.Count)</h2>
+            </div>
+            @if (_snapshot.Community.Buildings.Count == 0)
+            {
+                <p class="cg-empty-text">No buildings registered for this property.</p>
+            }
+            else
+            {
+                <div class="cg-grid-3">
+                    @foreach (var bld in _snapshot.Community.Buildings.OrderBy(b => b.Name))
+                    {
+                        var bldUnitCount = _snapshot.Community.Units.Count(u => u.BuildingId == bld.Id);
+                        <div class="cg-subcard" @key="bld.Id">
+                            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem;">
+                                <strong>@bld.Name</strong>
+                                <span class="cg-badge @(bldUnitCount > 0 ? "cg-badge-warn" : "cg-badge-ok") mono num">@bldUnitCount units</span>
+                            </div>
+                            <div style="font-size: 0.74rem; color: var(--text-secondary); margin-block: 0.35rem;">
+                                @(string.IsNullOrWhiteSpace(bld.StreetAddress) ? _snapshot.Community.StreetAddress : bld.StreetAddress)
+                                · Floors @bld.FloorsCount · Stairwells @bld.StairwellsCount · Risers @bld.RiserStacks.Count
+                            </div>
+                            @if (_isManager)
+                            {
+                                <button type="button" class="cg-btn cg-btn-sm cg-btn-danger" disabled="@_isDeleting" @onclick="() => DeleteBuildingAsync(bld.Id, bld.Name, bldUnitCount)">Delete</button>
+                            }
+                        </div>
+                    }
+                </div>
+                @if (_isManager)
+                {
+                    <p style="font-size: 0.74rem; color: var(--text-secondary); margin-block-start: 0.5rem;">Buildings with units cannot be deleted. Delete units first before deleting a building.</p>
+                }
+            }
+        </div>
+
         <InfrastructureAtlasGrid Photos="_snapshot.Community.InfrastructurePhotos" AccessCodes="_snapshot.Community.AccessCodes" CommunityId="_snapshot.Community.Id" />
         <div style="margin-block-start: 1rem;">
             <InspectionsAndPermitsPanel Inspections="_snapshot.Community.Inspections" Requests="_snapshot.Community.ModificationRequests" CommunityId="_snapshot.Community.Id" OnChanged="ReloadAsync" />
@@ -47,6 +86,8 @@
     [Parameter] public Guid Id { get; set; }
     private CommunityWorkspaceSnapshot? _snapshot;
     private bool _loaded;
+    private bool _isManager;
+    private bool _isDeleting;
     private string _message = string.Empty;
     private Action? _locHandler;
 
@@ -60,9 +101,32 @@
 
     private async Task ReloadAsync()
     {
-        try { _snapshot = await Workspace.GetSnapshotAsync(Id); }
+        try
+        {
+            _snapshot = await Workspace.GetSnapshotAsync(Id);
+            var role = await Access.GetRoleAsync();
+            _isManager = role is WorkspaceSecurityRole.FirmManager or WorkspaceSecurityRole.PropertyManager;
+        }
         catch (Exception ex) { _message = ex.Message; }
         finally { _loaded = true; }
+    }
+
+    private async Task DeleteBuildingAsync(Guid buildingId, string buildingName, int unitCount)
+    {
+        if (!_isManager) return;
+        _message = string.Empty;
+        var confirmed = await JS.InvokeAsync<bool>("confirm", $"Delete building '{buildingName}' ({unitCount} units)? Buildings with units cannot be deleted. Continue?");
+        if (!confirmed) return;
+        _isDeleting = true;
+        try
+        {
+            var role = await Access.GetRoleAsync() ?? WorkspaceSecurityRole.PropertyManager;
+            await Workspace.DeleteBuildingAsync(Id, buildingId, role, false);
+            _message = $"Building '{buildingName}' deleted.";
+            await ReloadAsync();
+        }
+        catch (Exception ex) { _message = ex.Message; }
+        finally { _isDeleting = false; }
     }
 
     public void Dispose()

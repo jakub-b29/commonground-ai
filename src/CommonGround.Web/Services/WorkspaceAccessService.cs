@@ -41,6 +41,11 @@ public sealed class WorkspaceAccessService(
 
     private async Task<FirmMembership?> LoadActiveMembershipAsync(CancellationToken ct = default)
     {
+        return await LoadActiveMembershipAsync(null, ct);
+    }
+
+    private async Task<FirmMembership?> LoadActiveMembershipAsync(Guid? communityIdHint, CancellationToken ct = default)
+    {
         var user = await GetUserAsync();
         if (!(user.Identity?.IsAuthenticated ?? false)) return null;
         if (!WorkspaceClaims.TryGetUserId(user, out var userId)) return null;
@@ -49,13 +54,60 @@ public sealed class WorkspaceAccessService(
         {
             var m = await db.FirmMemberships.AsNoTracking()
                 .FirstOrDefaultAsync(m => m.Id == activeId && m.UserId == userId, ct);
-            if (m is not null) return m;
+            if (m is not null)
+            {
+                if (communityIdHint.HasValue && communityIdHint.Value != Guid.Empty)
+                {
+                    var hintFirmId = await db.Communities.AsNoTracking()
+                        .Where(c => c.Id == communityIdHint.Value)
+                        .Select(c => c.ManagementFirmId)
+                        .FirstOrDefaultAsync(ct);
+                    if (hintFirmId.HasValue && hintFirmId.Value != Guid.Empty && m.ManagementFirmId != hintFirmId.Value)
+                    {
+                        // Claimed membership belongs to another firm; prefer a membership in the hint community firm.
+                    }
+                    else
+                    {
+                        return m;
+                    }
+                }
+                else
+                {
+                    return m;
+                }
+            }
         }
 
-        var fallback = await db.FirmMemberships.AsNoTracking()
-            .Where(m => m.UserId == userId && m.Status == WorkspaceMembershipStatus.Approved)
-            .OrderByDescending(m => m.Role == WorkspaceSecurityRole.FirmManager)
-            .FirstOrDefaultAsync(ct);
+        Guid? preferredFirmId = null;
+        if (communityIdHint.HasValue && communityIdHint.Value != Guid.Empty)
+        {
+            preferredFirmId = await db.Communities.AsNoTracking()
+                .Where(c => c.Id == communityIdHint.Value)
+                .Select(c => c.ManagementFirmId)
+                .FirstOrDefaultAsync(ct);
+        }
+
+        var approvedQuery = db.FirmMemberships.AsNoTracking()
+            .Where(m => m.UserId == userId && m.Status == WorkspaceMembershipStatus.Approved);
+        FirmMembership? fallback;
+        if (preferredFirmId.HasValue && preferredFirmId.Value != Guid.Empty)
+        {
+            fallback = await approvedQuery
+                .Where(m => m.ManagementFirmId == preferredFirmId.Value)
+                .OrderByDescending(m => m.Role == WorkspaceSecurityRole.FirmManager)
+                .ThenByDescending(m => m.Role == WorkspaceSecurityRole.PropertyManager)
+                .FirstOrDefaultAsync(ct)
+                ?? await approvedQuery
+                    .OrderByDescending(m => m.ManagementFirmId == preferredFirmId.Value)
+                    .ThenByDescending(m => m.Role == WorkspaceSecurityRole.FirmManager)
+                    .FirstOrDefaultAsync(ct);
+        }
+        else
+        {
+            fallback = await approvedQuery
+                .OrderByDescending(m => m.Role == WorkspaceSecurityRole.FirmManager)
+                .FirstOrDefaultAsync(ct);
+        }
         if (fallback is not null) return fallback;
 
         var account = await db.UserAccounts.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, ct);
@@ -123,8 +175,18 @@ public sealed class WorkspaceAccessService(
 
     public async Task<IReadOnlyList<Guid>> GetAllowedCommunityIdsAsync()
     {
-        var membership = await LoadActiveMembershipAsync();
+        return await GetAllowedCommunityIdsAsync(null);
+    }
+
+    public async Task<IReadOnlyList<Guid>> GetAllowedCommunityIdsAsync(Guid? communityIdHint)
+    {
+        var membership = await LoadActiveMembershipAsync(communityIdHint);
         if (membership is null || membership.Status != WorkspaceMembershipStatus.Approved) return [];
+        if (membership.Id == Guid.Empty)
+        {
+            // Synthetic fallback membership has no access rows; FirmManager bypass is role-scoped elsewhere.
+            return [];
+        }
         await using var db = await _dbFactory.CreateDbContextAsync();
         var ids = await db.MembershipPropertyAccesses.AsNoTracking()
             .Where(p => p.FirmMembershipId == membership.Id)
@@ -153,11 +215,29 @@ public sealed class WorkspaceAccessService(
     {
         var user = await GetUserAsync();
         if (!(user.Identity?.IsAuthenticated ?? false)) return false;
-        var membership = await LoadActiveMembershipAsync();
+        var membership = await LoadActiveMembershipAsync(communityId);
         if (membership is null || membership.Status != WorkspaceMembershipStatus.Approved) return false;
         if (membership.Role == WorkspaceSecurityRole.FirmManager)
         {
-            return true;
+            await using var firmDb = await _dbFactory.CreateDbContextAsync();
+            var communityFirmId = await firmDb.Communities.AsNoTracking()
+                .Where(c => c.Id == communityId)
+                .Select(c => c.ManagementFirmId)
+                .FirstOrDefaultAsync();
+            if (!communityFirmId.HasValue || communityFirmId.Value == Guid.Empty || communityFirmId.Value == membership.ManagementFirmId)
+            {
+                return true;
+            }
+            // Same user may hold FirmManager in another firm; that role grants nothing here.
+            // Fall through to explicit access check for the requested community firm.
+            await using var crossDb = await _dbFactory.CreateDbContextAsync();
+            var crossMembershipIds = await crossDb.FirmMemberships.AsNoTracking()
+                .Where(m => m.UserId == membership.UserId && m.ManagementFirmId == communityFirmId.Value && m.Status == WorkspaceMembershipStatus.Approved)
+                .Select(m => m.Id)
+                .ToListAsync();
+            if (crossMembershipIds.Count == 0) return false;
+            return await crossDb.MembershipPropertyAccesses.AsNoTracking()
+                .AnyAsync(p => crossMembershipIds.Contains(p.FirmMembershipId) && p.CommunityId == communityId);
         }
 
         await using var db = await _dbFactory.CreateDbContextAsync();
@@ -187,14 +267,23 @@ public sealed class WorkspaceAccessService(
         if (!WorkspaceClaims.TryGetUserId(user, out var userId))
             throw new UnauthorizedAccessException("Sign-in is required to access this property.");
 
-        var membership = await LoadActiveMembershipAsync(ct);
+        var membership = await LoadActiveMembershipAsync(propertyId, ct);
         if (membership is null || membership.Status != WorkspaceMembershipStatus.Approved)
             throw new UnauthorizedAccessException("An approved firm membership is required to access this property.");
 
-        // FirmManager can do EVERYTHING with properties!
+        // FirmManager can do EVERYTHING with properties in their own firm.
         if (membership.Role == WorkspaceSecurityRole.FirmManager)
         {
-            return;
+            await using var firmDb = await _dbFactory.CreateDbContextAsync(ct);
+            var communityFirmId = await firmDb.Communities.AsNoTracking()
+                .Where(c => c.Id == propertyId)
+                .Select(c => c.ManagementFirmId)
+                .FirstOrDefaultAsync(ct);
+            if (!communityFirmId.HasValue || communityFirmId.Value == Guid.Empty || communityFirmId.Value == membership.ManagementFirmId)
+            {
+                return;
+            }
+            throw new UnauthorizedAccessException("Access to this property is denied for the current account.");
         }
 
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
@@ -225,11 +314,7 @@ public sealed class WorkspaceAccessService(
         if (membership.Role == WorkspaceSecurityRole.FirmManager)
         {
             var firmId = membership.ManagementFirmId;
-            var query = db.Communities.AsNoTracking();
-            if (firmId != Guid.Empty)
-            {
-                query = query.Where(c => c.ManagementFirmId == null || c.ManagementFirmId == firmId);
-            }
+            var query = db.Communities.AsNoTracking().Where(c => c.ManagementFirmId == firmId);
             return await query.AsSplitQuery().OrderBy(c => c.Name).ToListAsync();
         }
 

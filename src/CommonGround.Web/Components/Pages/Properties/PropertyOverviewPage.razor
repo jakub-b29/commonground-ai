@@ -1,5 +1,6 @@
 @page "/properties/{id:guid}/overview"
 @attribute [Authorize(Policy = "WorkspaceMember")]
+@using CommonGround.Web.Components.Shared.Documents
 @using CommonGround.Web.Components.Shared.Overview
 @inject WorkspaceLocalization Loc
 @inject CommonGroundWorkspaceService Workspace
@@ -179,6 +180,10 @@
                 <OutageWeatherAndWastePanel Snapshot="_snapshot" />
             </div>
         </BentoGrid>
+
+        <div style="margin-block-start: 1rem;">
+            <PropertyDocumentsPanel CommunityId="_snapshot.Community.Id" Documents="_snapshot.Community.LegalDocuments" OnChanged="ReloadAsync" />
+        </div>
 
         <div style="margin-block-start: 1rem;">
             <PendingApprovalsAndAuditPanel Snapshot="_snapshot" OnChanged="ReloadAsync" />

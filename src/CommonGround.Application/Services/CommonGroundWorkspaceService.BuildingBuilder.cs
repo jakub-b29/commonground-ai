@@ -302,4 +302,58 @@ public sealed partial class CommonGroundWorkspaceService
         await AppendAuditAsync(db, community, actorRole, "UNIT_CELL_REMOVED", "Info", $"Unit {label}", $"Unit {label} removed from floor {unit.FloorNumber}, stack {unit.VerticalStackCode}.", ct);
         await db.SaveChangesAsync(ct);
     }
+
+    public async Task DeleteBuildingAsync(Guid communityId, Guid buildingId, WorkspaceSecurityRole actorRole, bool force = false, CancellationToken ct = default)
+    {
+        if (!DataSecurityAndPrivacyGuard.IsManagerRole(actorRole))
+        {
+            throw new UnauthorizedAccessException("Only the Property Manager or Firm Manager may delete buildings.");
+        }
+
+        await using var db = await CreateDbAsync(ct);
+        var community = await LoadCommunityAsync(db, communityId, ct) ?? throw new InvalidOperationException("Property not found.");
+        var building = community.Buildings.FirstOrDefault(b => b.Id == buildingId) ?? throw new InvalidOperationException("Building not found.");
+        DataSecurityAndPrivacyGuard.EnsureCommunityScope(building, communityId);
+
+        var unitCount = community.Units.Count(u => u.BuildingId == building.Id);
+        if (unitCount > 0 && !force)
+        {
+            throw new InvalidOperationException($"Building has {unitCount} units, confirm force delete. Delete units first before deleting building '{building.Name}'.");
+        }
+
+        if (unitCount > 0 && force)
+        {
+            throw new InvalidOperationException($"Building has {unitCount} units, delete units first before deleting building '{building.Name}'. Remove or reassign units first.");
+        }
+
+        var buildingName = building.Name;
+
+        foreach (var stack in building.RiserStacks.ToList())
+        {
+            db.RiserStacks.Remove(stack);
+        }
+
+        building.RiserStacks.Clear();
+
+        foreach (var photo in community.InfrastructurePhotos.Where(p => p.BuildingId == building.Id).ToList())
+        {
+            db.InfrastructurePhotos.Remove(photo);
+        }
+
+        foreach (var code in community.AccessCodes.Where(c => c.BuildingId == building.Id).ToList())
+        {
+            db.AccessCodes.Remove(code);
+        }
+
+        foreach (var inspection in community.Inspections.Where(i => i.BuildingId == building.Id).ToList())
+        {
+            db.Inspections.Remove(inspection);
+        }
+
+        community.Buildings.Remove(building);
+        db.Buildings.Remove(building);
+
+        await AppendAuditAsync(db, community, actorRole, "BUILDING_DELETED", "Info", $"Building: {buildingName}", $"Building '{buildingName}' deleted.", ct);
+        await db.SaveChangesAsync(ct);
+    }
 }

@@ -1,0 +1,290 @@
+@using CommonGround.Domain.Calculators
+@inject CommonGroundWorkspaceService Workspace
+@inject WorkspaceAccessService Access
+
+<div class="cg-card">
+    <div class="cg-section-header">
+        <div>
+            <h2>Property documents</h2>
+            <p style="font-size: 0.78rem; color: var(--text-secondary); margin: 0.25rem 0 0;">
+                Statutes, fee schedules and house rules filed for this property.
+                Spark checks this vault via check_property_documents before answering about statutes, fees or house rules.
+            </p>
+        </div>
+        @if (_canEdit)
+        {
+            <span class="cg-badge cg-badge-info">Manager vault</span>
+        }
+        else
+        {
+            <span class="cg-badge cg-badge-neutral">Read-only</span>
+        }
+    </div>
+
+    <div class="cg-grid-3" style="margin-block-end: 0.65rem;">
+        <div>
+            <label for="propdoc-search">Search code, title or text</label>
+            <input id="propdoc-search" @bind="_search" @bind:event="oninput" placeholder="e.g. HOUSE-RULES, fee, statute..." />
+        </div>
+        <div>
+            <label for="propdoc-category">Category filter</label>
+            <select id="propdoc-category" @bind="_categoryFilter">
+                <option value="All">All categories</option>
+                @foreach (var k in Enum.GetValues<LegalDocumentKind>())
+                {
+                    <option value="@k" @key="k">@k</option>
+                }
+            </select>
+        </div>
+        <div style="display: flex; align-items: flex-end;">
+            <span class="cg-badge cg-badge-neutral mono num">@Filtered.Count of @Documents.Count documents</span>
+        </div>
+    </div>
+
+    <div class="cg-table-wrap">
+        <table class="cg-table">
+            <thead>
+                <tr>
+                    <th>Code</th>
+                    <th>Title / Category</th>
+                    <th>Attachment</th>
+                    <th>Excerpt</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (Filtered.Count == 0)
+                {
+                    <tr><td colspan="5" style="color: var(--text-secondary);">No property documents filed yet.</td></tr>
+                }
+                @foreach (var d in Filtered)
+                {
+                    <tr @key="d.Id">
+                        <td class="mono"><strong>@d.DocumentCode</strong></td>
+                        <td>
+                            <strong>@d.Title</strong>
+                            <div style="font-size: 0.72rem; color: var(--text-secondary);"><span class="cg-badge cg-badge-neutral">@d.Kind</span></div>
+                        </td>
+                        <td class="mono" style="font-size: 0.75rem;">@AttachmentNote(d)</td>
+                        <td style="font-size: 0.75rem; color: var(--text-secondary);">@Excerpt(d.VerbatimLegalText)</td>
+                        <td>
+                            <div style="display: flex; gap: 0.35rem; flex-wrap: wrap;">
+                                <button type="button" class="cg-btn cg-btn-sm" @onclick="() => _selectedId = d.Id">View</button>
+                                @if (_canEdit)
+                                {
+                                    <button type="button" class="cg-btn cg-btn-sm" disabled="@_isBusy" @onclick="() => DeleteAsync(d.Id)">Delete</button>
+                                }
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    @if (Selected is not null)
+    {
+        <div class="cg-subcard" style="margin-block-start: 0.625rem;">
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap;">
+                <strong>@Selected.Title</strong>
+                <span class="cg-badge mono">@Selected.DocumentCode</span>
+            </div>
+            <div style="font-size: 0.72rem; color: var(--text-secondary); margin-block: 0.25rem 0.45rem;">
+                @Selected.Kind · Filed @Selected.AcquiredAtUtc.ToString("yyyy-MM-dd") via @Selected.AcquiredByModel
+            </div>
+            <div class="mono" style="white-space: pre-wrap; font-size: 0.75rem; background: var(--color-bg-surface); padding: 0.625rem; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-control);">@Selected.VerbatimLegalText</div>
+        </div>
+    }
+
+    @if (_canEdit)
+    {
+        <div class="cg-subcard" style="margin-block-start: 0.65rem;">
+            <strong>File a property document</strong>
+            <div class="cg-grid-3" style="margin-top: 0.5rem;">
+                <div>
+                    <label for="propdoc-title">Title</label>
+                    <input id="propdoc-title" @bind="_title" placeholder="e.g. House Rules 2026" />
+                </div>
+                <div>
+                    <label for="propdoc-code">Document code</label>
+                    <input id="propdoc-code" class="mono" @bind="_code" placeholder="e.g. HOUSE-RULES-2026" />
+                </div>
+                <div>
+                    <label for="propdoc-kind">Category</label>
+                    <select id="propdoc-kind" @bind="_category">
+                        @foreach (var k in Enum.GetValues<LegalDocumentKind>())
+                        {
+                            <option value="@k" @key="k">@k</option>
+                        }
+                    </select>
+                </div>
+                <div>
+                    <label for="propdoc-file">File name (no binary upload)</label>
+                    <input id="propdoc-file" class="mono" @bind="_fileName" placeholder="e.g. house-rules-2026.pdf" />
+                </div>
+                <div style="grid-column: span 2;">
+                    <label for="propdoc-notes">Notes / verbatim excerpt</label>
+                    <textarea id="propdoc-notes" rows="2" @bind="_notes" placeholder="Paste the key excerpt or filing notes..."></textarea>
+                </div>
+            </div>
+            <div class="cg-toolbar" style="margin-top: 0.55rem;">
+                <button type="button" class="cg-btn cg-btn-primary" disabled="@_isBusy" @onclick="AddAsync">File document</button>
+            </div>
+        </div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_message))
+    {
+        <div role="status" aria-live="polite" class="cg-callout" style="margin-block-start: 0.65rem;">@_message</div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Guid CommunityId { get; set; }
+    [Parameter, EditorRequired] public IReadOnlyList<LegalDocumentSource> Documents { get; set; } = [];
+    [Parameter] public EventCallback OnChanged { get; set; }
+    [Parameter] public bool CanEdit { get; set; } = true;
+
+    private bool _canEdit;
+    private bool _isBusy;
+    private string _message = string.Empty;
+    private string _search = string.Empty;
+    private string _categoryFilter = "All";
+    private Guid _selectedId = Guid.Empty;
+
+    private string _title = string.Empty;
+    private string _code = string.Empty;
+    private LegalDocumentKind _category = LegalDocumentKind.CommunityStatuteOrCcr;
+    private string _fileName = string.Empty;
+    private string _notes = string.Empty;
+
+    private LegalDocumentSource? Selected => Documents.FirstOrDefault(d => d.Id == _selectedId);
+
+    private IReadOnlyList<LegalDocumentSource> Filtered
+    {
+        get
+        {
+            var query = Documents.AsEnumerable();
+            if (_categoryFilter != "All" && Enum.TryParse<LegalDocumentKind>(_categoryFilter, out var kind))
+            {
+                query = query.Where(d => d.Kind == kind);
+            }
+            if (!string.IsNullOrWhiteSpace(_search))
+            {
+                query = query.Where(d =>
+                    d.DocumentCode.Contains(_search, StringComparison.OrdinalIgnoreCase)
+                    || d.Title.Contains(_search, StringComparison.OrdinalIgnoreCase)
+                    || d.VerbatimLegalText.Contains(_search, StringComparison.OrdinalIgnoreCase));
+            }
+            return query.OrderBy(d => d.DocumentCode).ToList();
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var role = await Access.GetRoleAsync() ?? WorkspaceSecurityRole.Resident;
+            _canEdit = CanEdit && (DataSecurityAndPrivacyGuard.IsManagerRole(role)
+                || await Access.HasPermissionAsync(WorkspacePermissionFlags.ManagePropertySettings));
+        }
+        catch
+        {
+            _canEdit = false;
+        }
+    }
+
+    protected override void OnParametersSet()
+    {
+        if ((_selectedId == Guid.Empty || Documents.All(d => d.Id != _selectedId)) && Documents.Count > 0)
+        {
+            _selectedId = Documents[0].Id;
+        }
+    }
+
+    private static string Excerpt(string text, int max = 150)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return "No excerpt filed.";
+        }
+        var flat = text.Replace("\r", " ", StringComparison.Ordinal).Replace("\n", " ", StringComparison.Ordinal);
+        return flat.Length <= max ? flat : flat[..max] + "...";
+    }
+
+    private static string AttachmentNote(LegalDocumentSource doc)
+    {
+        const string marker = "[Attachment:";
+        var text = doc.VerbatimLegalText ?? string.Empty;
+        var idx = text.IndexOf(marker, StringComparison.Ordinal);
+        if (idx < 0)
+        {
+            return "—";
+        }
+        var end = text.IndexOf(']', idx);
+        var inner = end < 0 ? text[(idx + marker.Length)..] : text.Substring(idx + marker.Length, end - idx - marker.Length);
+        return string.IsNullOrWhiteSpace(inner) ? "—" : inner.Trim();
+    }
+
+    private async Task AddAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_title) || string.IsNullOrWhiteSpace(_code))
+        {
+            _message = "Title and document code are required.";
+            return;
+        }
+        _isBusy = true;
+        try
+        {
+            var role = await Access.GetRoleAsync() ?? WorkspaceSecurityRole.PropertyManager;
+            var attachment = string.IsNullOrWhiteSpace(_fileName) ? string.Empty : $"[Attachment: {_fileName.Trim()}]";
+            var body = (_notes ?? string.Empty).Trim();
+            var verbatim = string.Join("\n", new[] { attachment, body }.Where(s => !string.IsNullOrWhiteSpace(s)));
+            if (string.IsNullOrWhiteSpace(verbatim))
+            {
+                verbatim = $"Filed {_code.Trim()} placeholder excerpt. Full scan pending upload.";
+            }
+            var doc = await Workspace.AddPropertyDocumentAsync(
+                CommunityId, _code.Trim(), _title.Trim(), _category.ToString(), verbatim, role);
+            _selectedId = doc.Id;
+            _title = string.Empty;
+            _code = string.Empty;
+            _fileName = string.Empty;
+            _notes = string.Empty;
+            _message = $"Filed property document '{doc.Title}' ({doc.DocumentCode}).";
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task DeleteAsync(Guid documentId)
+    {
+        _isBusy = true;
+        try
+        {
+            var role = await Access.GetRoleAsync() ?? WorkspaceSecurityRole.PropertyManager;
+            await Workspace.DeletePropertyDocumentAsync(CommunityId, documentId, role);
+            if (_selectedId == documentId)
+            {
+                _selectedId = Guid.Empty;
+            }
+            _message = "Property document deleted.";
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+}

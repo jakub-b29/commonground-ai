@@ -2,7 +2,6 @@
 @attribute [Authorize(Policy = "WorkspaceMember")]
 @using Microsoft.EntityFrameworkCore
 @using CommonGround.Application.Persistence
-@using CommonGround.Web.Components.Shared.Maintenance
 @inject WorkspaceLocalization Loc
 @inject WorkspaceAccessService Access
 @inject IAppDbContextFactory DbFactory
@@ -23,74 +22,249 @@
     else
     {
         <PageHeader Category="@Loc.T("property.maint.category")"
-                    ContextCode="@($"{_snapshot.Community.WorkOrders.Count} {Loc.T("property.maint.ordersSuffix")}")"
-                    Title="@($"{_snapshot.Community.Name} · {Loc.T("property.maint.titleSuffix")}")"
-                    Subtitle="@Loc.T("property.maint.subtitle")">
-            <Badges>
-                <AIBadge Label="@Loc.T("property.maint.visionBadge")" Model="sam-3.1" />
-                <AIBadge Label="@Loc.T("property.maint.triageBadge")" Model="muse-wonder" ShowPulseDot="false" />
-            </Badges>
+                    ContextCode="@($"{_threads.Count} {Loc.T("property.maint.ordersSuffix")}")"
+                    Title="@($"{_snapshot.Community.Name} · Forum maintenance")"
+                    Subtitle="Forum threads that managers convert to contractor tasks.">
             <Actions>
                 <a class="cg-btn cg-btn-sm" href="@($"/properties/{Id}/infrastructure")">@Loc.T("property.maint.atlasLink")</a>
                 <a class="cg-btn cg-btn-sm" href="@($"/properties/{Id}/overview")">@Loc.T("property.common.backToOverview")</a>
             </Actions>
         </PageHeader>
 
-        <ResidentIntakeSimulatorPanel CommunityId="_snapshot.Community.Id" OnChanged="ReloadAsync" />
-        <div style="margin-block-start: 1rem;">
-            <WorkOrderSamInspectorPanel WorkOrders="_snapshot.Community.WorkOrders" CommunityId="_snapshot.Community.Id" OnChanged="ReloadAsync" />
-        </div>
         <div class="cg-card" style="margin-block-start: 1rem;">
             <div class="cg-section-header">
-                <h2>@Loc.T("property.maint.threadTitle")</h2>
-                <span class="cg-badge cg-badge-info">@_threads.Count @Loc.T("property.maint.messagesSuffix")</span>
+                <h2>Report issue</h2>
+                <span class="cg-badge cg-badge-info">Forum thread</span>
             </div>
-            <div>
-                <label for="pm-order">@Loc.T("form.workOrder")</label>
-                <select id="pm-order" value="@_selectedOrderId" @onchange="OnSelectOrder">
-                    @foreach (var w in _snapshot.Community.WorkOrders)
+            <div style="display: grid; gap: 0.6rem; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
+                <div>
+                    <label for="mt-title">Title</label>
+                    <input id="mt-title" @bind="_newTitle" placeholder="e.g. Leak under sink in A-101" style="width: 100%;" />
+                </div>
+                <div>
+                    <label for="mt-building">Building (optional)</label>
+                    <select id="mt-building" @bind="_newBuildingId" style="width: 100%;">
+                        <option value="">Common area / not sure</option>
+                        @foreach (var b in _snapshot.Community.Buildings)
+                        {
+                            <option value="@b.Id">@b.Name</option>
+                        }
+                    </select>
+                </div>
+                <div>
+                    <label for="mt-unit">Unit (optional)</label>
+                    <input id="mt-unit" @bind="_newUnitNumber" placeholder="e.g. A-101" style="width: 100%;" />
+                </div>
+                <div>
+                    <label for="mt-photo">Photo (optional)</label>
+                    <InputFile id="mt-photo" accept="image/*" OnChange="OnNewPhotoSelected" />
+                    @if (!string.IsNullOrWhiteSpace(_newPhotoFileName))
                     {
-                        <option value="@w.Id" selected="@(_selectedOrderId == w.Id)">@w.Title (@w.Status)</option>
+                        <div style="font-size: 0.75rem; color: var(--text-secondary);">@_newPhotoFileName</div>
                     }
-                </select>
+                </div>
             </div>
-            <div class="cg-table-wrap" style="margin-block-start: 0.65rem; max-height: 240px; overflow-y: auto;">
-                <table class="cg-table">
-                    <thead>
-                        <tr>
-                            <th>@Loc.T("table.timestampUtc")</th>
-                            <th>@Loc.T("table.message")</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @if (_threads.Count == 0)
+            <div style="margin-block-start: 0.6rem;">
+                <label for="mt-desc">Description</label>
+                <textarea id="mt-desc" rows="3" @bind="_newDescription" placeholder="What happened, where, since when?" style="width: 100%;"></textarea>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(_newPhotoDataUrl))
+            {
+                <div style="margin-block-start: 0.6rem; display: flex; gap: 0.6rem; align-items: flex-start; flex-wrap: wrap;">
+                    <img src="@_newPhotoDataUrl" alt="Issue photo preview" style="max-width: 220px; border-radius: 8px; border: 1px solid var(--border-subtle);" />
+                    <div style="flex: 1; min-width: 220px;">
+                        <label for="mt-photourl">Photo as data URL</label>
+                        <input id="mt-photourl" @bind="_newPhotoDataUrl" placeholder="data:image/jpeg;base64,..." style="width: 100%; font-size: 0.75rem;" />
+                        <button type="button" class="cg-btn cg-btn-sm" @onclick="ClearNewPhoto" style="margin-block-start: 0.4rem;">Remove photo</button>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div style="margin-block-start: 0.6rem;">
+                    <label for="mt-photourl2">Photo as data URL (optional paste)</label>
+                    <input id="mt-photourl2" @bind="_newPhotoDataUrl" placeholder="data:image/jpeg;base64,... or leave empty" style="width: 100%; font-size: 0.75rem;" />
+                </div>
+            }
+            <div class="cg-toolbar" style="margin-block-start: 0.6rem;">
+                <button type="button" class="cg-btn cg-btn-primary" disabled="@(_isBusy || string.IsNullOrWhiteSpace(_newTitle))" @onclick="OnCreateThread">Report issue</button>
+            </div>
+        </div>
+
+        @if (_threads.Count == 0)
+        {
+            <div style="margin-block-start: 1rem;">
+                <EmptyState Title="No maintenance threads yet" Description="Report the first issue above. Managers and residents can reply with photos." />
+            </div>
+        }
+        else
+        {
+            <BentoGrid Style="margin-block-start: 1rem; display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));">
+                <BentoCard Title="Threads" Subtitle="@($"{_threads.Count} threads")" Span="12">
+                    <div style="display: grid; gap: 0.6rem;">
+                        @foreach (var t in _threads)
                         {
-                            <tr><td colspan="2" style="color: var(--text-secondary);">@Loc.T("property.maint.noDispatch")</td></tr>
+                            var vendor = _snapshot.Community.Vendors.FirstOrDefault(v => v.Id == t.AssignedVendorId);
+                            var contractorLabel = vendor?.Name ?? t.AssignedVendorName ?? "Unassigned";
+                            var contractorPhone = vendor?.Phone ?? string.Empty;
+                            <button type="button" @key="t.Id" @onclick="() => OnSelectThread(t.Id)"
+                                    style="text-align: left; border: 1px solid var(--border-subtle); border-radius: 10px; padding: 0.6rem 0.75rem; background: @(t.Id == _selectedId ? "var(--bg-elevated)" : "var(--bg-surface)"); cursor: pointer;">
+                                <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                                    <strong style="flex: 1; min-width: 160px;">@t.Title</strong>
+                                    <StatusBadge Text="@t.Status.ToString()" Variant="@StatusVariant(t.Status)" />
+                                </div>
+                                <div style="font-size: 0.78rem; color: var(--text-secondary); margin-block-start: 0.25rem;">
+                                    <span>@t.Messages.Count @(t.Messages.Count == 1 ? "message" : "messages")</span>
+                                    <span> · </span>
+                                    <span>@contractorLabel</span>
+                                    @if (!string.IsNullOrWhiteSpace(contractorPhone))
+                                    {
+                                        <span class="mono num"> · @contractorPhone</span>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(t.UnitNumber))
+                                    {
+                                        <span> · Unit @t.UnitNumber</span>
+                                    }
+                                </div>
+                            </button>
                         }
-                        @foreach (var m in _threads)
-                        {
-                            <tr @key="m.Id">
-                                <td class="mono num" style="width: 165px;">@m.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm")</td>
-                                <td>@m.Body</td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
-            <div style="margin-block-start: 0.65rem;">
-                <label for="pm-body">@Loc.T("property.maint.noteLabel")</label>
-                <textarea id="pm-body" rows="2" @bind="_draft" placeholder="@Loc.T("property.maint.notePlaceholder")"></textarea>
-            </div>
-            <div class="cg-toolbar">
-                <button type="button" class="cg-btn cg-btn-primary" disabled="@(_isBusy || _selectedOrderId == Guid.Empty || string.IsNullOrWhiteSpace(_draft))" @onclick="OnPostMessage">@Loc.T("action.postMessage")</button>
-            </div>
-        </div>
-        <div style="margin-block-start: 1rem;">
-            <VideoWalkthroughAndSafetyPanel CommunityId="_snapshot.Community.Id" OnChanged="ReloadAsync" />
-        </div>
-        <div style="margin-block-start: 1rem;">
-            <InsuranceClaimDossierPanel WorkOrders="_snapshot.Community.WorkOrders" CommunityId="_snapshot.Community.Id" />
-        </div>
+                    </div>
+                </BentoCard>
+
+                @if (_selected is not null)
+                {
+                    var selectedVendor = _snapshot.Community.Vendors.FirstOrDefault(v => v.Id == _selected.AssignedVendorId);
+                    <BentoCard Title="@_selected.Title" Subtitle="@($"{_selected.Status} · {_selected.Category} · {_selected.Priority}")" Span="12">
+                        <HeaderActions>
+                            <StatusBadge Text="@_selected.Status.ToString()" Variant="@StatusVariant(_selected.Status)" />
+                            <span class="cg-badge cg-badge-neutral">@_selected.Messages.Count messages</span>
+                        </HeaderActions>
+                        <ChildContent>
+                            <div style="border: 1px solid var(--border-subtle); border-radius: 10px; padding: 0.6rem 0.75rem; background: var(--bg-surface);">
+                                <div style="font-size: 0.8rem; color: var(--text-secondary);">Contractor contact</div>
+                                @if (selectedVendor is not null)
+                                {
+                                    <div><strong>@selectedVendor.Name</strong></div>
+                                    <div class="mono num" style="font-size: 0.85rem;">Phone: @selectedVendor.Phone</div>
+                                    <div style="font-size: 0.85rem;">Email: @selectedVendor.Email</div>
+                                }
+                                else if (!string.IsNullOrWhiteSpace(_selected.AssignedVendorName))
+                                {
+                                    <div><strong>@_selected.AssignedVendorName</strong></div>
+                                    <div style="font-size: 0.8rem; color: var(--text-secondary);">Vendor record not found in directory.</div>
+                                }
+                                else
+                                {
+                                    <div style="font-size: 0.85rem; color: var(--text-secondary);">No contractor assigned yet.</div>
+                                }
+                            </div>
+
+                            @if (!string.IsNullOrWhiteSpace(_selected.Description))
+                            {
+                                <p style="margin-block-start: 0.6rem;">@_selected.Description</p>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(_selected.BeforePhotoDataUrl) && _selected.BeforePhotoDataUrl.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+                            {
+                                <img src="@_selected.BeforePhotoDataUrl" alt="Thread photo" style="max-width: 320px; border-radius: 8px; border: 1px solid var(--border-subtle); margin-block-start: 0.5rem;" />
+                            }
+
+                            <div style="display: grid; gap: 0.5rem; margin-block-start: 0.75rem;">
+                                @if (_selected.Messages.Count == 0)
+                                {
+                                    <p style="color: var(--text-secondary); font-size: 0.85rem;">No replies yet. Post the first update below.</p>
+                                }
+                                @foreach (var m in _selected.Messages.OrderBy(x => x.CreatedAtUtc))
+                                {
+                                    <div @key="m.Id" style="border: 1px solid var(--border-subtle); border-radius: 8px; padding: 0.5rem 0.65rem;">
+                                        <div style="font-size: 0.75rem; color: var(--text-secondary);">@m.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm") UTC</div>
+                                        <div style="white-space: pre-wrap;">@m.Body</div>
+                                        @if (!string.IsNullOrWhiteSpace(m.AttachmentDataUrl) && m.AttachmentDataUrl.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            <img src="@m.AttachmentDataUrl" alt="Message photo" style="max-width: 260px; border-radius: 8px; border: 1px solid var(--border-subtle); margin-block-start: 0.4rem;" />
+                                        }
+                                    </div>
+                                }
+                            </div>
+
+                            <div style="margin-block-start: 0.75rem; display: grid; gap: 0.5rem;">
+                                <label for="mt-reply">Reply</label>
+                                <textarea id="mt-reply" rows="2" @bind="_replyBody" placeholder="Write an update, e.g. plumber visited, parts ordered..." style="width: 100%;"></textarea>
+                                <div style="display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap;">
+                                    <InputFile accept="image/*" OnChange="OnReplyPhotoSelected" />
+                                    @if (!string.IsNullOrWhiteSpace(_replyPhotoFileName))
+                                    {
+                                        <span style="font-size: 0.75rem; color: var(--text-secondary);">@_replyPhotoFileName</span>
+                                        <button type="button" class="cg-btn cg-btn-sm" @onclick="ClearReplyPhoto">Remove</button>
+                                    }
+                                </div>
+                                @if (!string.IsNullOrWhiteSpace(_replyPhotoDataUrl))
+                                {
+                                    <img src="@_replyPhotoDataUrl" alt="Reply photo preview" style="max-width: 220px; border-radius: 8px; border: 1px solid var(--border-subtle);" />
+                                    <input @bind="_replyPhotoDataUrl" placeholder="data:image/jpeg;base64,..." style="width: 100%; font-size: 0.75rem;" aria-label="Reply photo data URL" />
+                                }
+                                <div class="cg-toolbar">
+                                    <button type="button" class="cg-btn cg-btn-primary cg-btn-sm" disabled="@(_isBusy || string.IsNullOrWhiteSpace(_replyBody))" @onclick="OnPostReply">Post reply</button>
+                                </div>
+                            </div>
+
+                            @if (_isManager)
+                            {
+                                <div style="margin-block-start: 1rem; border-top: 1px solid var(--border-subtle); padding-block-start: 0.75rem;">
+                                    <h3 style="margin: 0;">Manager: convert to task</h3>
+                                    <div style="display: grid; gap: 0.6rem; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-block-start: 0.5rem;">
+                                        <div>
+                                            <label for="mt-edit-title">Task title</label>
+                                            <input id="mt-edit-title" @bind="_editTitle" style="width: 100%;" />
+                                        </div>
+                                        <div>
+                                            <label for="mt-edit-cat">Category</label>
+                                            <select id="mt-edit-cat" @bind="_editCategory" style="width: 100%;">
+                                                @foreach (var c in Enum.GetValues<WorkOrderCategory>())
+                                                {
+                                                    <option value="@c">@c</option>
+                                                }
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label for="mt-edit-prio">Priority</label>
+                                            <select id="mt-edit-prio" @bind="_editPriority" style="width: 100%;">
+                                                @foreach (var p in Enum.GetValues<WorkOrderPriority>())
+                                                {
+                                                    <option value="@p">@p</option>
+                                                }
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label for="mt-edit-status">Status</label>
+                                            <select id="mt-edit-status" @bind="_editStatus" style="width: 100%;">
+                                                @foreach (var s in Enum.GetValues<WorkOrderStatus>())
+                                                {
+                                                    <option value="@s">@s</option>
+                                                }
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label for="mt-edit-vendor">Contractor</label>
+                                            <select id="mt-edit-vendor" @bind="_editVendorId" style="width: 100%;">
+                                                <option value="">Unassigned</option>
+                                                @foreach (var v in _snapshot.Community.Vendors)
+                                                {
+                                                    <option value="@v.Id">@v.Name (@v.Phone)</option>
+                                                }
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="cg-toolbar" style="margin-block-start: 0.6rem;">
+                                        <button type="button" class="cg-btn cg-btn-sm" disabled="@_isBusy" @onclick="OnSaveTask">Save task</button>
+                                        <button type="button" class="cg-btn cg-btn-primary cg-btn-sm" disabled="@(_isBusy || string.IsNullOrWhiteSpace(_editVendorId))" @onclick="OnAssignContractor">Assign contractor</button>
+                                    </div>
+                                </div>
+                            }
+                        </ChildContent>
+                    </BentoCard>
+                }
+            </BentoGrid>
+        }
     }
     @if (!string.IsNullOrWhiteSpace(_message))
     {
@@ -101,13 +275,34 @@
 @code {
     [Parameter] public Guid Id { get; set; }
     private CommunityWorkspaceSnapshot? _snapshot;
-    private List<WorkOrderMessage> _threads = new();
-    private Guid _selectedOrderId = Guid.Empty;
-    private string _draft = string.Empty;
+    private List<WorkOrder> _threads = new();
+    private Guid _selectedId = Guid.Empty;
+    private WorkOrder? _selected;
     private bool _loaded;
     private bool _isBusy;
     private string _message = string.Empty;
     private Action? _locHandler;
+
+    private bool _isManager;
+    private WorkspaceSecurityRole _role = WorkspaceSecurityRole.Resident;
+    private string _senderName = "Workspace User";
+
+    private string _newTitle = string.Empty;
+    private string _newDescription = string.Empty;
+    private string _newBuildingId = string.Empty;
+    private string _newUnitNumber = string.Empty;
+    private string _newPhotoDataUrl = string.Empty;
+    private string _newPhotoFileName = string.Empty;
+
+    private string _replyBody = string.Empty;
+    private string _replyPhotoDataUrl = string.Empty;
+    private string _replyPhotoFileName = string.Empty;
+
+    private string _editTitle = string.Empty;
+    private WorkOrderCategory _editCategory = WorkOrderCategory.Plumbing;
+    private WorkOrderPriority _editPriority = WorkOrderPriority.Normal;
+    private WorkOrderStatus _editStatus = WorkOrderStatus.Reported;
+    private string _editVendorId = string.Empty;
 
     protected override async Task OnInitializedAsync()
     {
@@ -121,57 +316,227 @@
     {
         try
         {
-            _snapshot = await Workspace.GetSnapshotAsync(Id);
-            if (_snapshot is not null && _snapshot.Community.WorkOrders.Count > 0)
+            _role = await Access.GetRoleAsync() ?? WorkspaceSecurityRole.Resident;
+            _isManager = DataSecurityAndPrivacyGuard.IsManagerRole(_role);
+            try
             {
-                if (_selectedOrderId == Guid.Empty || !_snapshot.Community.WorkOrders.Any(w => w.Id == _selectedOrderId))
-                    _selectedOrderId = _snapshot.Community.WorkOrders[0].Id;
-                await LoadThreadsAsync();
+                var account = await Access.GetAccountAsync();
+                if (!string.IsNullOrWhiteSpace(account?.FullName))
+                {
+                    _senderName = account!.FullName;
+                }
+                else
+                {
+                    _senderName = _role.ToString();
+                }
+            }
+            catch { _senderName = _role.ToString(); }
+
+            _snapshot = await Workspace.GetSnapshotAsync(Id);
+            if (_snapshot is not null)
+            {
+                await using var db = await DbFactory.CreateDbContextAsync();
+                _threads = await db.WorkOrders.AsNoTracking()
+                    .Where(w => w.CommunityId == Id)
+                    .Include(w => w.Messages)
+                    .OrderByDescending(w => w.CreatedAt)
+                    .ToListAsync();
+                foreach (var t in _threads)
+                {
+                    t.Messages = t.Messages.OrderBy(m => m.CreatedAtUtc).ToList();
+                }
+                if (_selectedId == Guid.Empty && _threads.Count > 0)
+                {
+                    _selectedId = _threads[0].Id;
+                }
+                if (_selectedId != Guid.Empty)
+                {
+                    await LoadSelectedAsync();
+                }
             }
         }
         catch (Exception ex) { _message = ex.Message; }
         finally { _loaded = true; }
     }
 
-    private async Task OnSelectOrder(ChangeEventArgs e)
-    {
-        if (Guid.TryParse(e.Value?.ToString(), out var orderId))
-        {
-            _selectedOrderId = orderId;
-            await LoadThreadsAsync();
-        }
-    }
-
-    private async Task LoadThreadsAsync()
+    private async Task LoadSelectedAsync()
     {
         try
         {
-            await using var db = await DbFactory.CreateDbContextAsync();
-            _threads = await db.WorkOrderMessages.AsNoTracking()
-                .Where(m => m.WorkOrderId == _selectedOrderId)
-                .OrderBy(m => m.CreatedAtUtc)
-                .ToListAsync();
+            _selected = await Workspace.GetWorkOrderThreadAsync(Id, _selectedId);
+            if (_selected is not null)
+            {
+                _editTitle = _selected.Title;
+                _editCategory = _selected.Category;
+                _editPriority = _selected.Priority;
+                _editStatus = _selected.Status;
+                _editVendorId = _selected.AssignedVendorId?.ToString() ?? string.Empty;
+            }
         }
         catch (Exception ex) { _message = ex.Message; }
     }
 
-    private async Task OnPostMessage()
+    private async Task OnSelectThread(Guid threadId)
     {
-        if (_selectedOrderId == Guid.Empty || string.IsNullOrWhiteSpace(_draft)) return;
+        _selectedId = threadId;
+        _replyBody = string.Empty;
+        _replyPhotoDataUrl = string.Empty;
+        _replyPhotoFileName = string.Empty;
+        await LoadSelectedAsync();
+    }
+
+    private static string StatusVariant(WorkOrderStatus status) => status switch
+    {
+        WorkOrderStatus.VerifiedAndClosed => "ok",
+        WorkOrderStatus.AssignedToContractor or WorkOrderStatus.RfqSent => "info",
+        WorkOrderStatus.Reported => "neutral",
+        _ => "warn"
+    };
+
+    private async Task<string> ReadFileAsDataUrlAsync(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        const long maxBytes = 3L * 1024 * 1024;
+        await using var stream = file.OpenReadStream(maxBytes);
+        using var ms = new MemoryStream();
+        await stream.CopyToAsync(ms);
+        var bytes = ms.ToArray();
+        return $"data:{file.ContentType};base64,{Convert.ToBase64String(bytes)}";
+    }
+
+    private async Task OnNewPhotoSelected(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            _newPhotoDataUrl = await ReadFileAsDataUrlAsync(e);
+            _newPhotoFileName = e.File.Name;
+        }
+        catch (Exception ex) { _message = ex.Message; }
+    }
+
+    private void ClearNewPhoto()
+    {
+        _newPhotoDataUrl = string.Empty;
+        _newPhotoFileName = string.Empty;
+    }
+
+    private async Task OnReplyPhotoSelected(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            _replyPhotoDataUrl = await ReadFileAsDataUrlAsync(e);
+            _replyPhotoFileName = e.File.Name;
+        }
+        catch (Exception ex) { _message = ex.Message; }
+    }
+
+    private void ClearReplyPhoto()
+    {
+        _replyPhotoDataUrl = string.Empty;
+        _replyPhotoFileName = string.Empty;
+    }
+
+    private async Task OnCreateThread()
+    {
+        if (string.IsNullOrWhiteSpace(_newTitle)) return;
         _isBusy = true;
         try
         {
-            var membershipId = await Access.GetActiveMembershipIdAsync();
+            Guid? buildingId = Guid.TryParse(_newBuildingId, out var bid) ? bid : null;
+            var thread = await Workspace.CreateWorkOrderThreadAsync(
+                Id,
+                _newTitle.Trim(),
+                _newDescription.Trim(),
+                buildingId,
+                string.IsNullOrWhiteSpace(_newUnitNumber) ? null : _newUnitNumber.Trim(),
+                string.IsNullOrWhiteSpace(_newPhotoDataUrl) ? null : _newPhotoDataUrl.Trim(),
+                _role);
+            _newTitle = string.Empty;
+            _newDescription = string.Empty;
+            _newBuildingId = string.Empty;
+            _newUnitNumber = string.Empty;
+            _newPhotoDataUrl = string.Empty;
+            _newPhotoFileName = string.Empty;
+            _message = $"Thread reported: {thread.Title}";
+            _snapshot = await Workspace.GetSnapshotAsync(Id);
             await using var db = await DbFactory.CreateDbContextAsync();
-            db.WorkOrderMessages.Add(new WorkOrderMessage
+            _threads = await db.WorkOrders.AsNoTracking()
+                .Where(w => w.CommunityId == Id)
+                .Include(w => w.Messages)
+                .OrderByDescending(w => w.CreatedAt)
+                .ToListAsync();
+            _selectedId = thread.Id;
+            await LoadSelectedAsync();
+        }
+        catch (Exception ex) { _message = ex.Message; }
+        finally { _isBusy = false; }
+    }
+
+    private async Task OnPostReply()
+    {
+        if (_selectedId == Guid.Empty || string.IsNullOrWhiteSpace(_replyBody)) return;
+        _isBusy = true;
+        try
+        {
+            await Workspace.PostWorkOrderMessageAsync(
+                Id,
+                _selectedId,
+                _senderName,
+                _role.ToString(),
+                _replyBody.Trim(),
+                string.IsNullOrWhiteSpace(_replyPhotoDataUrl) ? null : _replyPhotoDataUrl.Trim(),
+                _role);
+            _replyBody = string.Empty;
+            _replyPhotoDataUrl = string.Empty;
+            _replyPhotoFileName = string.Empty;
+            await using var db = await DbFactory.CreateDbContextAsync();
+            _threads = await db.WorkOrders.AsNoTracking()
+                .Where(w => w.CommunityId == Id)
+                .Include(w => w.Messages)
+                .OrderByDescending(w => w.CreatedAt)
+                .ToListAsync();
+            await LoadSelectedAsync();
+        }
+        catch (Exception ex) { _message = ex.Message; }
+        finally { _isBusy = false; }
+    }
+
+    private async Task OnAssignContractor()
+    {
+        if (_selectedId == Guid.Empty || !Guid.TryParse(_editVendorId, out var vendorId)) return;
+        _isBusy = true;
+        try
+        {
+            await Workspace.AssignWorkOrderVendorAsync(Id, _selectedId, vendorId, _role);
+            _message = "Contractor assigned.";
+            _snapshot = await Workspace.GetSnapshotAsync(Id);
+            await LoadSelectedAsync();
+        }
+        catch (Exception ex) { _message = ex.Message; }
+        finally { _isBusy = false; }
+    }
+
+    private async Task OnSaveTask()
+    {
+        if (_selectedId == Guid.Empty) return;
+        _isBusy = true;
+        try
+        {
+            await Workspace.UpdateWorkOrderTaskAsync(Id, _selectedId, _editTitle, _editCategory, _editPriority, _editStatus, _role);
+            if (!string.IsNullOrWhiteSpace(_editVendorId) && Guid.TryParse(_editVendorId, out var vendorId))
             {
-                WorkOrderId = _selectedOrderId,
-                SenderMembershipId = membershipId,
-                Body = _draft.Trim()
-            });
-            await db.SaveChangesAsync();
-            _draft = string.Empty;
-            await LoadThreadsAsync();
+                await Workspace.AssignWorkOrderVendorAsync(Id, _selectedId, vendorId, _role);
+                await Workspace.UpdateWorkOrderTaskAsync(Id, _selectedId, _editTitle, _editCategory, _editPriority, _editStatus, _role);
+            }
+            _message = "Task updated.";
+            _snapshot = await Workspace.GetSnapshotAsync(Id);
+            await using var db = await DbFactory.CreateDbContextAsync();
+            _threads = await db.WorkOrders.AsNoTracking()
+                .Where(w => w.CommunityId == Id)
+                .Include(w => w.Messages)
+                .OrderByDescending(w => w.CreatedAt)
+                .ToListAsync();
+            await LoadSelectedAsync();
         }
         catch (Exception ex) { _message = ex.Message; }
         finally { _isBusy = false; }

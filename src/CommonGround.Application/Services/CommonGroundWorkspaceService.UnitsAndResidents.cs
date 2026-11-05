@@ -236,7 +236,8 @@ public sealed record ResidentFullDossier(
     IReadOnlyList<ResidentHouseholdMember> HouseholdMembers,
     IReadOnlyList<ResidentDocument> Documents,
     IReadOnlyList<ResidentDirectMessage> DirectMessages,
-    IReadOnlyList<SecurityAuditEvent> AuditEvents);
+    IReadOnlyList<SecurityAuditEvent> AuditEvents,
+    IReadOnlyList<ResidentRegistrationToken> RegistrationTokens);
 
 public sealed record ResidentDirectoryRow(
     ResidentProfile Profile,
@@ -324,7 +325,10 @@ public sealed partial class CommonGroundWorkspaceService
 
     private static string NewRegistrationPlaintextToken()
     {
-        return "REG-" + Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+        // URL-safe Base64Url plaintext token (no '+', '/', '=') for use in /register-resident/{Token} route.
+        var bytes = RandomNumberGenerator.GetBytes(32);
+        var base64Url = Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        return "REG-" + base64Url;
     }
 
     private static (string FirstName, string LastName, string FullName) NormalizeNameParts(string? firstName, string? lastName, string? fallbackFullName = null)
@@ -1394,10 +1398,35 @@ public sealed partial class CommonGroundWorkspaceService
             throw new InvalidOperationException("Resident profile creation blocked by security guard.");
 
         await using var db = await CreateDbAsync(ct);
-        ResidentProfile? existing = null;
-        if (userId.HasValue && userId.Value != Guid.Empty)
+        // Guard against reusing a manager identity for another person.
+        // When userId is supplied but its account email differs from the resident email, ignore userId.
+        Guid? effectiveUserId = userId.HasValue && userId.Value != Guid.Empty ? userId.Value : null;
+        if (effectiveUserId.HasValue && !string.IsNullOrWhiteSpace(cleanEmail))
         {
-            existing = await db.ResidentProfiles.FirstOrDefaultAsync(r => r.UserId == userId.Value, ct);
+            var linkedUser = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == effectiveUserId.Value, ct);
+            string? linkedEmail = linkedUser?.Email;
+            if (linkedUser is null)
+            {
+                var linkedAccount = await db.UserAccounts.AsNoTracking().FirstOrDefaultAsync(u => u.Id == effectiveUserId.Value, ct);
+                linkedEmail = linkedAccount?.Email;
+            }
+            if (!string.IsNullOrWhiteSpace(linkedEmail)
+                && !string.Equals(linkedEmail.Trim(), cleanEmail, StringComparison.OrdinalIgnoreCase))
+            {
+                effectiveUserId = null;
+            }
+        }
+        ResidentProfile? existing = null;
+        if (effectiveUserId.HasValue && effectiveUserId.Value != Guid.Empty)
+        {
+            existing = await db.ResidentProfiles.FirstOrDefaultAsync(r => r.UserId == effectiveUserId.Value, ct);
+            if (existing is not null && !string.IsNullOrWhiteSpace(cleanEmail) && !string.IsNullOrWhiteSpace(existing.PrimaryEmail)
+                && !string.Equals(existing.PrimaryEmail.Trim(), cleanEmail, StringComparison.OrdinalIgnoreCase))
+            {
+                // Profile bound to this UserId belongs to a different person; do not reuse it.
+                existing = null;
+                effectiveUserId = null;
+            }
         }
         if (existing is null && !string.IsNullOrWhiteSpace(cleanEmail))
         {
@@ -1409,8 +1438,8 @@ public sealed partial class CommonGroundWorkspaceService
 
         if (existing is not null)
         {
-            if (userId.HasValue && userId.Value != Guid.Empty && existing.UserId is null)
-                existing.UserId = userId;
+            if (effectiveUserId.HasValue && effectiveUserId.Value != Guid.Empty && existing.UserId is null)
+                existing.UserId = effectiveUserId;
             if (firmId.HasValue && firmId.Value != Guid.Empty && existing.ManagementFirmId is null)
                 existing.ManagementFirmId = firmId;
             if (!string.IsNullOrWhiteSpace(cleanPhone) && string.IsNullOrWhiteSpace(existing.Phone))
@@ -1425,7 +1454,7 @@ public sealed partial class CommonGroundWorkspaceService
         var profile = new ResidentProfile
         {
             ResidentAccountNumber = nextNumber,
-            UserId = userId,
+            UserId = effectiveUserId,
             ManagementFirmId = firmId,
             FirstName = first,
             LastName = last,
@@ -1661,6 +1690,13 @@ public sealed partial class CommonGroundWorkspaceService
             .Take(30)
             .ToListAsync(ct);
 
+        var registrationTokens = unitIds.Count == 0
+            ? new List<ResidentRegistrationToken>()
+            : await db.ResidentRegistrationTokens.AsNoTracking()
+                .Where(t => unitIds.Contains(t.TargetUnitId))
+                .OrderByDescending(t => t.CreatedAtUtc)
+                .ToListAsync(ct);
+
         return new ResidentFullDossier(
             profile,
             activeItems,
@@ -1669,7 +1705,75 @@ public sealed partial class CommonGroundWorkspaceService
             household,
             docs,
             messages,
-            audits);
+            audits,
+            registrationTokens);
+    }
+
+    public async Task<ResidentProfile> ClaimResidentProfileAsync(
+        Guid residentProfileId,
+        Guid actorUserId,
+        WorkspaceSecurityRole actorRole,
+        CancellationToken ct = default)
+    {
+        if (residentProfileId == Guid.Empty)
+            throw new InvalidOperationException("Resident profile id is required.");
+        if (actorUserId == Guid.Empty)
+            throw new UnauthorizedAccessException("Sign-in is required to claim a resident profile.");
+
+        await using var db = await CreateDbAsync(ct);
+        var profile = await db.ResidentProfiles.FirstOrDefaultAsync(r => r.Id == residentProfileId, ct)
+            ?? throw new InvalidOperationException("Resident profile not found.");
+
+        if (profile.UserId.HasValue && profile.UserId.Value != Guid.Empty && profile.UserId.Value != actorUserId)
+            throw new InvalidOperationException("This resident profile is already linked to another login account.");
+
+        if (profile.UserId.HasValue && profile.UserId.Value == actorUserId)
+            return profile;
+
+        var isManager = DataSecurityAndPrivacyGuard.IsManagerRole(actorRole);
+        if (!isManager)
+        {
+            var actorUser = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == actorUserId, ct);
+            var actorAccount = actorUser is null
+                ? await db.UserAccounts.AsNoTracking().FirstOrDefaultAsync(u => u.Id == actorUserId, ct)
+                : null;
+            var actorEmail = (actorUser?.Email ?? actorAccount?.Email ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(actorEmail)
+                || string.IsNullOrWhiteSpace(profile.PrimaryEmail)
+                || !string.Equals(actorEmail, profile.PrimaryEmail.Trim(), StringComparison.OrdinalIgnoreCase))
+                throw new UnauthorizedAccessException("Only a manager or the resident with a matching email may claim this profile.");
+        }
+
+        // Never escalate or modify FirmMembership roles here. Claim only links ResidentProfile.UserId.
+        profile.UserId = actorUserId;
+
+        var claimCommunityId = await db.ResidentUnitAssignments.AsNoTracking()
+            .Where(a => a.ResidentProfileId == profile.Id)
+            .Select(a => a.CommunityId)
+            .FirstOrDefaultAsync(ct);
+        if (claimCommunityId == Guid.Empty)
+        {
+            claimCommunityId = await db.UnitOwnerships.AsNoTracking()
+                .Where(o => o.ResidentProfileId == profile.Id)
+                .Select(o => o.CommunityId)
+                .FirstOrDefaultAsync(ct);
+        }
+
+        if (claimCommunityId != Guid.Empty)
+        {
+            await AppendChainedAuditByCommunityIdAsync(
+                db,
+                claimCommunityId,
+                actorRole,
+                "RESIDENT_PROFILE_CLAIMED",
+                "Info",
+                $"Resident: {profile.ResidentAccountNumber}",
+                $"Resident profile {profile.FullName} ({profile.ResidentAccountNumber}) claimed and linked to account {actorUserId} by {actorRole}.",
+                ct);
+        }
+
+        await db.SaveChangesAsync(ct);
+        return profile;
     }
 
     public async Task<IReadOnlyList<ResidentDirectoryRow>> GetFirmResidentsDirectoryAsync(
@@ -2734,6 +2838,14 @@ public sealed partial class CommonGroundWorkspaceService
         if (profile.UserId.HasValue && profile.UserId.Value != Guid.Empty)
         {
             user = await db.Users.FirstOrDefaultAsync(u => u.Id == profile.UserId.Value, ct);
+            if (user is not null && !string.IsNullOrWhiteSpace(profile.PrimaryEmail)
+                && !string.IsNullOrWhiteSpace(user.Email)
+                && !string.Equals(user.Email.Trim(), profile.PrimaryEmail.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                // Stored UserId belongs to a different person (for example a manager identity).
+                // Never reuse that User for a resident portal; fall through to email match or new User.
+                user = null;
+            }
         }
         if (user is null && !string.IsNullOrWhiteSpace(profile.PrimaryEmail))
         {
@@ -2758,8 +2870,19 @@ public sealed partial class CommonGroundWorkspaceService
 
         profile.UserId = user.Id;
 
-        var membership = await db.FirmMemberships.FirstOrDefaultAsync(
-            m => m.UserId == user.Id && m.ManagementFirmId == firmId, ct);
+        var membership = await db.FirmMemberships
+            .Where(m => m.UserId == user.Id && m.ManagementFirmId == firmId)
+            .OrderByDescending(m => m.Role == WorkspaceSecurityRole.Resident)
+            .ThenByDescending(m => m.Status == WorkspaceMembershipStatus.Approved)
+            .FirstOrDefaultAsync(ct);
+        // Never attach a resident unit link to a FirmManager membership.
+        // Resident portal access always uses a Resident-role membership, even when the
+        // same User also holds a FirmManager membership in this firm.
+        if (membership is not null && membership.Role == WorkspaceSecurityRole.FirmManager)
+        {
+            membership = await db.FirmMemberships.FirstOrDefaultAsync(
+                m => m.UserId == user.Id && m.ManagementFirmId == firmId && m.Role == WorkspaceSecurityRole.Resident, ct);
+        }
         if (membership is null)
         {
             membership = new FirmMembership

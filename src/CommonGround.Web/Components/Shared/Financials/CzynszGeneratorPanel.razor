@@ -1,0 +1,262 @@
+@using CommonGround.Application.Services
+@using CommonGround.Domain.Enums
+@inject CommonGroundWorkspaceService Workspace
+@inject WorkspaceAccessService Access
+@inject WorkspaceLocalization Loc
+@implements IDisposable
+
+<div class="cg-card">
+    <div class="cg-section-header">
+        <h2>Czynsz generator · Unit @UnitNumber</h2>
+        <AIBadge Label="muse-spark-1.3" Model="muse-spark-1.3" />
+    </div>
+    <p style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 0.25rem;">
+        Editable rent and maintenance fee (czynsz) per unit. Standard Polish components:
+        operating per m² (eksploatacja), repair fund per m² (fundusz remontowy),
+        cold and hot water advances, heating advance (CO), waste per person (śmieci),
+        parking, elevator (winda), security (ochrona). Custom lines supported.
+        Total = sum(lines) minus credits.
+    </p>
+
+    <div class="cg-grid-4" style="margin-block: 0.65rem;">
+        <div>
+            <label for="czynsz-period-@UnitId">Period (yyyy-MM)</label>
+            <input id="czynsz-period-@UnitId" class="mono" @bind="_period" placeholder="2026-11" />
+        </div>
+        <div>
+            <label>Area (m²)</label>
+            <input class="mono num" value="@FloorAreaM2.ToString("N1")" disabled />
+        </div>
+        <div>
+            <label>Occupants</label>
+            <input class="mono num" value="@OccupantsCount.ToString()" disabled />
+        </div>
+        <div style="display: flex; align-items: flex-end;">
+            <div class="kpi-value num mono" style="font-size: 1.25rem;">@Total.ToString("N2") @CurrencyCode</div>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_message))
+    {
+        <div role="status" aria-live="polite" class="cg-callout" style="margin-block: 0.5rem;">@_message</div>
+    }
+
+    <div class="cg-table-wrap">
+        <table class="cg-table">
+            <thead>
+                <tr>
+                    <th>@Loc.T("table.labelRef")</th>
+                    <th>@Loc.T("table.category")</th>
+                    <th class="num">Quantity</th>
+                    <th class="num">Unit price (@CurrencyCode)</th>
+                    <th class="num">@Loc.T("table.amount") (@CurrencyCode)</th>
+                    <th>Credit</th>
+                    <th>@Loc.T("table.actions")</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var row in _lines)
+                {
+                    <tr @key="row.Key">
+                        <td>
+                            <input @bind="row.Label" placeholder="Line label" style="min-width: 11rem;" />
+                            <div class="mono" style="font-size: 0.7rem; color: var(--text-secondary);">@row.Key</div>
+                        </td>
+                        <td>
+                            <select @bind="row.Kind">
+                                @foreach (var k in Enum.GetValues<CzynszLineKind>())
+                                {
+                                    <option value="@k" @key="k">@k</option>
+                                }
+                            </select>
+                        </td>
+                        <td><input type="number" step="0.001" min="0" class="mono num" @bind="row.Quantity" style="max-width: 7rem;" /></td>
+                        <td><input type="number" step="0.01" min="0" class="mono num" @bind="row.UnitPrice" style="max-width: 7rem;" /></td>
+                        <td class="mono num"><strong>@row.Amount.ToString("N2")</strong></td>
+                        <td><input type="checkbox" @bind="row.IsCredit" title="Credit line (subtracted from total)" /></td>
+                        <td>
+                            <button type="button" class="cg-btn cg-btn-sm" disabled="@_isBusy" @onclick="() => DeleteLine(row)">@Loc.T("action.dismiss")</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <div class="cg-toolbar" style="margin-top: 0.65rem;">
+        <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="AddCustomLine">Add custom line</button>
+        <button type="button" class="cg-btn" disabled="@_isBusy" @onclick="Recalculate">Recalculate</button>
+        <button type="button" class="cg-btn cg-btn-primary" disabled="@(_isBusy || UnitId == Guid.Empty)" @onclick="SaveAsync">Save czynsz assessment</button>
+        <span class="cg-badge cg-badge-info mono num">Total @Total.ToString("N2") @CurrencyCode</span>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Guid CommunityId { get; set; }
+    [Parameter, EditorRequired] public Guid UnitId { get; set; }
+    [Parameter] public string UnitNumber { get; set; } = string.Empty;
+    [Parameter] public decimal FloorAreaM2 { get; set; }
+    [Parameter] public int OccupantsCount { get; set; } = 2;
+    [Parameter] public decimal OperatingRatePerM2 { get; set; }
+    [Parameter] public decimal RepairFundRatePerM2 { get; set; }
+    [Parameter] public decimal WasteFeePerOccupant { get; set; }
+    [Parameter] public decimal ColdWaterTariffPerM3 { get; set; }
+    [Parameter] public decimal HotWaterTariffPerM3 { get; set; }
+    [Parameter] public decimal HeatingTariffPerGj { get; set; }
+    [Parameter] public string CurrencyCode { get; set; } = "PLN";
+    [Parameter] public string Period { get; set; } = string.Empty;
+    [Parameter] public EventCallback<MonthlyAssessment> OnSaved { get; set; }
+
+    private readonly List<CzynszLineEdit> _lines = new();
+    private string _period = string.Empty;
+    private bool _initialized;
+    private Guid _initUnitId = Guid.Empty;
+    private bool _isBusy;
+    private string _message = string.Empty;
+    private Action? _locHandler;
+
+    private decimal Total
+    {
+        get
+        {
+            var charges = _lines.Where(l => !l.IsCredit).Sum(l => Math.Round(l.Quantity * l.UnitPrice, 2));
+            var credits = _lines.Where(l => l.IsCredit).Sum(l => Math.Round(l.Quantity * l.UnitPrice, 2));
+            return Math.Round(charges - credits, 2);
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _locHandler = () => InvokeAsync(StateHasChanged);
+        Loc.OnChange += _locHandler;
+        await Loc.EnsureLoadedAsync();
+        _period = string.IsNullOrWhiteSpace(Period) ? DateTime.UtcNow.ToString("yyyy-MM") : Period.Trim();
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (!_initialized || _initUnitId != UnitId)
+        {
+            _initUnitId = UnitId;
+            _initialized = true;
+            if (!string.IsNullOrWhiteSpace(Period))
+            {
+                _period = Period.Trim();
+            }
+
+            ResetToDefaults();
+        }
+    }
+
+    private void ResetToDefaults()
+    {
+        _lines.Clear();
+        var defaults = CommonGroundWorkspaceService.BuildDefaultCzynszLines(
+            FloorAreaM2,
+            OccupantsCount,
+            OperatingRatePerM2,
+            RepairFundRatePerM2,
+            WasteFeePerOccupant,
+            ColdWaterTariffPerM3,
+            HotWaterTariffPerM3,
+            HeatingTariffPerGj);
+        foreach (var d in defaults)
+        {
+            _lines.Add(new CzynszLineEdit
+            {
+                Key = d.Key,
+                Label = d.Label,
+                Kind = d.Kind,
+                Quantity = d.Quantity,
+                UnitPrice = d.UnitPrice,
+                IsCredit = d.IsCredit
+            });
+        }
+    }
+
+    private void AddCustomLine()
+    {
+        var index = _lines.Count + 1;
+        _lines.Add(new CzynszLineEdit
+        {
+            Key = $"custom-{index}",
+            Label = $"Custom line {index}",
+            Kind = CzynszLineKind.Fixed,
+            Quantity = 1m,
+            UnitPrice = 0m,
+            IsCredit = false
+        });
+    }
+
+    private void DeleteLine(CzynszLineEdit row)
+    {
+        _lines.Remove(row);
+    }
+
+    private void Recalculate()
+    {
+        foreach (var row in _lines)
+        {
+            row.Quantity = Math.Max(0m, Math.Round(row.Quantity, 3));
+            row.UnitPrice = Math.Max(0m, Math.Round(row.UnitPrice, 4));
+            if (string.IsNullOrWhiteSpace(row.Key))
+            {
+                row.Key = $"custom-{Guid.NewGuid().ToString("N")[..6]}";
+            }
+
+            row.Key = row.Key.Trim().Replace(" ", "-", StringComparison.Ordinal);
+        }
+
+        _message = $"Recalculated total {Total:N2} {CurrencyCode}.";
+    }
+
+    private async Task SaveAsync()
+    {
+        _isBusy = true;
+        _message = string.Empty;
+        try
+        {
+            var role = await Access.GetRoleAsync() ?? WorkspaceSecurityRole.FirmManager;
+            var lines = _lines
+                .Select(l => new CzynszLineItem(
+                    (string.IsNullOrWhiteSpace(l.Key) ? $"custom-{Guid.NewGuid().ToString("N")[..6]}" : l.Key.Trim()),
+                    string.IsNullOrWhiteSpace(l.Label) ? "Custom line" : l.Label.Trim(),
+                    l.Kind,
+                    Math.Max(0m, Math.Round(l.Quantity, 3)),
+                    Math.Max(0m, Math.Round(l.UnitPrice, 4)),
+                    Math.Round(Math.Max(0m, l.Quantity) * Math.Max(0m, l.UnitPrice), 2),
+                    l.IsCredit))
+                .ToList();
+            var saved = await Workspace.SaveCzynszAssessmentAsync(CommunityId, UnitId, _period, lines, role);
+            _message = $"Saved czynsz for unit {saved.UnitNumber} period {saved.Period}: total {saved.TotalAssessment:N2} {CurrencyCode}.";
+            await OnSaved.InvokeAsync(saved);
+        }
+        catch (Exception ex)
+        {
+            _message = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_locHandler is not null)
+        {
+            Loc.OnChange -= _locHandler;
+        }
+    }
+
+    private sealed class CzynszLineEdit
+    {
+        public string Key { get; set; } = string.Empty;
+        public string Label { get; set; } = string.Empty;
+        public CzynszLineKind Kind { get; set; } = CzynszLineKind.Fixed;
+        public decimal Quantity { get; set; }
+        public decimal UnitPrice { get; set; }
+        public bool IsCredit { get; set; }
+        public decimal Amount => Math.Round(Quantity * UnitPrice, 2);
+    }
+}

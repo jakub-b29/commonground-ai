@@ -1,4 +1,5 @@
 @using CommonGround.Application.Services
+@using CommonGround.Web.Components.Shared.Financials
 @inject WorkspaceLocalization Loc
 @inject CommonGroundWorkspaceService Workspace
 @inject WorkspaceAccessService Access
@@ -28,6 +29,7 @@ else
                 <button type="button" class="cg-btn cg-btn-sm @(_activeTab == "residents" ? "cg-btn-primary" : "")" @onclick='() => _activeTab = "residents"'>@Loc.T("unit.dossier.tabResidents") (@_dossier.ActiveAssignments.Count)</button>
                 <button type="button" class="cg-btn cg-btn-sm @(_activeTab == "links" ? "cg-btn-primary" : "")" @onclick='() => _activeTab = "links"'>@Loc.T("unit.dossier.tabLinks") (@_dossier.RegistrationTokens.Count)</button>
                 <button type="button" class="cg-btn cg-btn-sm @(_activeTab == "vault" ? "cg-btn-primary" : "")" @onclick='() => _activeTab = "vault"'>@Loc.T("unit.dossier.tabVault")</button>
+                <button type="button" class="cg-btn cg-btn-sm @(_activeTab == "czynsz" ? "cg-btn-primary" : "")" @onclick='() => _activeTab = "czynsz"'>Czynsz</button>
                 @if (OnClose.HasDelegate)
                 {
                     <button type="button" class="cg-btn cg-btn-sm" @onclick="OnClose">@Loc.T("action.close")</button>
@@ -542,6 +544,23 @@ else
                 </div>
             </div>
         }
+        else if (_activeTab == "czynsz")
+        {
+            <CzynszGeneratorPanel CommunityId="CommunityId"
+                                 UnitId="UnitId"
+                                 UnitNumber="@_dossier.Unit.UnitNumber"
+                                 FloorAreaM2="@_dossier.Unit.FloorAreaM2"
+                                 OccupantsCount="@_dossier.Unit.DeclaredOccupants"
+                                 OperatingRatePerM2="@_dossier.Community.OperatingRatePerM2"
+                                 RepairFundRatePerM2="@_dossier.Community.RepairFundRatePerM2"
+                                 WasteFeePerOccupant="@_dossier.Community.WasteFeePerOccupant"
+                                 ColdWaterTariffPerM3="@_dossier.Community.ColdWaterTariffPerM3"
+                                 HotWaterTariffPerM3="@_dossier.Community.HotWaterHeatingCostPerM3"
+                                 HeatingTariffPerGj="@_dossier.Community.DistrictHeatingTariffPerGj"
+                                 CurrencyCode="@_dossier.Community.CurrencyCode"
+                                 Period="@DateTime.UtcNow.ToString("yyyy-MM")"
+                                 OnSaved="OnCzynszSaved" />
+        }
     </div>
 }
 
@@ -879,6 +898,13 @@ else
         }
         catch (Exception ex) { _message = ex.Message; }
         finally { _isBusy = false; }
+    }
+
+    private async Task OnCzynszSaved(MonthlyAssessment saved)
+    {
+        _message = $"Saved czynsz for unit {saved.UnitNumber} period {saved.Period}: total {saved.TotalAssessment:N2}.";
+        await ReloadDossierAsync();
+        await OnChanged.InvokeAsync();
     }
 
     public void Dispose()

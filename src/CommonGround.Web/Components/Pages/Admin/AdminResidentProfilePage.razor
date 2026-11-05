@@ -1,9 +1,11 @@
 @page "/admin/residents/{id:guid}"
 @attribute [Authorize(Policy = "WorkspaceMember")]
 @using CommonGround.Application.Services
+@using Microsoft.JSInterop
 @inject WorkspaceLocalization Loc
 @inject WorkspaceAccessService Access
 @inject CommonGroundWorkspaceService Workspace
+@inject IJSRuntime JS
 @implements IDisposable
 
 <PageTitle>@Loc.T("page.adminProfileTitle") — CommonGround</PageTitle>
@@ -90,6 +92,9 @@ else if (_dossier is null)
             </button>
             <button type="button" class="cg-btn cg-btn-sm @(_section == "audit" ? "cg-btn-primary" : "")" @onclick='() => _section = "audit"'>
                 6. @Loc.T("admin.profile.sec6") (@_dossier.AuditEvents.Count)
+            </button>
+            <button type="button" class="cg-btn cg-btn-sm @(_section == "registration" ? "cg-btn-primary" : "")" @onclick='() => _section = "registration"'>
+                7. Registration &amp; Claim (@_dossier.RegistrationTokens.Count)
             </button>
         </div>
 
@@ -592,6 +597,139 @@ else if (_dossier is null)
                 }
             </div>
         }
+        else if (_section == "registration")
+        {
+            <div class="cg-card">
+                <div class="cg-section-header">
+                    <h2>Registration &amp; Claim</h2>
+                    <span class="cg-badge mono">@_dossier.Profile.ResidentAccountNumber</span>
+                </div>
+                <div class="cg-subcard" style="margin-bottom: 0.75rem; font-size: 0.8rem;">
+                    <strong>Linked login account:</strong>
+                    <span class="mono">@(_dossier.Profile.UserId?.ToString() ?? "Not linked to a login account")</span>
+                </div>
+
+                <h3>Active registration links (@_dossier.RegistrationTokens.Count(t => t.Status == RegistrationTokenStatus.Active))</h3>
+                @if (_dossier.RegistrationTokens.Count == 0)
+                {
+                    <p class="cg-empty-text">No registration links issued for this profile's units yet. Plaintext links are shown once at generation time only.</p>
+                }
+                else
+                {
+                    <div class="cg-table-wrap">
+                        <table class="cg-table">
+                            <thead>
+                                <tr>
+                                    <th>Label / ref</th>
+                                    <th>Unit</th>
+                                    <th>Approval mode</th>
+                                    <th class="num">Uses</th>
+                                    <th>Expires</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var tk in _dossier.RegistrationTokens)
+                                {
+                                    var unitLabel = _dossier.ActiveAssignments.Concat(_dossier.PastAssignments)
+                                        .FirstOrDefault(a => a.Assignment.UnitId == tk.TargetUnitId)?.UnitNumber ?? tk.TargetUnitId.ToString("N").AsSpan(0, 8).ToString();
+                                    <tr @key="tk.Id">
+                                        <td><strong>@tk.LabelOrReference</strong></td>
+                                        <td><span class="mono">Unit @unitLabel</span></td>
+                                        <td><span class="cg-badge">@tk.ApprovalMode</span></td>
+                                        <td class="mono num">@tk.UseCount / @tk.MaxUses</td>
+                                        <td class="mono num">@tk.ExpiresAtUtc.ToString("yyyy-MM-dd")</td>
+                                        <td><span class="cg-badge @(tk.Status == RegistrationTokenStatus.Active ? "cg-badge-ok" : "")">@tk.Status</span></td>
+                                        <td>
+                                            <span class="cg-empty-text">Stored hash only; copy the plaintext link shown at generation time.</span>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(_generatedLinkUrl))
+                {
+                    <div class="cg-callout" style="margin-top: 0.65rem;">
+                        <strong>Registration link generated (copy now, shown once):</strong>
+                        <div class="mono num" style="margin-top: 0.3rem; overflow-wrap: anywhere;">@_generatedLinkUrl</div>
+                        <div class="cg-toolbar" style="margin-top: 0.5rem;">
+                            <button type="button" class="cg-btn cg-btn-sm cg-btn-primary" @onclick="CopyGeneratedLinkAsync">
+                                Copy link
+                            </button>
+                        </div>
+                    </div>
+                }
+
+                @if (_dossier.ActiveAssignments.Count > 0)
+                {
+                    <h3 style="margin-top: 0.85rem;">Generate registration link</h3>
+                    <div class="cg-grid-3" style="margin-top: 0.5rem;">
+                        <div>
+                            <label>Target unit</label>
+                            <select @bind="_regUnitId">
+                                @foreach (var item in _dossier.ActiveAssignments.Concat(_dossier.PastAssignments))
+                                {
+                                    <option value="@item.Assignment.UnitId" @key="item.Assignment.UnitId">@item.CommunityName — Unit @item.UnitNumber</option>
+                                }
+                            </select>
+                        </div>
+                        <div>
+                            <label>Approval mode</label>
+                            <select @bind="_regApprovalMode">
+                                @foreach (var mode in Enum.GetValues<RegistrationApprovalMode>())
+                                {
+                                    <option value="@mode" @key="mode">@mode</option>
+                                }
+                            </select>
+                        </div>
+                        <div>
+                            <label>Reference note</label>
+                            <input @bind="_regLabel" placeholder="e.g. Family registration Q1" />
+                        </div>
+                    </div>
+                    <div class="cg-toolbar" style="margin-top: 0.5rem;">
+                        <button type="button" class="cg-btn cg-btn-sm cg-btn-primary" disabled="@_isBusy" @onclick="GenerateProfileRegistrationLinkAsync">
+                            Generate registration link
+                        </button>
+                    </div>
+
+                    <h3 style="margin-top: 0.85rem;">Send invitation email</h3>
+                    <div class="cg-grid-2" style="margin-top: 0.5rem;">
+                        <div>
+                            <label>Recipient email</label>
+                            <input type="email" @bind="_inviteEmail" placeholder="resident@example.com" />
+                        </div>
+                        <div style="display: flex; align-items: flex-end;">
+                            <button type="button" class="cg-btn cg-btn-sm cg-btn-primary" disabled="@_isBusy" @onclick="SendProfileInvitationAsync">
+                                Send invitation email
+                            </button>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <p class="cg-empty-text" style="margin-top: 0.75rem;">Assign the resident to a unit before generating a registration link or invitation.</p>
+                }
+
+                <h3 style="margin-top: 0.85rem;">Claim profile to my account</h3>
+                @if (_dossier.Profile.UserId.HasValue && _dossier.Profile.UserId.Value != Guid.Empty)
+                {
+                    <p class="cg-empty-text">Profile is already linked to login account <span class="mono">@_dossier.Profile.UserId</span>.</p>
+                }
+                else
+                {
+                    <div class="cg-toolbar" style="margin-top: 0.5rem;">
+                        <button type="button" class="cg-btn cg-btn-sm cg-btn-primary" disabled="@_isBusy" @onclick="ClaimProfileToMyAccountAsync">
+                            Claim profile to my account
+                        </button>
+                    </div>
+                }
+            </div>
+        }
     }
 
 @code {
@@ -651,6 +789,13 @@ else if (_dossier is null)
     private string _docFileName = string.Empty;
     private string _docNotes = string.Empty;
 
+    // Registration & claim fields
+    private Guid _regUnitId;
+    private RegistrationApprovalMode _regApprovalMode = RegistrationApprovalMode.ManualFirmApproval;
+    private string _regLabel = string.Empty;
+    private string _inviteEmail = string.Empty;
+    private string _generatedLinkUrl = string.Empty;
+
     private Action? _locHandler;
 
     private IReadOnlyList<UnitSummaryRow> QuickAssignUnits =>
@@ -706,6 +851,11 @@ else if (_dossier is null)
                 _emergencyPhone = p.EmergencyContactPhone;
                 _emergencyRelation = p.EmergencyContactRelation;
                 _notes = p.Notes;
+                if (string.IsNullOrWhiteSpace(_inviteEmail))
+                    _inviteEmail = p.PrimaryEmail;
+                var firstAssignment = _dossier.ActiveAssignments.FirstOrDefault() ?? _dossier.PastAssignments.FirstOrDefault();
+                if (firstAssignment is not null && (_regUnitId == Guid.Empty || !_dossier.ActiveAssignments.Concat(_dossier.PastAssignments).Any(a => a.Assignment.UnitId == _regUnitId)))
+                    _regUnitId = firstAssignment.Assignment.UnitId;
             }
 
             if (_firmId.HasValue && _firmId.Value != Guid.Empty)
@@ -967,6 +1117,133 @@ else if (_dossier is null)
             _docFileName = string.Empty;
             _docNotes = string.Empty;
             _message = Loc.T("msg.docAddedVault");
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task GenerateProfileRegistrationLinkAsync()
+    {
+        if (_dossier is null) return;
+        _error = string.Empty;
+        _message = string.Empty;
+        _generatedLinkUrl = string.Empty;
+        _isBusy = true;
+        try
+        {
+            var target = _dossier.ActiveAssignments.Concat(_dossier.PastAssignments)
+                .FirstOrDefault(a => a.Assignment.UnitId == _regUnitId)
+                ?? _dossier.ActiveAssignments.FirstOrDefault();
+            if (target is null)
+            {
+                _error = Loc.T("msg.selectCommunityFirst");
+                return;
+            }
+            var link = await Workspace.GenerateResidentRegistrationLinkAsync(
+                target.Assignment.CommunityId,
+                target.Assignment.UnitId,
+                _regApprovalMode,
+                target.Assignment.AssignmentType,
+                DateTime.UtcNow.AddDays(14),
+                1,
+                string.IsNullOrWhiteSpace(_regLabel) ? $"Profile link for {_dossier.Profile.FullName}" : _regLabel.Trim(),
+                _role,
+                _actorName,
+                _membershipId);
+            _generatedLinkUrl = link.RelativeUrl;
+            _message = $"Registration link generated for Unit {target.UnitNumber}: {link.RelativeUrl}";
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task SendProfileInvitationAsync()
+    {
+        if (_dossier is null || string.IsNullOrWhiteSpace(_inviteEmail)) return;
+        _error = string.Empty;
+        _message = string.Empty;
+        _isBusy = true;
+        try
+        {
+            if (!_firmId.HasValue || _firmId.Value == Guid.Empty)
+            {
+                _error = Loc.T("msg.selectCommunityFirst");
+                return;
+            }
+            var target = _dossier.ActiveAssignments.FirstOrDefault()
+                ?? _dossier.PastAssignments.FirstOrDefault();
+            if (target is null)
+            {
+                _error = Loc.T("msg.selectCommunityFirst");
+                return;
+            }
+            var invited = await Workspace.CreateWorkspaceInvitationAsync(
+                _firmId.Value,
+                _inviteEmail.Trim(),
+                _dossier.Profile.FullName,
+                _dossier.Profile.Phone,
+                WorkspaceSecurityRole.Resident,
+                InvitationAssignmentMode.AutoAssignSpecificProperty,
+                target.Assignment.CommunityId,
+                target.UnitNumber,
+                null,
+                _actorName,
+                _role,
+                [target.Assignment.CommunityId],
+                WorkspacePermissionPresets.DefaultForRole(WorkspaceSecurityRole.Resident),
+                true);
+            _message = $"Invitation created for {_inviteEmail.Trim()} ({_dossier.Profile.FullName}): {invited.RegistrationRelativeUrl}";
+            _inviteEmail = _dossier.Profile.PrimaryEmail;
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task CopyGeneratedLinkAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_generatedLinkUrl)) return;
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", _generatedLinkUrl);
+            _message = "Registration link copied to clipboard.";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task ClaimProfileToMyAccountAsync()
+    {
+        if (_dossier is null || _actorUserId is null || _actorUserId.Value == Guid.Empty) return;
+        _error = string.Empty;
+        _message = string.Empty;
+        _isBusy = true;
+        try
+        {
+            var claimed = await Workspace.ClaimResidentProfileAsync(_dossier.Profile.Id, _actorUserId.Value, _role);
+            _message = $"Profile {claimed.FullName} ({claimed.ResidentAccountNumber}) linked to your login account.";
             await ReloadAsync();
         }
         catch (Exception ex)
