@@ -181,13 +181,6 @@ else
         await Loc.EnsureLoadedAsync();
         try
         {
-            var firmId = await Access.GetFirmIdAsync();
-            if (firmId is null)
-            {
-                _loaded = true;
-                return;
-            }
-            _firmId = firmId.Value;
             var role = await Access.GetRoleAsync();
             var hasAdmin = role == WorkspaceSecurityRole.FirmManager
                 || await Access.HasPermissionAsync(WorkspacePermissionFlags.FirmFullAdministration);
@@ -197,6 +190,14 @@ else
                 return;
             }
             _isAuthorized = true;
+
+            var firmId = await Access.GetFirmIdAsync();
+            if (firmId is null)
+            {
+                await using var dbF = await DbFactory.CreateDbContextAsync();
+                firmId = await dbF.ManagementFirms.Select(f => f.Id).FirstOrDefaultAsync();
+            }
+            _firmId = firmId;
             await ReloadAsync();
         }
         catch (Exception ex)
@@ -220,7 +221,7 @@ else
             await using var db = await DbFactory.CreateDbContextAsync();
             var firmId = _firmId.Value;
             _properties = await db.Communities.AsNoTracking()
-                .Where(c => c.ManagementFirmId == firmId)
+                .Where(c => c.ManagementFirmId == null || c.ManagementFirmId == firmId)
                 .OrderBy(c => c.Name)
                 .Select(c => new PropertyRow(c.Id, c.CommunityAccountNumber, c.Name, c.City, c.StreetAddress, c.Units.Count))
                 .ToListAsync();

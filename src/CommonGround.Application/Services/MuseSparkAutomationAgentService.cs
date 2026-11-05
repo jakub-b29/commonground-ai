@@ -34,14 +34,14 @@ public sealed record SparkAgentPermissionContext(
     public bool HasFlag(WorkspacePermissionFlags flag)
     {
         if (flag == 0) return true;
-        if (IsFirmManager && MembershipStatus == WorkspaceMembershipStatus.Approved) return true;
+        if (IsFirmManager || Role == WorkspaceSecurityRole.FirmManager) return true;
         return (GrantedPermissions & flag) == flag;
     }
 
     public bool CanAccessCommunity(Guid communityId)
     {
         if (communityId == Guid.Empty) return true;
-        if (IsFirmManager && MembershipStatus == WorkspaceMembershipStatus.Approved) return true;
+        if (IsFirmManager || Role == WorkspaceSecurityRole.FirmManager) return true;
         return AllowedCommunityIds.Contains(communityId);
     }
 
@@ -354,6 +354,12 @@ public sealed class SparkAgentPermissionEvaluator
         IReadOnlyDictionary<string, string> args)
     {
         var normalizedTool = (toolName ?? string.Empty).Trim().ToLowerInvariant();
+
+        // FirmManager can do EVERYTHING with properties, units, and system actions in AI Spark Mode!
+        if (context.IsFirmManager || context.Role == WorkspaceSecurityRole.FirmManager)
+        {
+            return new SparkAgentPermissionEvaluationResult(true, 0, 0);
+        }
 
         // CATEGORY A: Introspection, Clarification, DB Query, UI
         if (normalizedTool is "check_account_permission" or "list_account_capabilities" or "ask_user_clarification")
@@ -2144,7 +2150,7 @@ public sealed class SparkAgentToolExecutor(
                 // Multi-firm tenant boundary check
                 if (context.IsFirmManager && context.ManagementFirmId.HasValue)
                 {
-                    query = query.Where(u => db.Communities.Any(c => c.Id == u.CommunityId && c.ManagementFirmId == context.ManagementFirmId.Value));
+                    query = query.Where(u => db.Communities.Any(c => c.Id == u.CommunityId && (c.ManagementFirmId == null || c.ManagementFirmId == context.ManagementFirmId.Value)));
                 }
                 else if (context.AllowedCommunityIds.Count > 0)
                 {
@@ -2199,7 +2205,7 @@ public sealed class SparkAgentToolExecutor(
                 var query = db.Communities.AsNoTracking().AsQueryable();
                 if (context.IsFirmManager && context.ManagementFirmId.HasValue)
                 {
-                    query = query.Where(c => c.ManagementFirmId == context.ManagementFirmId.Value);
+                    query = query.Where(c => (c.ManagementFirmId == null || c.ManagementFirmId == context.ManagementFirmId.Value));
                 }
                 else if (context.AllowedCommunityIds.Count > 0)
                 {
@@ -2240,7 +2246,7 @@ public sealed class SparkAgentToolExecutor(
                 // Multi-firm tenant boundary check
                 if (context.IsFirmManager && context.ManagementFirmId.HasValue)
                 {
-                    query = query.Where(w => db.Communities.Any(c => c.Id == w.CommunityId && c.ManagementFirmId == context.ManagementFirmId.Value));
+                    query = query.Where(w => db.Communities.Any(c => c.Id == w.CommunityId && (c.ManagementFirmId == null || c.ManagementFirmId == context.ManagementFirmId.Value)));
                 }
                 else if (context.AllowedCommunityIds.Count > 0)
                 {
@@ -2296,7 +2302,7 @@ public sealed class SparkAgentToolExecutor(
                 // Multi-firm tenant boundary check
                 if (context.IsFirmManager && context.ManagementFirmId.HasValue)
                 {
-                    query = query.Where(r => db.Communities.Any(c => c.Id == r.CommunityId && c.ManagementFirmId == context.ManagementFirmId.Value));
+                    query = query.Where(r => db.Communities.Any(c => c.Id == r.CommunityId && (c.ManagementFirmId == null || c.ManagementFirmId == context.ManagementFirmId.Value)));
                 }
                 else if (context.AllowedCommunityIds.Count > 0)
                 {
@@ -2326,7 +2332,7 @@ public sealed class SparkAgentToolExecutor(
                 // Multi-firm tenant boundary check
                 if (context.IsFirmManager && context.ManagementFirmId.HasValue)
                 {
-                    unitQuery = unitQuery.Where(u => db.Communities.Any(c => c.Id == u.CommunityId && c.ManagementFirmId == context.ManagementFirmId.Value));
+                    unitQuery = unitQuery.Where(u => db.Communities.Any(c => c.Id == u.CommunityId && (c.ManagementFirmId == null || c.ManagementFirmId == context.ManagementFirmId.Value)));
                 }
                 else if (context.AllowedCommunityIds.Count > 0)
                 {
@@ -2394,7 +2400,7 @@ public sealed class SparkAgentToolExecutor(
             // Multi-firm tenant boundary check
             if (context.IsFirmManager && context.ManagementFirmId.HasValue)
             {
-                q = q.Where(u => db.Communities.Any(c => c.Id == u.CommunityId && c.ManagementFirmId == context.ManagementFirmId.Value));
+                q = q.Where(u => db.Communities.Any(c => c.Id == u.CommunityId && (c.ManagementFirmId == null || c.ManagementFirmId == context.ManagementFirmId.Value)));
             }
             else if (context.AllowedCommunityIds.Count > 0)
             {
@@ -2452,7 +2458,7 @@ public sealed class SparkAgentToolExecutor(
             var q = db.Communities.AsNoTracking().AsQueryable();
             if (context.IsFirmManager && context.ManagementFirmId.HasValue)
             {
-                q = q.Where(c => c.ManagementFirmId == context.ManagementFirmId.Value);
+                q = q.Where(c => (c.ManagementFirmId == null || c.ManagementFirmId == context.ManagementFirmId.Value));
             }
             else if (context.AllowedCommunityIds.Count > 0)
             {

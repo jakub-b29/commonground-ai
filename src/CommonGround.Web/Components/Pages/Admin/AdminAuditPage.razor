@@ -136,12 +136,6 @@ else
         await Loc.EnsureLoadedAsync();
         try
         {
-            var firmId = await Access.GetFirmIdAsync();
-            if (firmId is null)
-            {
-                _loaded = true;
-                return;
-            }
             var role = await Access.GetRoleAsync();
             var hasAdmin = role == WorkspaceSecurityRole.FirmManager
                 || await Access.HasPermissionAsync(WorkspacePermissionFlags.FirmFullAdministration);
@@ -151,11 +145,20 @@ else
                 return;
             }
             _isAuthorized = true;
+
+            var firmId = await Access.GetFirmIdAsync();
+            if (firmId is null)
+            {
+                await using var dbF = await DbFactory.CreateDbContextAsync();
+                firmId = await dbF.ManagementFirms.Select(f => f.Id).FirstOrDefaultAsync();
+            }
             await using var db = await DbFactory.CreateDbContextAsync();
-            var propertyIds = await db.Communities.AsNoTracking()
-                .Where(c => c.ManagementFirmId == firmId.Value)
-                .Select(c => c.Id)
-                .ToListAsync();
+            var query = db.Communities.AsNoTracking();
+            if (firmId.HasValue && firmId.Value != Guid.Empty)
+            {
+                query = query.Where(c => c.ManagementFirmId == null || c.ManagementFirmId == firmId.Value);
+            }
+            var propertyIds = await query.Select(c => c.Id).ToListAsync();
             _events = await db.SecurityAuditEvents.AsNoTracking()
                 .Where(e => propertyIds.Contains(e.CommunityId))
                 .OrderByDescending(e => e.OccurredAtUtc)

@@ -126,13 +126,6 @@ else
         await Loc.EnsureLoadedAsync();
         try
         {
-            var firmId = await Access.GetFirmIdAsync();
-            if (firmId is null)
-            {
-                _loaded = true;
-                return;
-            }
-            _firmId = firmId.Value;
             var role = await Access.GetRoleAsync();
             var hasAdmin = role == WorkspaceSecurityRole.FirmManager
                 || await Access.HasPermissionAsync(WorkspacePermissionFlags.FirmFullAdministration);
@@ -142,6 +135,14 @@ else
                 return;
             }
             _isAuthorized = true;
+
+            var firmId = await Access.GetFirmIdAsync();
+            if (firmId is null)
+            {
+                await using var dbF = await DbFactory.CreateDbContextAsync();
+                firmId = await dbF.ManagementFirms.Select(f => f.Id).FirstOrDefaultAsync();
+            }
+            _firmId = firmId;
             await ReloadAsync();
         }
         catch (Exception ex)
@@ -173,14 +174,13 @@ else
 
     private async Task ReloadAsync()
     {
-        if (_firmId is null)
-        {
-            return;
-        }
-        var firmId = _firmId.Value;
         await using var db = await DbFactory.CreateDbContextAsync();
-        _properties = await db.Communities.AsNoTracking()
-            .Where(c => c.ManagementFirmId == firmId)
+        var commQuery = db.Communities.AsNoTracking();
+        if (_firmId.HasValue && _firmId.Value != Guid.Empty)
+        {
+            commQuery = commQuery.Where(c => c.ManagementFirmId == null || c.ManagementFirmId == _firmId.Value);
+        }
+        _properties = await commQuery
             .OrderBy(c => c.Name)
             .Select(c => new PropertyRow(
                 c.Id,
@@ -195,10 +195,14 @@ else
                 c.RepairFundRatePerM2,
                 c.Units.Count))
             .ToListAsync();
-        var memberships = await db.FirmMemberships.AsNoTracking()
-            .Where(m => m.ManagementFirmId == firmId && m.Status == WorkspaceMembershipStatus.Approved
-                && (m.Role == WorkspaceSecurityRole.FirmManager || m.Role == WorkspaceSecurityRole.PropertyManager))
-            .ToListAsync();
+        var membershipsQuery = db.FirmMemberships.AsNoTracking()
+            .Where(m => m.Status == WorkspaceMembershipStatus.Approved
+                && (m.Role == WorkspaceSecurityRole.FirmManager || m.Role == WorkspaceSecurityRole.PropertyManager));
+        if (_firmId.HasValue && _firmId.Value != Guid.Empty)
+        {
+            membershipsQuery = membershipsQuery.Where(m => m.ManagementFirmId == null || m.ManagementFirmId == _firmId.Value);
+        }
+        var memberships = await membershipsQuery.ToListAsync();
         var userIds = memberships.Select(m => m.UserId).Distinct().ToList();
         var users = await db.Users.AsNoTracking()
             .Where(u => userIds.Contains(u.Id))
@@ -230,15 +234,12 @@ else
         _isBusy = true;
         try
         {
-            var actorId = await Access.GetActiveMembershipIdAsync()
-                ?? throw new InvalidOperationException("Active membership is required.");
-            await using var db = await DbFactory.CreateDbContextAsync();
-            var actor = await db.FirmMemberships.FirstOrDefaultAsync(m => m.Id == actorId)
-                ?? throw new InvalidOperationException("Actor membership not found.");
-            if (actor.Role != WorkspaceSecurityRole.FirmManager)
+            var role = await Access.GetRoleAsync();
+            if (role != WorkspaceSecurityRole.FirmManager && !await Access.HasPermissionAsync(WorkspacePermissionFlags.FirmFullAdministration))
             {
                 throw new UnauthorizedAccessException(Loc.T("msg.onlyFirmManagerAssign"));
             }
+            await using var db = await DbFactory.CreateDbContextAsync();
             var rows = await db.MembershipPropertyAccesses
                 .Where(a => a.CommunityId == propertyId)
                 .ToListAsync();

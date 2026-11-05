@@ -95,13 +95,6 @@ else
         await Loc.EnsureLoadedAsync();
         try
         {
-            var firmId = await Access.GetFirmIdAsync();
-            if (firmId is null)
-            {
-                _loaded = true;
-                return;
-            }
-            _firmId = firmId.Value;
             var role = await Access.GetRoleAsync();
             var hasAdmin = role == WorkspaceSecurityRole.FirmManager
                 || await Access.HasPermissionAsync(WorkspacePermissionFlags.FirmFullAdministration);
@@ -111,6 +104,14 @@ else
                 return;
             }
             _isAuthorized = true;
+
+            var firmId = await Access.GetFirmIdAsync();
+            if (firmId is null)
+            {
+                await using var dbF = await DbFactory.CreateDbContextAsync();
+                firmId = await dbF.ManagementFirms.Select(f => f.Id).FirstOrDefaultAsync();
+            }
+            _firmId = firmId;
             await ReloadAsync();
         }
         catch (Exception ex)

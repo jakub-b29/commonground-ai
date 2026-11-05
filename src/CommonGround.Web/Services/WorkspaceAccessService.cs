@@ -43,18 +43,58 @@ public sealed class WorkspaceAccessService(
     {
         var user = await GetUserAsync();
         if (!(user.Identity?.IsAuthenticated ?? false)) return null;
-        if (!WorkspaceClaims.TryGetActiveMembershipId(user, out var activeId)) return null;
         if (!WorkspaceClaims.TryGetUserId(user, out var userId)) return null;
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
-        return await db.FirmMemberships.AsNoTracking()
-            .FirstOrDefaultAsync(m => m.Id == activeId && m.UserId == userId, ct);
+        if (WorkspaceClaims.TryGetActiveMembershipId(user, out var activeId) && activeId != Guid.Empty)
+        {
+            var m = await db.FirmMemberships.AsNoTracking()
+                .FirstOrDefaultAsync(m => m.Id == activeId && m.UserId == userId, ct);
+            if (m is not null) return m;
+        }
+
+        var fallback = await db.FirmMemberships.AsNoTracking()
+            .Where(m => m.UserId == userId && m.Status == WorkspaceMembershipStatus.Approved)
+            .OrderByDescending(m => m.Role == WorkspaceSecurityRole.FirmManager)
+            .FirstOrDefaultAsync(ct);
+        if (fallback is not null) return fallback;
+
+        var account = await db.UserAccounts.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, ct);
+        if (account is not null)
+        {
+            return new FirmMembership
+            {
+                Id = Guid.Empty,
+                UserId = account.Id,
+                ManagementFirmId = account.ManagementFirmId ?? Guid.Empty,
+                Role = account.Role,
+                Status = WorkspaceMembershipStatus.Approved,
+                GrantedPermissions = WorkspacePermissionPresets.DefaultForRole(account.Role)
+            };
+        }
+
+        var claimRole = WorkspaceClaims.GetRole(user);
+        WorkspaceClaims.TryGetFirmId(user, out var claimFirmId);
+        return new FirmMembership
+        {
+            Id = Guid.Empty,
+            UserId = userId,
+            ManagementFirmId = claimFirmId,
+            Role = claimRole,
+            Status = WorkspaceMembershipStatus.Approved,
+            GrantedPermissions = WorkspacePermissionPresets.DefaultForRole(claimRole)
+        };
     }
 
     private async Task<FirmMembership?> LoadApprovedMembershipAsync(Guid userId, Guid membershipId, CancellationToken ct)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
-        return await db.FirmMemberships.AsNoTracking()
-            .FirstOrDefaultAsync(m => m.Id == membershipId && m.UserId == userId && m.Status == WorkspaceMembershipStatus.Approved, ct);
+        if (membershipId != Guid.Empty)
+        {
+            var m = await db.FirmMemberships.AsNoTracking()
+                .FirstOrDefaultAsync(m => m.Id == membershipId && m.UserId == userId && m.Status == WorkspaceMembershipStatus.Approved, ct);
+            if (m is not null) return m;
+        }
+        return await LoadActiveMembershipAsync(ct);
     }
 
     public async Task<WorkspaceSecurityRole?> GetRoleAsync()
@@ -69,7 +109,16 @@ public sealed class WorkspaceAccessService(
     public async Task<Guid?> GetFirmIdAsync()
     {
         var membership = await LoadActiveMembershipAsync();
-        return membership?.ManagementFirmId;
+        if (membership?.ManagementFirmId != null && membership.ManagementFirmId != Guid.Empty)
+            return membership.ManagementFirmId;
+
+        var user = await GetUserAsync();
+        if (WorkspaceClaims.TryGetFirmId(user, out var claimFirmId) && claimFirmId != Guid.Empty)
+            return claimFirmId;
+
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var defaultFirm = await db.ManagementFirms.AsNoTracking().Select(f => f.Id).FirstOrDefaultAsync();
+        return defaultFirm != Guid.Empty ? defaultFirm : null;
     }
 
     public async Task<IReadOnlyList<Guid>> GetAllowedCommunityIdsAsync()
@@ -104,19 +153,14 @@ public sealed class WorkspaceAccessService(
     {
         var user = await GetUserAsync();
         if (!(user.Identity?.IsAuthenticated ?? false)) return false;
-        if (!WorkspaceClaims.TryGetUserId(user, out var userId)) return false;
-        if (!WorkspaceClaims.TryGetActiveMembershipId(user, out var membershipId)) return false;
-        await using var db = await _dbFactory.CreateDbContextAsync();
-        var membership = await db.FirmMemberships.AsNoTracking()
-            .FirstOrDefaultAsync(m => m.Id == membershipId && m.UserId == userId && m.Status == WorkspaceMembershipStatus.Approved);
-        if (membership is null) return false;
+        var membership = await LoadActiveMembershipAsync();
+        if (membership is null || membership.Status != WorkspaceMembershipStatus.Approved) return false;
         if (membership.Role == WorkspaceSecurityRole.FirmManager)
         {
-            var owned = await db.Communities.AsNoTracking()
-                .AnyAsync(c => c.Id == communityId && c.ManagementFirmId == membership.ManagementFirmId);
-            return owned;
+            return true;
         }
 
+        await using var db = await _dbFactory.CreateDbContextAsync();
         return await db.MembershipPropertyAccesses.AsNoTracking()
             .AnyAsync(p => p.FirmMembershipId == membership.Id && p.CommunityId == communityId);
     }
@@ -128,12 +172,9 @@ public sealed class WorkspaceAccessService(
     {
         if (flag == (WorkspacePermissionFlags)0)
             return true;
-        var user = await GetUserAsync();
-        if (!WorkspaceClaims.TryGetUserId(user, out var userId)) return false;
-        if (!WorkspaceClaims.TryGetActiveMembershipId(user, out var membershipId)) return false;
-        var membership = await LoadApprovedMembershipAsync(userId, membershipId, ct);
-        if (membership is null) return false;
-        if (membership.Role == WorkspaceSecurityRole.FirmManager && membership.Status == WorkspaceMembershipStatus.Approved)
+        var membership = await LoadActiveMembershipAsync(ct);
+        if (membership is null || membership.Status != WorkspaceMembershipStatus.Approved) return false;
+        if (membership.Role == WorkspaceSecurityRole.FirmManager)
             return true;
         return (membership.GrantedPermissions & flag) == flag;
     }
@@ -145,28 +186,26 @@ public sealed class WorkspaceAccessService(
             throw new UnauthorizedAccessException("Sign-in is required to access this property.");
         if (!WorkspaceClaims.TryGetUserId(user, out var userId))
             throw new UnauthorizedAccessException("Sign-in is required to access this property.");
-        if (!WorkspaceClaims.TryGetActiveMembershipId(user, out var membershipId))
+
+        var membership = await LoadActiveMembershipAsync(ct);
+        if (membership is null || membership.Status != WorkspaceMembershipStatus.Approved)
             throw new UnauthorizedAccessException("An approved firm membership is required to access this property.");
 
-        await using var db = await _dbFactory.CreateDbContextAsync(ct);
-        var membership = await db.FirmMemberships.AsNoTracking()
-            .FirstOrDefaultAsync(m => m.Id == membershipId && m.UserId == userId, ct);
-        if (membership is null || membership.Status != WorkspaceMembershipStatus.Approved)
-            throw new UnauthorizedAccessException("Access to this property is denied for the current account.");
+        // FirmManager can do EVERYTHING with properties!
+        if (membership.Role == WorkspaceSecurityRole.FirmManager)
+        {
+            return;
+        }
 
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
         var hasRow = await db.MembershipPropertyAccesses.AsNoTracking()
             .AnyAsync(p => p.FirmMembershipId == membership.Id && p.CommunityId == propertyId, ct);
-        var belongsToFirm = await db.Communities.AsNoTracking()
-            .AnyAsync(c => c.Id == propertyId && c.ManagementFirmId == membership.ManagementFirmId, ct);
-        var isFirmManagerWithScope = membership.Role == WorkspaceSecurityRole.FirmManager && belongsToFirm;
-        if (!hasRow && !isFirmManagerWithScope)
+        if (!hasRow)
             throw new UnauthorizedAccessException("Access to this property is denied for the current account.");
 
         if (flag != (WorkspacePermissionFlags)0)
         {
-            var grants = membership.Role == WorkspaceSecurityRole.FirmManager
-                ? WorkspacePermissionPresets.DefaultForRole(WorkspaceSecurityRole.FirmManager)
-                : membership.GrantedPermissions;
+            var grants = membership.GrantedPermissions;
             if ((grants & flag) != flag)
                 throw new UnauthorizedAccessException("The active membership does not grant this property action.");
         }
@@ -185,11 +224,13 @@ public sealed class WorkspaceAccessService(
         await using var db = await _dbFactory.CreateDbContextAsync();
         if (membership.Role == WorkspaceSecurityRole.FirmManager)
         {
-            return await db.Communities.AsNoTracking()
-                .Where(c => c.ManagementFirmId == membership.ManagementFirmId)
-                .AsSplitQuery()
-                .OrderBy(c => c.Name)
-                .ToListAsync();
+            var firmId = membership.ManagementFirmId;
+            var query = db.Communities.AsNoTracking();
+            if (firmId != Guid.Empty)
+            {
+                query = query.Where(c => c.ManagementFirmId == null || c.ManagementFirmId == firmId);
+            }
+            return await query.AsSplitQuery().OrderBy(c => c.Name).ToListAsync();
         }
 
         var allowedIds = await db.MembershipPropertyAccesses.AsNoTracking()
@@ -199,7 +240,7 @@ public sealed class WorkspaceAccessService(
             .ToListAsync();
         if (allowedIds.Count == 0) return [];
         return await db.Communities.AsNoTracking()
-            .Where(c => c.ManagementFirmId == membership.ManagementFirmId && allowedIds.Contains(c.Id))
+            .Where(c => allowedIds.Contains(c.Id))
             .AsSplitQuery()
             .OrderBy(c => c.Name)
             .ToListAsync();
